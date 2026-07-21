@@ -1,0 +1,80 @@
+{
+  "expo": {
+    "name": "ACCC Pole Inspect",
+    "slug": "frontend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "frontend",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emergent.poledataexcel.p9sjtu",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Capture GPS coordinates of the pole site",
+        "NSCameraUsageDescription": "Take photos of the pole and equipment",
+        "NSPhotoLibraryUsageDescription": "Attach existing photos to the inspection",
+        "NSPhotoLibraryAddUsageDescription": "Save inspection Excel files to your device"
+      }
+    },
+    "android": {
+      "edgeToEdgeEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.emergent.poledataexcel.p9sjtu",
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-image.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Capture GPS coordinates of the pole site"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach photos of the pole to the inspection",
+          "cameraPermission": "Take photos of the pole and equipment"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow ACCC Pole Inspect to access attached photos",
+          "savePhotosPermission": "Allow ACCC Pole Inspect to save attached photos to your gallery",
+          "granularPermissions": [
+            "photo"
+          ]
+        }
+      ],
+      "expo-sqlite",
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
