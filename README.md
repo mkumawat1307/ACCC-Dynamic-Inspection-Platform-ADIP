@@ -2,294 +2,129 @@
 
 ## Overview
 
-The ACCC Pole Inspection App is an offline-first Android inspection application built using **React Native (Expo)** and **SQLite**.
+The ACCC Pole Inspection App is an offline-first Android inspection application developed using React Native (Expo) and SQLite.
 
-The application is designed for field engineers performing physical inspections of surveillance infrastructure such as poles, cameras, switches, junction boxes, earthing systems, and metering equipment.
+It is designed for physical inspection of Smart City surveillance infrastructure including poles, cameras, switches, junction boxes, earthing systems, metering equipment, and future configurable assets.
 
-The app works completely offline and stores all inspection data locally on the device.
-
----
-
-# Features
-
-## General Information
-
-- Auto Inspection Date
-- Division
-- District
-- Block
-- Pole ID
-- Address
-- GPS Latitude
-- GPS Longitude
-- Get Current Location button
+Unlike traditional inspection applications, this project is built as a dynamic inspection platform where inspection templates, sections, assets, and fields can be configured without modifying application source code.
 
 ---
 
-## Pole Structure
+# Key Features
 
-- Foundation Condition
-- Pole Availability
-- Pole SI
-- Pole Status
-
----
-
-## Junction Box
-
-- Junction Box Status
-- Power Cable Availability
-- Cable Status
-- Cable Length
-
----
-
-## Earthing
-
-- Earthing Wire
-- Earthing Chamber
-- Earthing Cover
-- Earthing Voltage
+- Offline First
+- SQLite Database
+- Automatic Save
+- Duplicate Pole Detection
+- GPS Integration
+- Dynamic Inspection Forms
+- Dynamic Asset Expansion
+- Unlimited Photos
+- Automatic Photo Naming
+- Automatic Watermark
+- PDF Report Generation (Planned)
+- Excel Export (Planned)
 
 ---
 
-## Metering
+# Current Workflow
 
-- Meter Box Status
-- Meter Status
-- Meter Power Status
-- Meter Serial Number
-
----
-
-## Connectivity
-
-- Fiber
-- RF
-- Local
-- No Connectivity
-
----
-
-## Dynamic Device Sections
-
-The application supports dynamic device expansion.
-
-### Camera
-
-User enters:
-
-```
-Camera Count = 4
-```
-
-The application automatically creates
-
-- Camera 1
-- Camera 2
-- Camera 3
-- Camera 4
-
-Each camera contains
-
-- Type
-- Status
-- Make
-- Model
-- IP
-- Serial Number
-- SI
-- SD Card Capacity
-- SD Card Status
-
----
-
-### Switch
-
-User enters
-
-```
-Switch Count = 2
-```
-
-The application automatically creates
-
-- Switch 1
-- Switch 2
-
-Each switch contains
-
-- Type
-- Status
-- Make
-- Model
-- IP
-- Serial Number
-- SI
-
----
-
-## Remarks
-
-- Pole Category
-- Remarks
-
----
-
-## Photos
-
-Unlimited photos per inspection.
-
-Features planned
-
-- Camera capture
-- Gallery
-- Delete photo
-- Automatic watermark
-- Automatic filename
-
-Example filename
-
-```
-District_Block_PoleID_YYYYMMDD_HHMMSS.jpg
-```
-
-Example
-
-```
-Jaipur_Mansarovar_PL00125_20260722_183015.jpg
-```
-
----
-
-# Offline Database
-
-SQLite is used for local storage.
-
-Current modules include
-
-- Projects
-- Inspections
-- Dynamic Fields
-- Inspection Values
-
-Future modules
-
-- Photos
-- Reports
-- Sync Queue
-
----
-
-# Inspection Workflow
-
-```
 Project
 
-    ↓
+↓
 
 Inspection List
 
-    ↓
+↓
 
-New Inspection
+---------------Pole Inspection Report-------------
 
-    ↓
+I. General Information
 
-General Information
+• Date: Auto Get Date <mandatory>
+• Division: <mandatory>
+• District: <mandatory>
+• Block: 
+• Pole ID: <Mandatory>
+• Location Address:
+• Lat/Long: <Mandatory>
+Add GPS Butten Here
 
-    ↓
+II. Pole Structure Details
 
-Pole Structure
+• Foundation Condition: Acceptable / Minor Damage / Major Damage / Not Visible <Mandatory>
+• Pole Availability: YES / NO <Mandatory>
+• Pole SI: Technosys (LSY)/ TCIL (LSY)/ TCIL (RC)/ TCIL (Smart City)/ TASL (Technosys) 
+• Pole Status: VMS / Local / In Stock / Dismantled / Non-Live / Not verified 
 
-    ↓
+III. Junction Box and Cabling
 
-Junction Box
+• Junction Box Status: Installed / Not Installed / Damage <Mandatory>
+• Power Cable: Yes / No / Not Verified
+• Power Cable Status: Overhead / Underground / on Ground / Not Verified
+• Power Cable Length:
 
-    ↓
+IV. Earthing Details
 
-Earthing
+• Earthing Wire: Installed / Not Installed / Broken / Not Connected / Not visible / Not verified 
+• Earthing Chamber: Installed / Not Installed / Damage / Not visible / Not verified 
+• Earthing Cover: Installed / Not Installed / Damage / Not visible / Not verified
+• Earthing Voltage: 
 
-    ↓
+V. Metering Information
+• Meter Box Status: Installed / Not Installed / Damage
+• Meter Status: Installed / Not Installed 
+• Meter Power Status: Powered / Non-Powered 
+• Meter Serial Number:
 
-Meter
+VI. Connectivity Information
 
-    ↓
+• Connectivity Type: Fiber / RF / Local / No Connectivity 
 
-Connectivity
+VII. Camera information
 
-    ↓
+• Camera (Count): 0 / 1 / 2 / 3 / 4 /------- <Mandatory>
+• Camera (Types): Bullet / Box /  PTZ <Mandatory>
+• Camera (Status): VMS / Local / Non-Live / In Stock / Dismantled /Not verified
+• Camera (Make): Sparsh / Prama / Hikvision / CP Plus / Secura
+• Camera (Model):
+• Camera (IP):
+• Camera (Serial Number):
+• Camera (SI): Technosys (LSY)/ TCIL (LSY)/ TCIL (RC)/ TCIL (Smart City)/ TASL (Technosys) 
+• Camera (Sd Card Capacity): 64 GB/ 128 GB/ 256 GB / Not Verified
+• Camera (Sd Card Capacity): Working / Not Working / Not Verified 
 
-Camera
+VIII. Switch Information
 
-    ↓
+• Switch (Count): 0 / 1 / 2 /------
+• Switch (Type): 4-Port / 8-Port
+• Switch (Status): VMS / Local / Non-Live / In Stock / Dismantled /Not verified
+• Switch (Make): D-Link / Cisco / Allied / Tejas
+• Switch (Model):
+• Switch (IP):
+• Switch (Serial Number):
+• Switch (SI): Technosys (LSY)/ TCIL (LSY)/ TCIL (RC)/ TCIL (Smart City)/ TASL (Technosys) 
 
-Switch
+IX. Categorization and Remarks
 
-    ↓
+• Pole Category: AMC / LSY / Judicial 
+• Remarks:
 
-Remarks
+X. 📷 Photos <Mandatory min 1 Photo>
+Capture Photo
+Photo Gallery
+Automatic Photo Stamp
 
-    ↓
-
-Photos
-
-    ↓
+cancel and  Save Button
 
 Complete Inspection
-```
 
----
+Note 1:
+Inspection-time editing – the inspector fills values (e.g., status, serial number, remarks).
+Configuration-time editing – an administrator can add, remove, or modify the inspection template itself (fields, options, even new device types) without changing code.
 
-# Dynamic Inspection Engine
-
-The inspection form is database-driven.
-
-## Inspection Mode
-
-Field engineers only enter inspection values.
-
-Examples
-
-- Status
-- Serial Number
-- Remarks
-- Photos
-
----
-
-## Configuration Mode
-
-Administrators can modify the inspection template without changing source code.
-
-Supported operations
-
-- Add Section
-- Remove Section
-- Add New Field
-- Remove Field
-- Add Device Types
-- Modify Dropdown Options
-
-Future device types will automatically support quantity-based expansion.
-
----
-
-# Current Features
-
-- Offline SQLite
-- Auto Save
-- Duplicate Pole ID Detection
-- Edit Existing Inspection
-- GPS Location
-- Dynamic Field Rendering
-- Dynamic Device Expansion
-- Search Inspection
-- Delete Single Inspection
-- Delete Multiple Inspections
-- Draft & Completed Status
-- Configuration Driven Forms
-
+Note 2:
+When I enter the quantity for Cameras or Switches, the corresponding rows for Make, Model, Serial Number, SI, and Status should automatically expand based on the entered quantity. These fields should also remain fully editable so that I can modify the details if required. Additionally, if I need to add another device type in the future, I should be able to do so, and entering its quantity should automatically expand the corresponding detail rows in the same way
 ---
 
 # Technology Stack
@@ -299,42 +134,61 @@ Frontend
 - React Native
 - Expo
 - TypeScript
+- Expo Router
+- React Native Paper
 
 Database
 
 - SQLite
 
-Navigation
+Future
 
-- Expo Router
+- PDF Generator
+- Excel Export
+- Backup
 
-UI
+---
 
-- React Native Paper
+# Design Philosophy
 
-Location
+The project is configuration driven.
 
-- Expo Location
+Administrators can modify inspection templates without changing application code.
+
+Supported operations include:
+
+- Add Section
+- Delete Section
+- Rename Section
+- Add Asset
+- Delete Asset
+- Rename Asset
+- Add Fields
+- Remove Fields
+- Dropdown Configuration
+- Mandatory Field Configuration
+
+---
+
+# Project Status
+
+Current Version
+
+0.9 (Development)
+
+Current Phase
+
+Architecture & Configuration Engine
 
 ---
 
 # Future Roadmap
 
+- Dynamic Template Engine
+- Dynamic Asset Engine
 - Photo Module
-- Automatic Watermark
-- PDF Report
-- Excel Export
-- Search by GPS
+- Watermark
+- Reports
 - Dashboard
-- Sync Module
-- User Roles
-- Template Builder
-- Backup & Restore
-
----
-
-# Project Goal
-
-Build a professional offline inspection platform where inspection templates can evolve without requiring application code changes.
-
-The application should support future inspection types by configuring templates instead of modifying source code.
+- Backup
+- Restore
