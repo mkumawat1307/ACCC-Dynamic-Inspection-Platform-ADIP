@@ -1,3 +1,4 @@
+// frontend\app\_layout.tsx
 import { useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";

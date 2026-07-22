@@ -121,6 +121,38 @@ for (const division of divisions) {
     console.log("✅ Districts seeded.");
   }
 
+// ===========================
+// Seed Inspection Templates
+// ===========================
+const templateCount = await db.getFirstAsync<{ Count: number }>(`
+  SELECT COUNT(*) AS Count
+  FROM InspectionTemplates;
+`);
+
+if ((templateCount?.Count ?? 0) === 0) {
+
+  console.log("🌱 Seeding Inspection Templates...");
+
+  await db.runAsync(
+    `
+    INSERT INTO InspectionTemplates
+    (
+      TemplateName,
+      Description,
+      IsDefault
+    )
+    VALUES (?, ?, ?)
+    `,
+    [
+      "Pole Inspection",
+      "Default inspection template",
+      1,
+    ]
+  );
+
+  console.log("✅ Inspection Template seeded.");
+}
+
   // ===========================
   // Seed Fields (Placeholder)
   // ===========================
@@ -146,11 +178,24 @@ for (const division of divisions) {
     ];
 
     for (let i = 0; i < sections.length; i++) {
+
       await db.runAsync(
-        `INSERT INTO InspectionSections (SectionName, DisplayOrder)
-         VALUES (?, ?)`,
-        [sections[i], i + 1]
+        `
+        INSERT INTO InspectionSections
+        (
+          TemplateID,
+          SectionName,
+          DisplayOrder
+        )
+        VALUES (?, ?, ?)
+        `,
+        [
+          1,
+          sections[i],
+          i + 1,
+        ]
       );
+
     }
   }
 // ===========================

@@ -1,3 +1,5 @@
+//frontend\app\index.tsx
+
 import React, { useCallback, useMemo, useState } from "react";
 import { StyleSheet, View, FlatList } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";

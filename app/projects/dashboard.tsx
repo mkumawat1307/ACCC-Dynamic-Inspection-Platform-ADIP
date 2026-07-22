@@ -17,7 +17,7 @@ import {
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
 import StatCard from "@/src/components/StatCard";
-
+import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
 export default function ProjectDashboard() {
   const { projectId } = useLocalSearchParams<{
     projectId: string;
@@ -227,37 +227,102 @@ return (
     </Card.Content>
     </Card>
 
+<DashboardActionCard
+    title="New Inspection"
+    subtitle="Start a new pole inspection"
+    icon="clipboard-plus"
+    onPress={() =>
+        router.push({
+            pathname: "/inspection/new",
+            params: {
+                projectId: project.ProjectID.toString(),
+            },
+        })
+    }
+/>
+
+<DashboardActionCard
+    title="Inspection List"
+    subtitle="View completed and draft inspections"
+    icon="clipboard-list"
+    onPress={() =>
+        router.push({
+            pathname: "/inspection",
+            params: {
+                projectId: project.ProjectID.toString(),
+            },
+        })
+    }
+/>
+
+<DashboardActionCard
+    title="Inspection Settings"
+    subtitle="Templates, Sections and Fields"
+    icon="cog"
+    onPress={() => router.push("/settings")}
+/>
+
+<DashboardActionCard
+    title="Reports"
+    subtitle="Generate inspection reports"
+    icon="file-chart"
+    onPress={() => router.push("/reports")}
+/>
+
+<DashboardActionCard
+    title="Export Project"
+    subtitle="Excel, PDF and Backup"
+    icon="database-export"
+    onPress={() => {}}
+/>
+
+<DashboardActionCard
+    title="Backup Project"
+    subtitle="Create offline backup"
+    icon="content-save-all"
+    onPress={() => {}}
+/>
+
 <Button
-  mode="contained"
-  icon="plus"
+  mode="outlined"
+  icon="cog"
   style={styles.button}
-  onPress={() =>
-    router.push({
-      pathname: "/inspection/new",
-      params: {
-        projectId: project.ProjectID.toString(),
-      },
-    })
-  }
+  onPress={() => router.push("/settings")}
 >
-  New Inspection
+  Inspection Settings
 </Button>
 
 <Button
   mode="outlined"
-  icon="format-list-bulleted"
+  icon="file-chart"
   style={styles.button}
-  onPress={() =>
-    router.push({
-      pathname: "/inspection",
-      params: {
-        projectId: project.ProjectID.toString(),
-      },
-    })
-  }
+  onPress={() => router.push("/reports")}
 >
-  Inspection List
+  Reports
 </Button>
+
+<Button
+  mode="outlined"
+  icon="microsoft-excel"
+  style={styles.button}
+  onPress={() => {
+    // TODO: Export Project
+  }}
+>
+  Export Project
+</Button>
+
+<Button
+  mode="outlined"
+  icon="database-export"
+  style={styles.button}
+  onPress={() => {
+    // TODO: Backup Project
+  }}
+>
+  Backup Project
+</Button>
+
     </ScrollView>
 
     <Portal>

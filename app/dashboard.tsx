@@ -1,3 +1,4 @@
+// frontend\app\dashboard.tsx
 import { View, Text } from "react-native";
 
 export default function Dashboard() {

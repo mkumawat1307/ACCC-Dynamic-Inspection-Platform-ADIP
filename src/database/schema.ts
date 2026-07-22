@@ -1,6 +1,7 @@
 // src/database/schema.ts
 
 import { getDatabase } from "./db";
+import { createInspectionTemplatesTable } from "./tables/inspection-templates.table";
 import { createDistrictsTable } from "./tables/districts.table";
 import { createBlocksTable } from "./tables/blocks.table";
 import { createProjectsTable } from "./tables/projects.table";
@@ -12,8 +13,7 @@ import { createInspectionValuesTable } from "./tables/inspection-values.table";
 import { createInspectionDevicesTable } from "./tables/inspection-devices.table";
 import { createInspectionPhotosTable } from "./tables/inspection-photos.table";
 import { createDivisionsTable } from "./tables/divisions.table";
-
-import { seedDatabase } from "./seed";
+//import { createInspectionAssetsTable } from "./tables/inspection-assets.table";
 
 
 export async function createSchema() {
@@ -24,7 +24,9 @@ export async function createSchema() {
   await db.execAsync(createDistrictsTable);
   await db.execAsync(createBlocksTable);
   await db.execAsync(createProjectsTable);
+  await db.execAsync(createInspectionTemplatesTable);
   await db.execAsync(createInspectionSectionsTable);
+  //await db.execAsync(createInspectionAssetsTable);
   await db.execAsync(createInspectionFieldsTable);
   await db.execAsync(createFieldOptionsTable);
   await db.execAsync(createInspectionsTable);

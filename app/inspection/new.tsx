@@ -23,12 +23,11 @@ import { ProjectRepository } from "@/src/database/repositories/ProjectRepository
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
-
+import DynamicSection from "@/src/components/inspection/DynamicSection";
 import {
   InspectionRepository,
   InspectionSection,
 } from "@/src/database/repositories/InspectionRepository";
-import GeneralInformation from "@/src/components/inspection/GeneralInformation";
 
 export default function NewInspectionScreen() {
   const router = useRouter();
@@ -272,9 +271,10 @@ return (
     >
       <Card.Content>
 
-        {section.SectionName === "General Information" && (
-          <GeneralInformation />
-        )}
+    <DynamicSection
+        sectionId={section.SectionID}
+        inspectionId={inspectionId!}
+    />
 
       </Card.Content>
     </List.Accordion>

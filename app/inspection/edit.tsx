@@ -1,3 +1,4 @@
+// frontend\app\inspection\edit.tsx
 import { View, Text } from "react-native";
 
 export default function EditInspectionScreen() {
