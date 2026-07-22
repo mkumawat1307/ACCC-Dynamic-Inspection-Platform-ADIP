@@ -1,5 +1,10 @@
 import React from "react";
-import { StyleSheet } from "react-native";
+import {
+  StyleSheet,
+  Alert,
+  Pressable,
+  View,
+} from "react-native";
 import { TextInput } from "react-native-paper";
 
 export interface FieldRendererProps {
@@ -9,6 +14,7 @@ export interface FieldRendererProps {
   value?: string;
   editable?: boolean;
   onChange?: (value: string) => void;
+  showLockedMessage?: boolean;
 }
 
 export default function FieldRenderer({
@@ -17,37 +23,49 @@ export default function FieldRenderer({
   required = false,
   value = "",
   editable = true,
+  showLockedMessage = false,
   onChange,
 }: FieldRendererProps) {
-  const commonProps = {
-    mode: "outlined" as const,
-    label: required ? `${fieldName} *` : fieldName,
-    value,
-    editable,
-    onChangeText: onChange,
-    style: styles.input,
-    outlineStyle: styles.outline,
-    contentStyle: styles.content,
-    dense: true,
-  };
 
-  switch (fieldType) {
-    case "NUMBER":
-      return (
-        <TextInput
-          {...commonProps}
-          keyboardType="numeric"
-        />
-      );
+  const input = (
+    <TextInput
+      mode="outlined"
+      label={required ? `${fieldName} *` : fieldName}
+      value={value}
+      editable={editable}
+      onChangeText={onChange}
+      style={styles.input}
+      outlineStyle={styles.outline}
+      contentStyle={styles.content}
+      dense
+      keyboardType={
+        fieldType === "NUMBER"
+          ? "numeric"
+          : "default"
+      }
+    />
+  );
 
-    case "TEXT":
-    default:
-      return (
-        <TextInput
-          {...commonProps}
-        />
-      );
-  }
+  // Editable field
+if (editable || !showLockedMessage) {
+  return input;
+}
+
+  // Locked field
+  return (
+    <Pressable
+      onPress={() =>
+        Alert.alert(
+          "Pole ID Required",
+          "Please enter Pole ID first before filling the inspection details."
+        )
+      }
+    >
+      <View pointerEvents="none">
+        {input}
+      </View>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({

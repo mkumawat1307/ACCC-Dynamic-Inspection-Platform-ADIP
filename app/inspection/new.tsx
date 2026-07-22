@@ -4,7 +4,13 @@ import React, {
   useState
 } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ScrollView, StyleSheet, Alert, BackHandler } from "react-native";
+import {
+  ScrollView,
+  StyleSheet,
+  Alert,
+  BackHandler,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Card,
@@ -175,6 +181,59 @@ const handleSave = async () => {
   );
 };
 
+const handleCancel = () => {
+
+  Alert.alert(
+    "Cancel Inspection",
+    "Are you sure you want to cancel this inspection?",
+    [
+      {
+        text: "No",
+        style: "cancel",
+      },
+      {
+        text: "Yes",
+        style: "destructive",
+        onPress: async () => {
+
+          try {
+
+            // Only delete if this is a NEW inspection
+            if (!routeInspectionId && inspectionId) {
+
+              await InspectionRepository.deleteInspection(
+                inspectionId
+              );
+
+              console.log(
+                "Draft inspection deleted:",
+                inspectionId
+              );
+            }
+
+            router.back();
+
+          } catch (error) {
+
+            console.error(
+              "Cancel Error:",
+              error
+            );
+
+            Alert.alert(
+              "Error",
+              "Unable to cancel inspection."
+            );
+
+          }
+
+        },
+      },
+    ]
+  );
+
+};
+
 return (
   <SafeAreaView
     style={styles.safeArea}
@@ -221,17 +280,41 @@ return (
     </List.Accordion>
   </Card>
 ))}
-<Button
-  mode="contained"
-  icon="content-save"
-  onPress={handleSave}
+
+<View
   style={{
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 20,
     marginBottom: 30,
   }}
 >
-  Save
-</Button>
+
+  <Button
+    mode="outlined"
+    icon="close"
+    onPress={handleCancel}
+    style={{
+      flex: 1,
+      marginRight: 8,
+    }}
+  >
+    Cancel
+  </Button>
+
+  <Button
+    mode="contained"
+    icon="content-save"
+    onPress={handleSave}
+    style={{
+      flex: 1,
+      marginLeft: 8,
+    }}
+  >
+    Save
+  </Button>
+
+</View>
     </ScrollView>
   </SafeAreaView>
 );

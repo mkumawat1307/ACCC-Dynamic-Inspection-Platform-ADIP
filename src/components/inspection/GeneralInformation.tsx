@@ -2,7 +2,11 @@
 
 import React, { useEffect, useState, useRef, useImperativeHandle, forwardRef } from "react";
 import { View, Alert } from "react-native";
-import { Button } from "react-native-paper";
+import {
+  Button,
+  ActivityIndicator,
+  Text,
+} from "react-native-paper";
 import { useRouter } from "expo-router";
 import FieldRenderer from "./FieldRenderer";
 import { useInspection } from "@/src/context/InspectionContext";
@@ -24,7 +28,10 @@ const {
 const [fields, setFields] = useState<InspectionField[]>([]);
 const router = useRouter();
 const [values, setValues] = useState<Record<string, string>>({});
+const [formUnlocked, setFormUnlocked] = useState(false);
+const [checkingPoleId, setCheckingPoleId] = useState(false);
 const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 useEffect(() => {
 
@@ -46,12 +53,19 @@ useEffect(() => {
 }, [inspectionId]);
 
 useEffect(() => {
-  return () => {
-    if (saveTimeout.current) {
-      clearTimeout(saveTimeout.current);
-      saveTimeout.current = null;
-    }
-  };
+return () => {
+
+  if (saveTimeout.current) {
+    clearTimeout(saveTimeout.current);
+    saveTimeout.current = null;
+  }
+
+  if (poleCheckTimeout.current) {
+    clearTimeout(poleCheckTimeout.current);
+    poleCheckTimeout.current = null;
+  }
+
+};
 }, [inspectionId]);
 
 useEffect(() => {
@@ -76,6 +90,9 @@ async function loadInspectionValues(
       await InspectionRepository.getInspectionValues(
         inspectionId
       );
+    if ((data.PoleID ?? "").trim() !== "") {
+      setFormUnlocked(true);
+    }
 
     const emptyValues: Record<string, string> = {};
 
@@ -159,34 +176,41 @@ console.log("================================");
     console.error("GPS Save Error:", error);
   }
 }
-  function isReadOnly(fieldKey: string) {
-    return (
-      fieldKey === "InspectionDate" ||
-      fieldKey === "Division" ||
-      fieldKey === "District"
-    );
-  }
+function isReadOnly(fieldKey: string) {
+  return (
+    fieldKey === "InspectionDate" ||
+    fieldKey === "Division" ||
+    fieldKey === "District" ||
+    fieldKey === "Latitude" ||
+    fieldKey === "Longitude"
+  );
+}
+
 useImperativeHandle(ref, () => ({
   getPoleId() {
     return values.PoleID?.trim() ?? "";
   },
 }));
 return (
-  <View>
-    {fields.map((field) => (
-      <React.Fragment key={field.FieldID}>
+  <View>  
+
+{fields.map((field) => (
+  <React.Fragment key={field.FieldID}>
         <FieldRenderer
           fieldName={field.FieldName}
           fieldType={field.FieldType}
           required={field.IsRequired === 1}
           editable={
-            ![
-              "InspectionDate",
-              "Division",
-              "District",
-              "Latitude",
-              "Longitude",
-            ].includes(field.FieldKey)
+            field.FieldKey === "PoleID"
+              ? true
+              : isReadOnly(field.FieldKey)
+                ? false
+                : formUnlocked
+          }
+          showLockedMessage={
+            !formUnlocked &&
+            !isReadOnly(field.FieldKey) &&
+            field.FieldKey !== "PoleID"
           }
           value={values[field.FieldKey] ?? ""}
             onChange={async (text) => {
@@ -196,65 +220,87 @@ return (
                 }));
 
 if (field.FieldKey === "PoleID") {
+
+  setFormUnlocked(text.trim().length > 0);
   setPoleId(text);
+
+  if (poleCheckTimeout.current) {
+    clearTimeout(poleCheckTimeout.current);
+  }
 
   if (text.trim().length > 0) {
 
-    const existing =
-      await InspectionRepository.getInspectionByPoleId(
-        text.trim()
-      );
+    poleCheckTimeout.current = setTimeout(async () => {
 
-    if (
-      existing &&
-      existing.InspectionID !== inspectionId
-    ) {
+      try {
 
-      Alert.alert(
-        "Inspection Already Exists",
-        `Pole ID ${text} already exists.`,
-        [
-{
-  text: "Edit Existing",
-  onPress: async () => {
+        setCheckingPoleId(true);
 
-    // Stop any pending autosave
-    if (saveTimeout.current) {
-      clearTimeout(saveTimeout.current);
-      saveTimeout.current = null;
-    }
+        const existing =
+          await InspectionRepository.getInspectionByPoleId(
+            text.trim()
+          );
 
-    // Clear current form immediately
-    setValues({});
+        setCheckingPoleId(false);
 
-    // Switch inspection
-    setInspectionId(existing.InspectionID);
+        if (
+          existing &&
+          existing.InspectionID !== inspectionId
+        ) {
 
-    router.replace({
-      pathname: "/inspection/new",
-      params: {
-        projectId: project!.ProjectID.toString(),
-        inspectionId: existing.InspectionID.toString(),
-      },
-    });
-  },
-},
-          {
-            text: "Create New",
-            onPress: () => {
-              console.log(
-                "Create new inspection"
-              );
-            },
-          },
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-        ]
-      );
-    }
+          Alert.alert(
+            "Inspection Already Exists",
+            `Pole ID ${text} already exists.`,
+            [
+              {
+                text: "Edit Existing",
+                onPress: async () => {
+
+                  if (saveTimeout.current) {
+                    clearTimeout(saveTimeout.current);
+                    saveTimeout.current = null;
+                  }
+
+                  setValues({});
+
+                  setInspectionId(existing.InspectionID);
+
+                  router.replace({
+                    pathname: "/inspection/new",
+                    params: {
+                      projectId: project!.ProjectID.toString(),
+                      inspectionId:
+                        existing.InspectionID.toString(),
+                    },
+                  });
+
+                },
+              },
+              {
+                text: "Create New",
+              },
+              {
+                text: "Cancel",
+                style: "cancel",
+              },
+            ]
+          );
+
+        }
+
+      }
+      catch (error) {
+
+        setCheckingPoleId(false);
+
+        console.error(error);
+
+      }
+
+    }, 300);
+
   }
+
 }
 
         if (!inspectionId) return;
@@ -297,7 +343,28 @@ if (field.FieldKey === "PoleID") {
         }, 500);
         }}
         />
+{field.FieldKey === "PoleID" && checkingPoleId && (
+  <View
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: -10,
+      marginBottom: 16,
+      paddingLeft: 8,
+    }}
+  >
+    <ActivityIndicator size="small" />
 
+    <Text
+      style={{
+        marginLeft: 8,
+        fontSize: 13,
+      }}
+    >
+      Checking Pole ID...
+    </Text>
+  </View>
+)}
         {field.FieldKey === "Longitude" && (
           <Button
             mode="contained"
