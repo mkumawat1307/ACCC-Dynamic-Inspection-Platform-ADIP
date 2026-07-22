@@ -41,7 +41,7 @@ Inspection List
 
 I. General Information
 
-• Date: Auto Get Date <mandatory>
+• Date: Auto Get Date *mandatory
 • Division: <mandatory>
 • District: <mandatory>
 • Block: 
