@@ -1,3 +1,4 @@
+//frontend\src\database\seeds\inspection-fields.seed.ts
 export interface InspectionFieldSeed {
   SectionID: number;
   FieldName: string;
@@ -67,7 +68,7 @@ export const inspectionFields: InspectionFieldSeed[] = [
     FieldKey: "Latitude",
     FieldType: "TEXT",
     DisplayOrder: 7,
-    IsRequired: 0,
+    IsRequired: 1,
   },
   {
     SectionID: 1,
@@ -75,6 +76,6 @@ export const inspectionFields: InspectionFieldSeed[] = [
     FieldKey: "Longitude",
     FieldType: "TEXT",
     DisplayOrder: 8,
-    IsRequired: 0,
+    IsRequired: 1,
   },
 ];

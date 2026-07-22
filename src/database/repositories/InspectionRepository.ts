@@ -32,7 +32,7 @@ export interface InspectionField {
 }
 
 export class InspectionRepository {
-  static async getSections(): Promise<InspectionSection[]> {
+static async getSections(): Promise<InspectionSection[]> {
     const db = await getDatabase();
 
     return await db.getAllAsync<InspectionSection>(`
@@ -45,6 +45,7 @@ export class InspectionRepository {
       ORDER BY DisplayOrder;
     `);
   }
+
 static async getFieldsBySection(
   sectionId: number
 ): Promise<InspectionField[]> {
@@ -88,8 +89,12 @@ static async createInspection(
       "Draft",
     ]
   );
+console.log(
+  "NEW INSPECTION CREATED:",
+  result.lastInsertRowId
+);
 
-  return result.lastInsertRowId as number;
+return result.lastInsertRowId as number;
 }
 
 static async saveFieldValue(
@@ -179,26 +184,143 @@ static async getInspectionValues(
 
   return values;
 }
-static async deleteInspection(
+
+static async validateInspection(
   inspectionId: number
+): Promise<{
+  valid: boolean;
+  missingFields: string[];
+}> {
+  const db = await getDatabase();
+
+  const requiredFields = await db.getAllAsync<{
+    FieldKey: string;
+    FieldName: string;
+    DefaultValue: string | null;
+  }>(
+    `
+    SELECT
+      FieldKey,
+      FieldName,
+      DefaultValue
+    FROM InspectionFields
+    WHERE IsRequired = 1
+      AND IsActive = 1
+      AND IsVisible = 1
+    `
+  );
+
+  const values = await this.getInspectionValues(inspectionId);
+
+const missingFields: string[] = [];
+
+const autoFilledFields = [
+  "InspectionDate",
+  "Division",
+  "District",
+];
+
+for (const field of requiredFields) {
+
+  // Skip fields filled automatically by the app
+  if (autoFilledFields.includes(field.FieldKey)) {
+    continue;
+  }
+
+  const value = values[field.FieldKey];
+
+  if (!value || value.trim() === "") {
+    missingFields.push(field.FieldName);
+  }
+}
+
+return {
+  valid: missingFields.length === 0,
+  missingFields,
+};
+}
+static async updateInspectionStatus(
+  inspectionId: number,
+  status: string
 ) {
   const db = await getDatabase();
 
   await db.runAsync(
     `
-    DELETE FROM InspectionValues
+    UPDATE Inspections
+    SET
+      Status = ?,
+      UpdatedAt = CURRENT_TIMESTAMP
     WHERE InspectionID = ?
     `,
-    [inspectionId]
+    [status, inspectionId]
   );
+}
 
-  await db.runAsync(
+static async getInspectionByPoleId(
+  poleId: string
+): Promise<{
+  InspectionID: number;
+  PoleID: string;
+  Status: string;
+} | null> {
+  const db = await getDatabase();
+
+  return await db.getFirstAsync(
     `
-    DELETE FROM Inspections
-    WHERE InspectionID = ?
+    SELECT
+      InspectionID,
+      PoleID,
+      Status
+    FROM Inspections
+    WHERE LOWER(TRIM(PoleID)) = LOWER(TRIM(?))
+    ORDER BY InspectionID DESC
+    LIMIT 1
     `,
-    [inspectionId]
+    [poleId]
   );
+}
+
+static async deleteInspection(
+  inspectionId: number
+) {
+  const db = await getDatabase();
+
+  await db.withTransactionAsync(async () => {
+
+    await db.runAsync(
+      `
+      DELETE FROM InspectionPhotos
+      WHERE InspectionID = ?
+      `,
+      [inspectionId]
+    );
+
+    await db.runAsync(
+      `
+      DELETE FROM InspectionDevices
+      WHERE InspectionID = ?
+      `,
+      [inspectionId]
+    );
+
+    await db.runAsync(
+      `
+      DELETE FROM InspectionValues
+      WHERE InspectionID = ?
+      `,
+      [inspectionId]
+    );
+
+    await db.runAsync(
+      `
+      DELETE FROM Inspections
+      WHERE InspectionID = ?
+      `,
+      [inspectionId]
+    );
+
+  });
 }
 
 static async deleteMultipleInspections(

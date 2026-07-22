@@ -1,13 +1,18 @@
 //frontend\app\inspection\new.tsx
 import React, {
   useEffect,
-  useState,
-  useCallback,
+  useState
 } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Alert, BackHandler } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Card, Text, List } from "react-native-paper";
+import {
+  Card,
+  Text,
+  List,
+  Appbar,
+  Button,
+} from "react-native-paper";
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
@@ -20,24 +25,65 @@ import {
 import GeneralInformation from "@/src/components/inspection/GeneralInformation";
 
 export default function NewInspectionScreen() {
-  const { projectId } = useLocalSearchParams<{
-  projectId: string;
-}>();
+  const router = useRouter();
+const { projectId, inspectionId: routeInspectionId } =
+  useLocalSearchParams<{
+    projectId: string;
+    inspectionId?: string;
+  }>();
 
 const {
   setProject,
   setInspectionDate,
   setInspectionId,
-  poleId,
+  inspectionId,
 } = useInspection();
 
 const [project, setProjectState] = useState<Project | null>(null);
 const [sections, setSections] = useState<InspectionSection[]>([]);
 const [expandedSections, setExpandedSections] = useState<number[]>([1]);
 
+const validateBeforeExit = async (): Promise<boolean> => {
+  if (!inspectionId) return true;
+
+  const result =
+    await InspectionRepository.validateInspection(
+      inspectionId
+    );
+
+  if (!result.valid) {
+    Alert.alert(
+      "Inspection Incomplete",
+      "Please complete the following:\n\n• " +
+        result.missingFields.join("\n• ")
+    );
+    return false;
+  }
+
+  return true;
+};
+
 useEffect(() => {
   initialize();
 }, []);
+
+useEffect(() => {
+  const subscription = BackHandler.addEventListener(
+    "hardwareBackPress",
+    () => {
+      validateBeforeExit().then((ok) => {
+        if (ok) {
+          router.back();
+        }
+      });
+
+      return true;
+    }
+  );
+
+  return () => subscription.remove();
+}, [inspectionId, router]);
+
 async function initialize() {
   await loadProject();
   await loadSections();
@@ -59,45 +105,85 @@ const inspectionDate = getCurrentInspectionDate();
 
 setInspectionDate(inspectionDate);
 
-const inspectionId =
-  await InspectionRepository.createInspection(
-    data.ProjectID,
-    data.DistrictID,
-    inspectionDate
+if (routeInspectionId) {
+
+  // Editing existing inspection
+  setInspectionId(Number(routeInspectionId));
+
+} else {
+
+  // Creating new inspection
+  const newInspectionId =
+    await InspectionRepository.createInspection(
+      data.ProjectID,
+      data.DistrictID,
+      inspectionDate
+    );
+
+  console.log(
+    "NEW INSPECTION CREATED:",
+    newInspectionId
   );
 
-setInspectionId(inspectionId);
+  setInspectionId(newInspectionId);
+}
 }
   async function loadSections() {
     const data = await InspectionRepository.getSections();
     setSections(data);
   }
-useEffect(() => {
-  const backAction = () => {
-    if (!poleId.trim()) {
-      Alert.alert(
-        "Pole ID Required",
-        "Please enter Pole ID before leaving this inspection."
-      );
-      return true;
-    }
 
-    return false;
-  };
+const handleBack = async () => {
+  const ok = await validateBeforeExit();
 
-  const subscription = BackHandler.addEventListener(
-    "hardwareBackPress",
-    backAction
+  if (ok) {
+    router.back();
+  }
+};
+
+const handleSave = async () => {
+  if (!inspectionId) return;
+
+  const result =
+    await InspectionRepository.validateInspection(
+      inspectionId
+    );
+
+  if (!result.valid) {
+    Alert.alert(
+      "Inspection Incomplete",
+      "Please complete the following:\n\n• " +
+        result.missingFields.join("\n• ")
+    );
+    return;
+  }
+
+  await InspectionRepository.updateInspectionStatus(
+    inspectionId,
+    "Incomplete"
   );
 
-  return () => subscription.remove();
-}, [poleId]);
+  Alert.alert(
+    "Success",
+    "Inspection saved successfully.",
+    [
+      {
+        text: "OK",
+        onPress: () => router.back(),
+      },
+    ]
+  );
+};
 
 return (
   <SafeAreaView
     style={styles.safeArea}
     edges={["top", "bottom"]}
   >
+  <Appbar.Header>
+    <Appbar.BackAction onPress={handleBack} />
+    <Appbar.Content title="New Inspection" />
+  </Appbar.Header>
     <ScrollView
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
@@ -135,9 +221,21 @@ return (
     </List.Accordion>
   </Card>
 ))}
+<Button
+  mode="contained"
+  icon="content-save"
+  onPress={handleSave}
+  style={{
+    marginTop: 20,
+    marginBottom: 30,
+  }}
+>
+  Save
+</Button>
     </ScrollView>
   </SafeAreaView>
 );
+
 }
 
 const styles = StyleSheet.create({
