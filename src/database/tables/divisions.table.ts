@@ -1,3 +1,4 @@
+//frontend\src\database\tables\divisions.table.ts
 export const createDivisionsTable = `
 CREATE TABLE IF NOT EXISTS Divisions (
 

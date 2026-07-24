@@ -4,7 +4,7 @@
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/abhay-logo.png",
     "scheme": "frontend",
     "userInterfaceStyle": "light",
     "ios": {
@@ -20,7 +20,7 @@
     "android": {
       "edgeToEdgeEnabled": false,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/abhay-logo.png",
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.emergent.poledataexcel.p9sjtu",
@@ -34,14 +34,14 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/abhay-logo.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-image.png",
+          "image": "./assets/images/abhay-logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF"

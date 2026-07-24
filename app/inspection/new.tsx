@@ -1,7 +1,7 @@
 //frontend\app\inspection\new.tsx
 import React, {
   useEffect,
-  useState
+  useState,
 } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -20,10 +20,12 @@ import {
   Button,
 } from "react-native-paper";
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
+import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
-import DynamicSection from "@/src/components/inspection/DynamicSection";
+import SectionRenderer from "@/src/components/inspection/SectionRenderer";
+import GeneralInformation from "@/src/components/inspection/GeneralInformation";
 import {
   InspectionRepository,
   InspectionSection,
@@ -61,6 +63,19 @@ const validateBeforeExit = async (): Promise<boolean> => {
       "Inspection Incomplete",
       "Please complete the following:\n\n• " +
         result.missingFields.join("\n• ")
+    );
+    return false;
+  }
+
+  const photos =
+    await PhotoRepository.getByInspection(
+      inspectionId
+    );
+
+  if (photos.length < 1) {
+    Alert.alert(
+      "Inspection Incomplete",
+      "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section."
     );
     return false;
   }
@@ -159,6 +174,19 @@ const handleSave = async () => {
       "Inspection Incomplete",
       "Please complete the following:\n\n• " +
         result.missingFields.join("\n• ")
+    );
+    return;
+  }
+
+  const photos =
+    await PhotoRepository.getByInspection(
+      inspectionId
+    );
+
+  if (photos.length < 1) {
+    Alert.alert(
+      "Inspection Incomplete",
+      "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section."
     );
     return;
   }
@@ -270,12 +298,15 @@ return (
       titleStyle={styles.sectionTitle}
     >
       <Card.Content>
-
-    <DynamicSection
+    {section.SectionID === 1 ? (
+      <GeneralInformation />
+    ) : (
+      <SectionRenderer
         sectionId={section.SectionID}
         inspectionId={inspectionId!}
-    />
-
+        sectionKey={section.SectionKey}
+      />
+    )}
       </Card.Content>
     </List.Accordion>
   </Card>

@@ -1,3 +1,4 @@
+//frontend\src\database\repositories\InspectionListRepository.ts
 import { getDatabase } from "../db";
 
 export interface InspectionListItem {

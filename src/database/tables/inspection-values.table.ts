@@ -1,3 +1,4 @@
+// frontend\src\database\tables\divisions.table.ts
 export const createInspectionValuesTable = `
 CREATE TABLE IF NOT EXISTS InspectionValues (
 
@@ -5,17 +6,20 @@ CREATE TABLE IF NOT EXISTS InspectionValues (
 
     InspectionID INTEGER NOT NULL,
 
-    FieldKey TEXT NOT NULL,
+    FieldID INTEGER NOT NULL,
 
-    Value TEXT,
+    FieldValue TEXT,
 
     CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
     UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE(InspectionID, FieldKey),
-
     FOREIGN KEY (InspectionID)
         REFERENCES Inspections(InspectionID)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (FieldID)
+        REFERENCES InspectionFields(FieldID)
+        ON DELETE CASCADE
 );
 `;

@@ -1,3 +1,4 @@
+//frontend\src\database\tables\projects.table.ts
 export const createProjectsTable = `
 CREATE TABLE IF NOT EXISTS Projects (
 

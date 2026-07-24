@@ -1,3 +1,4 @@
+//frontend\src\database\repositories\DashboardRepository.ts
 import { getDatabase } from "../db";
 
 export interface DashboardStats {

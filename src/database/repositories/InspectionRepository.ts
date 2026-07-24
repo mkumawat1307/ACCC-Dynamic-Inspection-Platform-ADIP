@@ -5,6 +5,7 @@ import { getDatabase } from "../db";
 export interface InspectionSection {
   SectionID: number;
   SectionName: string;
+  SectionKey: string;
   DisplayOrder: number;
 }
 
@@ -39,6 +40,7 @@ static async getSections(): Promise<InspectionSection[]> {
       SELECT
         SectionID,
         SectionName,
+        SectionKey,
         DisplayOrder
       FROM InspectionSections
       WHERE IsActive = 1
@@ -99,7 +101,7 @@ return result.lastInsertRowId as number;
 
 static async saveFieldValue(
   inspectionId: number,
-  fieldKey: string,
+  fieldId: number,
   value: string
 ) {
   const db = await getDatabase();
@@ -109,9 +111,9 @@ static async saveFieldValue(
     SELECT ValueID
     FROM InspectionValues
     WHERE InspectionID = ?
-      AND FieldKey = ?
+      AND FieldID = ?
     `,
-    [inspectionId, fieldKey]
+    [inspectionId, fieldId]
   );
 
   if (existing) {
@@ -119,7 +121,7 @@ static async saveFieldValue(
       `
       UPDATE InspectionValues
       SET
-        Value = ?,
+        FieldValue = ?,
         UpdatedAt = CURRENT_TIMESTAMP
       WHERE ValueID = ?
       `,
@@ -131,12 +133,12 @@ static async saveFieldValue(
       INSERT INTO InspectionValues
       (
         InspectionID,
-        FieldKey,
-        Value
+        FieldID,
+        FieldValue
       )
       VALUES (?, ?, ?)
       `,
-      [inspectionId, fieldKey, value]
+      [inspectionId, fieldId, value]
     );
   }
 }
@@ -166,12 +168,13 @@ static async getInspectionValues(
 
   const rows = await db.getAllAsync<{
     FieldKey: string;
-    Value: string;
+    FieldValue: string;
   }>(
     `
-    SELECT FieldKey, Value
-    FROM InspectionValues
-    WHERE InspectionID = ?
+    SELECT f.FieldKey, v.FieldValue
+    FROM InspectionValues v
+    JOIN InspectionFields f ON v.FieldID = f.FieldID
+    WHERE v.InspectionID = ?
     `,
     [inspectionId]
   );
@@ -179,7 +182,7 @@ static async getInspectionValues(
   const values: Record<string, string> = {};
 
   rows.forEach((row) => {
-    values[row.FieldKey] = row.Value ?? "";
+    values[row.FieldKey] = row.FieldValue ?? "";
   });
 
   return values;
@@ -215,9 +218,9 @@ static async validateInspection(
 const missingFields: string[] = [];
 
 const autoFilledFields = [
-  "InspectionDate",
-  "Division",
-  "District",
+  "date",
+  "division",
+  "district",
 ];
 
 for (const field of requiredFields) {
@@ -281,6 +284,40 @@ static async getInspectionByPoleId(
   );
 }
 
+static async getInspectionPoleId(
+  inspectionId: number
+): Promise<string> {
+  const db = await getDatabase();
+
+  const row = await db.getFirstAsync<{ PoleID: string }>(
+    `
+    SELECT PoleID
+    FROM Inspections
+    WHERE InspectionID = ?
+    `,
+    [inspectionId]
+  );
+
+  return row?.PoleID ?? "";
+}
+
+static async getInspectionProjectId(
+  inspectionId: number
+): Promise<number | null> {
+  const db = await getDatabase();
+
+  const row = await db.getFirstAsync<{ ProjectID: number }>(
+    `
+    SELECT ProjectID
+    FROM Inspections
+    WHERE InspectionID = ?
+    `,
+    [inspectionId]
+  );
+
+  return row?.ProjectID ?? null;
+}
+
 static async deleteInspection(
   inspectionId: number
 ) {
@@ -290,7 +327,7 @@ static async deleteInspection(
 
     await db.runAsync(
       `
-      DELETE FROM InspectionPhotos
+      DELETE FROM Photos
       WHERE InspectionID = ?
       `,
       [inspectionId]
@@ -298,7 +335,15 @@ static async deleteInspection(
 
     await db.runAsync(
       `
-      DELETE FROM InspectionDevices
+      DELETE FROM Cameras
+      WHERE InspectionID = ?
+      `,
+      [inspectionId]
+    );
+
+    await db.runAsync(
+      `
+      DELETE FROM Switches
       WHERE InspectionID = ?
       `,
       [inspectionId]

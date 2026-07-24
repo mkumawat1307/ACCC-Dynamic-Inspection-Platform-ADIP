@@ -10,225 +10,222 @@ Unlike traditional inspection applications, this project is built as a dynamic i
 
 ---
 
-# Key Features
+## Key Features
 
-- Offline First
-- SQLite Database
-- Automatic Save
-- Duplicate Pole Detection
-- GPS Integration
-- Dynamic Inspection Forms
-- Dynamic Asset Expansion
-- Unlimited Photos
-- Automatic Photo Naming
-- Automatic Watermark
-- PDF Report Generation (Planned)
-- Excel Export (Planned)
+- **Offline First** — Works without internet, all data stored locally
+- **SQLite Database** — 17+ tables with seed-based template engine
+- **Automatic Save** — Debounced 500ms auto-save on every field change
+- **Duplicate Pole Detection** — Checks existing inspections before creating
+- **GPS Integration** — Mandatory GPS for photo capture, manual button in General Info
+- **Dynamic Inspection Forms** — 10 configurable sections with 42+ fields
+- **Dynamic Asset Expansion** — Camera/Switch count drives dynamic row rendering
+- **Unlimited Photos** — Camera capture with GPS stamp and green watermark
+- **Automatic Photo Naming** — District_Block_PoleId_Date_Time format
+- **Green Watermark Overlay** — Pole ID, district, block, GPS, timestamp on every photo
+- **Gallery Save** — Photos automatically saved to device gallery
+- **Form Locking** — Sections locked until Pole ID entered
+- **PDF Report Generation** (Planned)
+- **Excel Export** (Planned)
 
 ---
 
-# Current Workflow
+## Technology Stack
 
-Project
+| Layer | Technology |
+|-------|-----------|
+| Framework | React Native (Expo) |
+| Language | TypeScript |
+| Navigation | Expo Router |
+| UI Components | React Native Paper, react-native-element-dropdown |
+| Camera | expo-image-picker |
+| Location | expo-location |
+| File Storage | expo-file-system |
+| Gallery | expo-media-library |
+| Database | SQLite (expo-sqlite) |
+| Architecture | Repository Pattern, Context API |
 
-↓
+---
 
-Inspection List
+## Inspection Sections
 
-↓
+| # | Section | Fields | Required |
+|---|---------|--------|----------|
+| I | General Information | 7 (Date, Division, District, Block, Pole ID, Location, GPS) | Date, Division, District, Pole ID, GPS |
+| II | Pole Structure Details | 4 (Foundation, Availability, SI, Status) | Foundation, Availability |
+| III | Junction Box & Cabling | 4 (JB Status, Power Cable, Cable Status, Cable Length) | JB Status |
+| IV | Earthing Details | 4 (Wire, Chamber, Cover, Voltage) | — |
+| V | Metering Information | 4 (Box Status, Meter Status, Power Status, Serial) | — |
+| VI | Connectivity Information | 1 (Connectivity Type) | — |
+| VII | Camera Information | 1 + N dynamic rows (Count, Type, Status, Make, Model, IP, Serial, SI, SD) | Count, Type, Status |
+| VIII | Switch Information | 1 + N dynamic rows (Count, Type, Status, Make, Model, IP, Serial, SI) | Count |
+| IX | Categorization & Remarks | 2 (Category, Remarks) | — |
+| X | Photos | Unlimited photos | Min 1 photo |
 
----------------Pole Inspection Report-------------
+---
 
-I. General Information
+## Camera Options
 
-• Date: Auto Get Date <mandatory>
-• Division: <mandatory>
-• District: <mandatory>
-• Block: 
-• Pole ID: <Mandatory>
-• Location Address:
-• Lat/Long: <Mandatory>
-Add GPS Butten Here
+| Field | Options |
+|-------|---------|
+| Type | Bullet, Box, PTZ |
+| Status | VMS, Local, Non-Live, In Stock, Dismantled, Not Verified |
+| Make | Sparsh, Prama, Hikvision, CP Plus, Secura |
+| SI | Technosys (LSY), TCIL (LSY), TCIL (RC), TCIL (Smart City), TASL (Technosys) |
+| SD Card Capacity | 64 GB, 128 GB, 256 GB, Not Verified |
+| SD Card Status | Working, Not Working, Not Verified |
 
-II. Pole Structure Details
+## Switch Options
 
-• Foundation Condition: Acceptable / Minor Damage / Major Damage / Not Visible <Mandatory>
-• Pole Availability: YES / NO <Mandatory>
-• Pole SI: Technosys (LSY)/ TCIL (LSY)/ TCIL (RC)/ TCIL (Smart City)/ TASL (Technosys) 
-• Pole Status: VMS / Local / In Stock / Dismantled / Non-Live / Not verified 
+| Field | Options |
+|-------|---------|
+| Type | 4-Port, 8-Port |
+| Status | VMS, Local, Non-Live, In Stock, Dismantled, Not Verified |
+| Make | D-Link, Cisco, Allied, Tejas |
+| SI | Technosys (LSY), TCIL (LSY), TCIL (RC), TCIL (Smart City), TASL (Technosys) |
 
-III. Junction Box and Cabling
+---
 
-• Junction Box Status: Installed / Not Installed / Damage <Mandatory>
-• Power Cable: Yes / No / Not Verified
-• Power Cable Status: Overhead / Underground / on Ground / Not Verified
-• Power Cable Length:
+## Current Workflow
 
-IV. Earthing Details
-
-• Earthing Wire: Installed / Not Installed / Broken / Not Connected / Not visible / Not verified 
-• Earthing Chamber: Installed / Not Installed / Damage / Not visible / Not verified 
-• Earthing Cover: Installed / Not Installed / Damage / Not visible / Not verified
-• Earthing Voltage: 
-
-V. Metering Information
-• Meter Box Status: Installed / Not Installed / Damage
-• Meter Status: Installed / Not Installed 
-• Meter Power Status: Powered / Non-Powered 
-• Meter Serial Number:
-
-VI. Connectivity Information
-
-• Connectivity Type: Fiber / RF / Local / No Connectivity 
-
-VII. Camera information
-
-• Camera (Count): 0 / 1 / 2 / 3 / 4 /------- <Mandatory>
-• Camera (Types): Bullet / Box /  PTZ <Mandatory>
-• Camera (Status): VMS / Local / Non-Live / In Stock / Dismantled /Not verified
-• Camera (Make): Sparsh / Prama / Hikvision / CP Plus / Secura
-• Camera (Model):
-• Camera (IP):
-• Camera (Serial Number):
-• Camera (SI): Technosys (LSY)/ TCIL (LSY)/ TCIL (RC)/ TCIL (Smart City)/ TASL (Technosys) 
-• Camera (Sd Card Capacity): 64 GB/ 128 GB/ 256 GB / Not Verified
-• Camera (Sd Card Capacity): Working / Not Working / Not Verified 
-
-VIII. Switch Information
-
-• Switch (Count): 0 / 1 / 2 /------
-• Switch (Type): 4-Port / 8-Port
-• Switch (Status): VMS / Local / Non-Live / In Stock / Dismantled /Not verified
-• Switch (Make): D-Link / Cisco / Allied / Tejas
-• Switch (Model):
-• Switch (IP):
-• Switch (Serial Number):
-• Switch (SI): Technosys (LSY)/ TCIL (LSY)/ TCIL (RC)/ TCIL (Smart City)/ TASL (Technosys) 
-
-IX. Categorization and Remarks
-
-• Pole Category: AMC / LSY / Judicial 
-• Remarks:
-
-X. 📷 Photos <Mandatory min 1 Photo>
-Capture Photo
-Photo Gallery
-Automatic Photo Stamp
-
-cancel and  Save Button
-
-Complete Inspection
-
-# current UI
-
-App
-
-↓
-
-Projects
-
-↓
-
-Create Project
-
-↓
+```
+App -> Projects -> Create Project -> Project Dashboard
 
 Project Dashboard
-
-├── Dashboard
-├── Inspection
-├── Reports
+├── Dashboard (stats)
+├── Inspection (list/create/edit)
+├── Reports (planned)
 ├── Settings
-└── Inspection Settings
+└── Inspection Settings (admin)
+```
 
+### Inspection Flow
 
-#  Admin Screen
-Settings
-
-↓
-
-Inspection Template
-
-↓
-
-Sections
-
-↓
-
-Assets
-
-↓
-
-Fields
-
-↓
-
-Dropdown Options
-Everything editable.
----
-
-# Technology Stack
-
-Frontend
-
-- React Native
-- Expo
-- TypeScript
-- Expo Router
-- React Native Paper
-
-Database
-
-- SQLite
-
-Future
-
-- PDF Generator
-- Excel Export
-- Backup
+```
+Dashboard
+  -> Select/Create Project
+    -> New Inspection (creates draft)
+      -> Load Project (auto-fill division, district)
+        -> Section I: General Information
+          -> Enter Pole ID (unlocks rest of form)
+          -> Capture GPS (manual button, validated on save)
+          -> Auto-save field values (debounced 500ms)
+        -> Sections II-IX: Dynamic sections
+          -> Load fields from InspectionFields table
+          -> Load dropdown options from FieldOptions table
+          -> Auto-save on field change
+          -> Camera/Switch count triggers dynamic row expansion
+        -> Section X: Photos
+          -> Capture photos (GPS mandatory)
+          -> Green watermark overlay on gallery view
+          -> Saved to device gallery
+      -> Save (validates required fields + GPS + min 1 photo)
+      -> Back button validates before exit
+```
 
 ---
 
-# Design Philosophy
+## Project Structure
+
+```
+frontend/
+  app/
+    _layout.tsx                    # Root layout, DB init on mount
+    index.tsx                      # Home screen
+    dashboard.tsx                  # Main dashboard
+    projects/
+      new.tsx                      # Create new project
+      dashboard.tsx                # Project list / selection
+    inspection/
+      new.tsx                      # New inspection form (10 sections)
+      index.tsx                    # Inspection list
+      edit.tsx                     # Edit existing inspection
+    reports/
+      index.tsx                    # Reports (planned)
+    settings/
+      index.tsx                    # App settings
+      sections.tsx                 # Admin section management
+
+  src/
+    components/inspection/
+      GeneralInformation.tsx       # Section I - GPS, auto-fill, pole ID check
+      FieldRenderer.tsx            # Universal field renderer (10+ types)
+      SectionRenderer.tsx          # Renders fields for any section
+      CameraSection.tsx            # Dynamic camera rows (auto-save, data preservation)
+      SwitchSection.tsx            # Dynamic switch rows (auto-save, data preservation)
+      PhotoSection.tsx             # Photo capture, green watermark, gallery save
+
+    context/
+      InspectionContext.tsx        # Global inspection state
+
+    database/
+      db.ts                        # SQLite connection
+      DatabaseService.ts           # DB init, schema, seeds
+      schema.ts                    # CREATE TABLE statements
+      seed.ts                      # Runs all seed functions
+      seeds/                       # Idempotent seed data
+      repositories/                # Repository pattern (CRUD)
+      tables/                      # Table definitions
+      constants/                   # DB constants
+
+    models/                        # TypeScript interfaces
+    utils/                         # Utility functions (date, location)
+```
+
+---
+
+## Design Philosophy
 
 The project is configuration driven.
 
 Administrators can modify inspection templates without changing application code.
 
 Supported operations include:
-
-- Add Section
-- Delete Section
-- Rename Section
-- Add Asset
-- Delete Asset
-- Rename Asset
-- Add Fields
-- Remove Fields
-- Dropdown Configuration
-- Mandatory Field Configuration
+- Add/Rename/Delete Sections
+- Add/Rename/Delete Fields
+- Configure Dropdown Options
+- Set Mandatory Field Flags
+- Configure Display Order
 
 ---
 
-# Project Status
+## Development Rules
 
-Current Version
-
-0.9 (Development)
-
-Current Phase
-
-Architecture & Configuration Engine
+1. Never continue with TypeScript errors
+2. Every feature must compile before the next one
+3. Never rewrite working code
+4. Review existing files before changing them
+5. Repository Pattern only
+6. SQLite first, Offline First
+7. No duplicate code
+8. One feature at a time
+9. Always update documentation after completing a feature
 
 ---
 
-# Future Roadmap
+## Important Notes
 
-- Dynamic Template Engine
-- Dynamic Asset Engine
-- Photo Module
-- Watermark
-- Reports
-- Dashboard
-- Backup
-- Restore
+- **Clear app data** is required after changing seed data
+- Seeds are idempotent: only insert when target table is empty
+- Camera/Switch count fields use **numeric input** (not dropdown)
+- GPS is **mandatory** — validated on save and before photo capture
+- Photo watermark uses **green color** (#76FF03) on dark green background
+- Dropdowns use height 56px for better touch sensitivity on Android
+- Camera/Switch data is preserved when count decreases (hidden but retained)
+- Auto-save uses 500ms debounce across all sections
+
+---
+
+## Current Version
+
+**1.1** (Development)
+
+---
+
+## Future Roadmap
+
+1. Dashboard — Stats per district, inspection counts, progress charts
+2. PDF Reports — Generate inspection report from saved data
+3. Excel Reports — Export inspection data to spreadsheet
+4. Settings/Admin Panel — Add/edit/delete sections, fields, options
+5. Cloud Sync — Queue-based sync when online
+6. Backup/Restore — Database export/import

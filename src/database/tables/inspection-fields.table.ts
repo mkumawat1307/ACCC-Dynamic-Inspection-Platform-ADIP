@@ -27,6 +27,20 @@ CREATE TABLE IF NOT EXISTS InspectionFields (
 
     IsVisible INTEGER NOT NULL DEFAULT 1,
 
+    IsReadOnly INTEGER NOT NULL DEFAULT 0,
+
+    IsSystemField INTEGER NOT NULL DEFAULT 0,
+
+    DataSourceType TEXT,
+
+    DataSource TEXT,
+
+    ParentFieldID INTEGER,
+
+    Width INTEGER DEFAULT 12,
+
+    Icon TEXT,
+
     IsActive INTEGER NOT NULL DEFAULT 1,
 
     CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -35,6 +49,10 @@ CREATE TABLE IF NOT EXISTS InspectionFields (
 
     FOREIGN KEY (SectionID)
         REFERENCES InspectionSections(SectionID)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (ParentFieldID)
+        REFERENCES InspectionFields(FieldID)
+        ON DELETE SET NULL
 );
 `;

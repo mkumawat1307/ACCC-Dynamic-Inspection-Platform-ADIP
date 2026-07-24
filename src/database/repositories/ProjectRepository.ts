@@ -99,7 +99,7 @@ static async deleteProject(projectId: number): Promise<void> {
     // Delete Photos
     await db.runAsync(
       `
-      DELETE FROM InspectionPhotos
+      DELETE FROM Photos
       WHERE InspectionID IN (
         SELECT InspectionID
         FROM Inspections
@@ -109,10 +109,23 @@ static async deleteProject(projectId: number): Promise<void> {
       [projectId]
     );
 
-    // Delete Devices
+    // Delete Cameras
     await db.runAsync(
       `
-      DELETE FROM InspectionDevices
+      DELETE FROM Cameras
+      WHERE InspectionID IN (
+        SELECT InspectionID
+        FROM Inspections
+        WHERE ProjectID = ?
+      );
+      `,
+      [projectId]
+    );
+
+    // Delete Switches
+    await db.runAsync(
+      `
+      DELETE FROM Switches
       WHERE InspectionID IN (
         SELECT InspectionID
         FROM Inspections

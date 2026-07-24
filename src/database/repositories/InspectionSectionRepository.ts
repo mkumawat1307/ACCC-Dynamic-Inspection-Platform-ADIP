@@ -1,3 +1,4 @@
+//frontend\src\database\repositories\InspectionSectionRepository.ts
 import { getDatabase } from "../db";
 
 export interface InspectionSection {

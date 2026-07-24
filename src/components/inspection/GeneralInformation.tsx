@@ -1,5 +1,3 @@
-//frontend\src\components\inspection\GeneralInformation.tsx
-
 import React, { useEffect, useState, useRef, useImperativeHandle, forwardRef } from "react";
 import { View, Alert } from "react-native";
 import {
@@ -14,11 +12,12 @@ import {
   InspectionRepository,
   InspectionField,
 } from "@/src/database/repositories/InspectionRepository";
+import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { getCurrentLocation } from "@/src/utils/location";
 
 const GeneralInformation = forwardRef((props, ref) => {
 const {
-  project,
+  project: contextProject,
   inspectionDate,
   inspectionId,
   setInspectionId,
@@ -34,174 +33,167 @@ const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 useEffect(() => {
-
-  async function init() {
-
-    const loadedFields =
-      await loadFields();
-
-    if (inspectionId) {
-      await loadInspectionValues(
-        loadedFields
-      );
+  return () => {
+    if (saveTimeout.current) {
+      clearTimeout(saveTimeout.current);
+      saveTimeout.current = null;
     }
-
-  }
-
-  init();
-
+    if (poleCheckTimeout.current) {
+      clearTimeout(poleCheckTimeout.current);
+      poleCheckTimeout.current = null;
+    }
+  };
 }, [inspectionId]);
 
 useEffect(() => {
-return () => {
-
-  if (saveTimeout.current) {
-    clearTimeout(saveTimeout.current);
-    saveTimeout.current = null;
-  }
-
-  if (poleCheckTimeout.current) {
-    clearTimeout(poleCheckTimeout.current);
-    poleCheckTimeout.current = null;
-  }
-
-};
-}, [inspectionId]);
-
-useEffect(() => {
-  if (!project) return;
-
-setValues((prev) => ({
-  ...prev,
-  InspectionDate: prev.InspectionDate || inspectionDate,
-  Division: prev.Division ?? project.DivisionName ?? "",
-  District: prev.District ?? project.DistrictName ?? "",
-  Block: prev.Block ?? project.Block ?? "",
-}));
-}, [project, inspectionDate]);
-
-async function loadInspectionValues(
-  loadedFields: InspectionField[]
-) {
   if (!inspectionId) return;
+  init();
+}, [inspectionId]);
 
+async function init() {
   try {
-    const data =
-      await InspectionRepository.getInspectionValues(
-        inspectionId
-      );
-    if ((data.PoleID ?? "").trim() !== "") {
-      setFormUnlocked(true);
+    const loadedFields = await loadFields();
+
+    let projectData = contextProject;
+    if (!projectData && inspectionId) {
+      const projectId = await InspectionRepository.getInspectionProjectId(inspectionId);
+      if (projectId) {
+        projectData = await ProjectRepository.getProjectById(projectId);
+      }
     }
 
-    const emptyValues: Record<string, string> = {};
+    const savedValues = await loadInspectionValues(loadedFields, projectData);
+    setValues(savedValues);
 
-    loadedFields.forEach(field => {
-      emptyValues[field.FieldKey] = "";
-    });
+    if ((savedValues.pole_id ?? "").trim() !== "") {
+      setFormUnlocked(true);
+      setPoleId(savedValues.pole_id);
+    }
 
-    setValues({
-      ...emptyValues,
+    for (const field of loadedFields) {
+      const key = field.FieldKey;
+      const val = savedValues[key];
 
-      // Keep automatic values
-      InspectionDate: inspectionDate,
-      Division: project?.DivisionName ?? "",
-      District: project?.DistrictName ?? "",
-      Block: project?.Block ?? "",
+      if (!inspectionId) continue;
 
-      // Load saved inspection values
-      ...data,
-    });
-
+      if (key === "date" && val) {
+        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+      } else if (key === "division" && val) {
+        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+      } else if (key === "district" && val) {
+        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+      } else if (key === "block" && val) {
+        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+      }
+    }
   } catch (error) {
-    console.error("Load Values Error:", error);
+    console.error("Init Error:", error);
   }
 }
 
+async function loadInspectionValues(
+  loadedFields: InspectionField[],
+  project: typeof contextProject
+): Promise<Record<string, string>> {
+  if (!inspectionId) return {};
+
+  const data = await InspectionRepository.getInspectionValues(inspectionId);
+
+  const result: Record<string, string> = {};
+
+  for (const field of loadedFields) {
+    const key = field.FieldKey;
+    const savedVal = data[key];
+
+    if (savedVal) {
+      result[key] = savedVal;
+    } else {
+      switch (key) {
+        case "date":
+          result[key] = inspectionDate || "";
+          break;
+        case "division":
+          result[key] = project?.DivisionName || "";
+          break;
+        case "district":
+          result[key] = project?.DistrictName || "";
+          break;
+        case "block":
+          result[key] = project?.Block || "";
+          break;
+        default:
+          result[key] = "";
+      }
+    }
+  }
+
+  return result;
+}
+
 async function loadFields() {
-
   try {
-
-    const data =
-      await InspectionRepository.getFieldsBySection(1);
-
-    console.log("Fields Loaded:", data);
-
+    const data = await InspectionRepository.getFieldsBySection(1);
     setFields(data);
-
     return data;
-
   } catch (error) {
-
     console.error("Load Fields Error:", error);
-
     return [];
-
   }
 }
 
 async function fetchCurrentLocation() {
-  console.log("================================");
-console.log("GPS BUTTON PRESSED");
-console.log("Inspection ID:", inspectionId);
-console.log("================================");
   const location = await getCurrentLocation();
 
   if (!location || !inspectionId) return;
-  console.log("GPS InspectionID:", inspectionId);
+
   const latitude = location.latitude.toFixed(6);
   const longitude = location.longitude.toFixed(6);
+  const gpsValue = `${latitude}, ${longitude}`;
 
-  // Update UI
   setValues((prev) => ({
     ...prev,
-    Latitude: latitude,
-    Longitude: longitude,
+    gps: gpsValue,
   }));
 
   try {
-    // Save immediately
-    await InspectionRepository.saveFieldValue(
-      inspectionId,
-      "Latitude",
-      latitude
-    );
-
-    await InspectionRepository.saveFieldValue(
-      inspectionId,
-      "Longitude",
-      longitude
-    );
+    const gpsField = fields.find(f => f.FieldKey === "gps");
+    if (gpsField) {
+      await InspectionRepository.saveFieldValue(
+        inspectionId,
+        gpsField.FieldID,
+        gpsValue
+      );
+    }
   } catch (error) {
     console.error("GPS Save Error:", error);
   }
 }
+
 function isReadOnly(fieldKey: string) {
   return (
-    fieldKey === "InspectionDate" ||
-    fieldKey === "Division" ||
-    fieldKey === "District" ||
-    fieldKey === "Latitude" ||
-    fieldKey === "Longitude"
+    fieldKey === "date" ||
+    fieldKey === "division" ||
+    fieldKey === "district" ||
+    fieldKey === "gps"
   );
 }
 
 useImperativeHandle(ref, () => ({
   getPoleId() {
-    return values.PoleID?.trim() ?? "";
+    return values.pole_id?.trim() ?? "";
   },
 }));
-return (
-  <View>  
 
-{fields.map((field) => (
-  <React.Fragment key={field.FieldID}>
+return (
+  <View>
+    {fields.map((field) => (
+      <React.Fragment key={field.FieldID}>
         <FieldRenderer
           fieldName={field.FieldName}
           fieldType={field.FieldType}
           required={field.IsRequired === 1}
           editable={
-            field.FieldKey === "PoleID"
+            field.FieldKey === "pole_id"
               ? true
               : isReadOnly(field.FieldKey)
                 ? false
@@ -210,162 +202,127 @@ return (
           showLockedMessage={
             !formUnlocked &&
             !isReadOnly(field.FieldKey) &&
-            field.FieldKey !== "PoleID"
+            field.FieldKey !== "pole_id"
           }
           value={values[field.FieldKey] ?? ""}
-            onChange={async (text) => {
-                setValues((prev) => ({
-                    ...prev,
-                    [field.FieldKey]: text,
-                }));
+          options={
+            field.FieldKey === "division" && contextProject?.DivisionName
+              ? [{ label: contextProject.DivisionName, value: contextProject.DivisionName }]
+              : field.FieldKey === "district" && contextProject?.DistrictName
+                ? [{ label: contextProject.DistrictName, value: contextProject.DistrictName }]
+                : []
+          }
+          onChange={async (text) => {
+            setValues((prev) => ({
+              ...prev,
+              [field.FieldKey]: text,
+            }));
 
-if (field.FieldKey === "PoleID") {
+            if (field.FieldKey === "pole_id") {
+              setFormUnlocked(text.trim().length > 0);
+              setPoleId(text);
 
-  setFormUnlocked(text.trim().length > 0);
-  setPoleId(text);
+              if (poleCheckTimeout.current) {
+                clearTimeout(poleCheckTimeout.current);
+              }
 
-  if (poleCheckTimeout.current) {
-    clearTimeout(poleCheckTimeout.current);
-  }
+              if (text.trim().length > 0) {
+                poleCheckTimeout.current = setTimeout(async () => {
+                  try {
+                    setCheckingPoleId(true);
 
-  if (text.trim().length > 0) {
+                    const existing =
+                      await InspectionRepository.getInspectionByPoleId(
+                        text.trim()
+                      );
 
-    poleCheckTimeout.current = setTimeout(async () => {
+                    setCheckingPoleId(false);
 
-      try {
+                    if (
+                      existing &&
+                      existing.InspectionID !== inspectionId
+                    ) {
+                      Alert.alert(
+                        "Inspection Already Exists",
+                        `Pole ID ${text} already exists.`,
+                        [
+                          {
+                            text: "Edit Existing",
+                            onPress: async () => {
+                              if (saveTimeout.current) {
+                                clearTimeout(saveTimeout.current);
+                                saveTimeout.current = null;
+                              }
 
-        setCheckingPoleId(true);
+                              setValues({});
+                              setInspectionId(existing.InspectionID);
 
-        const existing =
-          await InspectionRepository.getInspectionByPoleId(
-            text.trim()
-          );
-
-        setCheckingPoleId(false);
-
-        if (
-          existing &&
-          existing.InspectionID !== inspectionId
-        ) {
-
-          Alert.alert(
-            "Inspection Already Exists",
-            `Pole ID ${text} already exists.`,
-            [
-              {
-                text: "Edit Existing",
-                onPress: async () => {
-
-                  if (saveTimeout.current) {
-                    clearTimeout(saveTimeout.current);
-                    saveTimeout.current = null;
+                              router.replace({
+                                pathname: "/inspection/new",
+                                params: {
+                                  projectId: contextProject!.ProjectID.toString(),
+                                  inspectionId:
+                                    existing.InspectionID.toString(),
+                                },
+                              });
+                            },
+                          },
+                          { text: "Create New" },
+                          { text: "Cancel", style: "cancel" },
+                        ]
+                      );
+                    }
+                  } catch (error) {
+                    setCheckingPoleId(false);
+                    console.error(error);
                   }
+                }, 300);
+              }
+            }
 
-                  setValues({});
+            if (!inspectionId) return;
 
-                  setInspectionId(existing.InspectionID);
+            if (saveTimeout.current) {
+              clearTimeout(saveTimeout.current);
+            }
 
-                  router.replace({
-                    pathname: "/inspection/new",
-                    params: {
-                      projectId: project!.ProjectID.toString(),
-                      inspectionId:
-                        existing.InspectionID.toString(),
-                    },
-                  });
+            const currentInspectionId = inspectionId;
 
-                },
-              },
-              {
-                text: "Create New",
-              },
-              {
-                text: "Cancel",
-                style: "cancel",
-              },
-            ]
-          );
+            saveTimeout.current = setTimeout(async () => {
+              if (!currentInspectionId) return;
 
-        }
+              await InspectionRepository.saveFieldValue(
+                currentInspectionId,
+                field.FieldID,
+                text
+              );
 
-      }
-      catch (error) {
-
-        setCheckingPoleId(false);
-
-        console.error(error);
-
-      }
-
-    }, 300);
-
-  }
-
-}
-
-        if (!inspectionId) return;
-
-        if (saveTimeout.current) {
-          clearTimeout(saveTimeout.current);
-        }
-
-        const currentInspectionId = inspectionId;
-
-        saveTimeout.current = setTimeout(async () => {
-
-          // Don't save if inspection no longer exists
-          if (!currentInspectionId) {
-            return;
-          }
-
-          console.log(
-            "Saving:",
-            currentInspectionId,
-            field.FieldKey,
-            text
-          );
-
-          await InspectionRepository.saveFieldValue(
-            currentInspectionId,
-            field.FieldKey,
-            text
-          );
-
-          console.log("Saved:", field.FieldKey);
-
-          if (field.FieldKey === "PoleID") {
-            await InspectionRepository.updateInspectionPoleId(
-              currentInspectionId,
-              text
-            );
-          }
-
-        }, 500);
-        }}
+              if (field.FieldKey === "pole_id") {
+                await InspectionRepository.updateInspectionPoleId(
+                  currentInspectionId,
+                  text
+                );
+              }
+            }, 500);
+          }}
         />
-{field.FieldKey === "PoleID" && checkingPoleId && (
-  <View
-    style={{
-      flexDirection: "row",
-      alignItems: "center",
-      marginTop: -10,
-      marginBottom: 16,
-      paddingLeft: 8,
-    }}
-  >
-    <ActivityIndicator size="small" />
-
-    <Text
-      style={{
-        marginLeft: 8,
-        fontSize: 13,
-      }}
-    >
-      Checking Pole ID...
-    </Text>
-  </View>
-)}
-        {field.FieldKey === "Longitude" && (
+        {field.FieldKey === "pole_id" && checkingPoleId && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginTop: -10,
+              marginBottom: 16,
+              paddingLeft: 8,
+            }}
+          >
+            <ActivityIndicator size="small" />
+            <Text style={{ marginLeft: 8, fontSize: 13 }}>
+              Checking Pole ID...
+            </Text>
+          </View>
+        )}
+        {field.FieldKey === "gps" && (
           <Button
             mode="contained"
             icon="crosshairs-gps"
@@ -380,5 +337,7 @@ if (field.FieldKey === "PoleID") {
   </View>
 );
 });
+
+GeneralInformation.displayName = "GeneralInformation";
 
 export default GeneralInformation;
