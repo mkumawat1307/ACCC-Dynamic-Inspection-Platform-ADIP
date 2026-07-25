@@ -12,7 +12,6 @@ import {
   InspectionRepository,
   InspectionField,
 } from "@/src/database/repositories/InspectionRepository";
-import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { getCurrentLocation } from "@/src/utils/location";
 
 const GeneralInformation = forwardRef((props, ref) => {
@@ -52,16 +51,29 @@ useEffect(() => {
 
 async function init() {
   try {
-    const loadedFields = await loadFields();
-
     let projectData = contextProject;
+
+    // If contextProject hasn't propagated yet, wait briefly for React to flush
     if (!projectData && inspectionId) {
-      const projectId = await InspectionRepository.getInspectionProjectId(inspectionId);
-      if (projectId) {
-        projectData = await ProjectRepository.getProjectById(projectId);
+      // Do NOT call getProjectById() here — it calls getGlobalDatabase() which
+      // closes the project DB and reopens the global DB, corrupting the Android
+      // native handle. Instead, rely on context propagation from new.tsx.
+      for (let attempt = 0; attempt < 5 && !projectData; attempt++) {
+        await new Promise((r) => setTimeout(r, 50));
+        projectData = contextProject;
       }
     }
 
+    let templateId = (projectData as any)?.TemplateID;
+    if (!templateId) {
+      const db = await (await import("@/src/database/db")).getDatabase();
+      const defaultTemplate = await db.getFirstAsync<{ TemplateID: number }>(
+        `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
+      );
+      templateId = defaultTemplate?.TemplateID;
+    }
+
+    const loadedFields = await loadFields(templateId);
     const savedValues = await loadInspectionValues(loadedFields, projectData);
     setValues(savedValues);
 
@@ -83,6 +95,8 @@ async function init() {
       } else if (key === "district" && val) {
         await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
       } else if (key === "block" && val) {
+        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+      } else if (key === "inspector_name" && val) {
         await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
       }
     }
@@ -108,7 +122,7 @@ async function loadInspectionValues(
     if (savedVal) {
       result[key] = savedVal;
     } else {
-      switch (key) {
+        switch (key) {
         case "date":
           result[key] = inspectionDate || "";
           break;
@@ -121,6 +135,9 @@ async function loadInspectionValues(
         case "block":
           result[key] = project?.Block || "";
           break;
+        case "inspector_name":
+          result[key] = project?.InspectorName || "";
+          break;
         default:
           result[key] = "";
       }
@@ -130,9 +147,9 @@ async function loadInspectionValues(
   return result;
 }
 
-async function loadFields() {
+async function loadFields(templateId?: number) {
   try {
-    const data = await InspectionRepository.getFieldsBySection(1);
+    const data = await InspectionRepository.getFieldsByKey("general_information", templateId);
     setFields(data);
     return data;
   } catch (error) {

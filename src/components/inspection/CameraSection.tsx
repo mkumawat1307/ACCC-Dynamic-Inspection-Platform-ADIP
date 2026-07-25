@@ -19,6 +19,7 @@ import { Dropdown } from "react-native-element-dropdown";
 
 import CameraRepository from "@/src/database/repositories/CameraRepository";
 import { Camera } from "@/src/models/Camera";
+import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
 
 interface Props {
   inspectionId: number;
@@ -41,49 +42,51 @@ function makeEmptyCamera(inspectionId: number, no: number): Camera {
   };
 }
 
-const cameraTypeOptions = [
-  { label: "Bullet", value: "Bullet" },
-  { label: "Box", value: "Box" },
-  { label: "PTZ", value: "PTZ" },
-];
+interface DropdownItem {
+  label: string;
+  value: string;
+}
 
-const cameraStatusOptions = [
-  { label: "VMS", value: "VMS" },
-  { label: "Local", value: "Local" },
-  { label: "Non-Live", value: "Non-Live" },
-  { label: "In Stock", value: "In Stock" },
-  { label: "Dismantled", value: "Dismantled" },
-  { label: "Not Verified", value: "Not Verified" },
-];
-
-const cameraMakeOptions = [
-  { label: "Sparsh", value: "Sparsh" },
-  { label: "Prama", value: "Prama" },
-  { label: "Hikvision", value: "Hikvision" },
-  { label: "CP Plus", value: "CP Plus" },
-  { label: "Secura", value: "Secura" },
-];
-
-const cameraSIOptions = [
-  { label: "Technosys (LSY)", value: "Technosys (LSY)" },
-  { label: "TCIL (LSY)", value: "TCIL (LSY)" },
-  { label: "TCIL (RC)", value: "TCIL (RC)" },
-  { label: "TCIL (Smart City)", value: "TCIL (Smart City)" },
-  { label: "TASL (Technosys)", value: "TASL (Technosys)" },
-];
-
-const sdCardCapacityOptions = [
-  { label: "64 GB", value: "64 GB" },
-  { label: "128 GB", value: "128 GB" },
-  { label: "256 GB", value: "256 GB" },
-  { label: "Not Verified", value: "Not Verified" },
-];
-
-const sdCardStatusOptions = [
-  { label: "Working", value: "Working" },
-  { label: "Not Working", value: "Not Working" },
-  { label: "Not Verified", value: "Not Verified" },
-];
+const defaultOptions: Record<string, DropdownItem[]> = {
+  CameraType: [
+    { label: "Bullet", value: "Bullet" },
+    { label: "Box", value: "Box" },
+    { label: "PTZ", value: "PTZ" },
+  ],
+  CameraStatus: [
+    { label: "VMS", value: "VMS" },
+    { label: "Local", value: "Local" },
+    { label: "Non-Live", value: "Non-Live" },
+    { label: "In Stock", value: "In Stock" },
+    { label: "Dismantled", value: "Dismantled" },
+    { label: "Not Verified", value: "Not Verified" },
+  ],
+  CameraMake: [
+    { label: "Sparsh", value: "Sparsh" },
+    { label: "Prama", value: "Prama" },
+    { label: "Hikvision", value: "Hikvision" },
+    { label: "CP Plus", value: "CP Plus" },
+    { label: "Secura", value: "Secura" },
+  ],
+  CameraSI: [
+    { label: "Technosys (LSY)", value: "Technosys (LSY)" },
+    { label: "TCIL (LSY)", value: "TCIL (LSY)" },
+    { label: "TCIL (RC)", value: "TCIL (RC)" },
+    { label: "TCIL (Smart City)", value: "TCIL (Smart City)" },
+    { label: "TASL (Technosys)", value: "TASL (Technosys)" },
+  ],
+  SDCardCapacity: [
+    { label: "64 GB", value: "64 GB" },
+    { label: "128 GB", value: "128 GB" },
+    { label: "256 GB", value: "256 GB" },
+    { label: "Not Verified", value: "Not Verified" },
+  ],
+  SDCardStatus: [
+    { label: "Working", value: "Working" },
+    { label: "Not Working", value: "Not Working" },
+    { label: "Not Verified", value: "Not Verified" },
+  ],
+};
 
 export default function CameraSection({
   inspectionId,
@@ -91,6 +94,7 @@ export default function CameraSection({
 }: Props) {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
+  const [opts, setOpts] = useState<Record<string, DropdownItem[]>>(defaultOptions);
   const saveTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map()
   );
@@ -98,6 +102,13 @@ export default function CameraSection({
   useEffect(() => {
     (async () => {
       setLoading(true);
+      const fields = ["CameraType", "CameraStatus", "CameraMake", "CameraSI", "SDCardCapacity", "SDCardStatus"];
+      const loaded: Record<string, DropdownItem[]> = {};
+      for (const f of fields) {
+        const dbOpts = await DeviceOptionsRepository.getDropdownData("Camera", f);
+        loaded[f] = dbOpts.length > 0 ? dbOpts : defaultOptions[f] ?? [];
+      }
+      setOpts(loaded);
       const existing = await CameraRepository.getByInspection(inspectionId);
       let list = existing.length > 0 ? existing : [];
 
@@ -226,7 +237,7 @@ export default function CameraSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={cameraTypeOptions}
+                  data={opts.CameraType}
                   labelField="label"
                   valueField="value"
                   placeholder="Select Type"
@@ -243,7 +254,7 @@ export default function CameraSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={cameraStatusOptions}
+                  data={opts.CameraStatus}
                   labelField="label"
                   valueField="value"
                   placeholder="Select Status"
@@ -262,7 +273,7 @@ export default function CameraSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={cameraMakeOptions}
+                  data={opts.CameraMake}
                   labelField="label"
                   valueField="value"
                   placeholder="Select Make"
@@ -322,7 +333,7 @@ export default function CameraSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={cameraSIOptions}
+                  data={opts.CameraSI}
                   labelField="label"
                   valueField="value"
                   placeholder="Select SI"
@@ -339,7 +350,7 @@ export default function CameraSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={sdCardCapacityOptions}
+                  data={opts.SDCardCapacity}
                   labelField="label"
                   valueField="value"
                   placeholder="Select Capacity"
@@ -356,7 +367,7 @@ export default function CameraSection({
               style={styles.dropdown}
               placeholderStyle={styles.placeholder}
               selectedTextStyle={styles.selectedText}
-              data={sdCardStatusOptions}
+              data={opts.SDCardStatus}
               labelField="label"
               valueField="value"
               placeholder="Select SD Card Status"

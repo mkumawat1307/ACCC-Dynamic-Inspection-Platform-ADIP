@@ -34,6 +34,8 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Photo } from "@/src/models/Photo";
 import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { getActiveProjectPath } from "@/src/database/db";
+import { getProjectFolderPath } from "@/src/database/helpers/ProjectDBManager";
 
 interface Props {
   inspectionId: number;
@@ -254,7 +256,8 @@ export default function PhotoSection({
         timestamp
       );
 
-      const destDir = `${FileSystem.documentDirectory}photos/`;
+      const projectFolder = getProjectFolderPath(project?.ProjectName || "Unknown");
+      const destDir = `${projectFolder}photos/`;
       await FileSystem.makeDirectoryAsync(destDir, {
         intermediates: true,
       });
@@ -306,9 +309,9 @@ export default function PhotoSection({
           if (uri) {
             saveToGallery(uri);
 
-            const districtFolder = getDistrictFolder();
+            const projectFolder = getProjectFolderPath(project?.ProjectName || "Unknown");
             const downloadDir =
-              `${FileSystem.documentDirectory}Download/Inspection/${districtFolder}/`;
+              `${projectFolder}Download/Inspection/`;
             await FileSystem.makeDirectoryAsync(downloadDir, {
               intermediates: true,
             });

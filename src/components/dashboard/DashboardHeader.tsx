@@ -5,7 +5,7 @@ export default function DashboardHeader() {
   return (
     <View style={styles.container}>
       <Text variant="headlineMedium" style={styles.title}>
-        ACCC Pole Inspection
+        ACCC Dynamic Inspection Platform
       </Text>
 
       <Text variant="bodyMedium" style={styles.subtitle}>

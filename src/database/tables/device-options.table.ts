@@ -1,0 +1,15 @@
+export const createDeviceOptionsTable = `
+CREATE TABLE IF NOT EXISTS DeviceOptions (
+    OptionID INTEGER PRIMARY KEY AUTOINCREMENT,
+    TemplateID INTEGER NOT NULL DEFAULT 1,
+    DeviceType TEXT NOT NULL,
+    FieldName TEXT NOT NULL,
+    OptionLabel TEXT NOT NULL,
+    OptionValue TEXT NOT NULL,
+    DisplayOrder INTEGER NOT NULL DEFAULT 1,
+    IsActive INTEGER NOT NULL DEFAULT 1,
+    CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (TemplateID) REFERENCES InspectionTemplates(TemplateID) ON DELETE CASCADE
+);
+`;

@@ -5,6 +5,8 @@ export interface Project {
 
   DistrictID: number;
 
+  DBPath?: string | null;
+
   DistrictName?: string;
   DivisionName?: string;
 
@@ -13,6 +15,8 @@ export interface Project {
   Client?: string | null;
 
   Description?: string | null;
+
+  InspectorName?: string | null;
 
   CreatedAt: string;
 

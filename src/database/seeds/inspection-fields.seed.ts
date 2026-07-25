@@ -9,8 +9,8 @@ export async function seedInspectionFields() {
 
     // Migrate camera_count and switch_count from dropdown to number
     await db.runAsync(
-        `UPDATE InspectionFields SET FieldType = 'number', Placeholder = 'Enter count'
-         WHERE FieldKey IN ('camera_count', 'switch_count') AND FieldType = 'dropdown';`
+`UPDATE InspectionFields SET FieldType = 'number', Placeholder = 'Enter count'
+          WHERE FieldKey IN ('camera_count', 'switch_count') AND FieldType = 'dropdown';`
     );
 
     const existing = await db.getFirstAsync<{ Count: number }>(`

@@ -1,6 +1,7 @@
 //frontend\app\inspection\new.tsx
 import React, {
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,7 +20,6 @@ import {
   Appbar,
   Button,
 } from "react-native-paper";
-import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
@@ -33,13 +33,16 @@ import {
 
 export default function NewInspectionScreen() {
   const router = useRouter();
-const { projectId, inspectionId: routeInspectionId } =
+  const initDoneRef = useRef(false);
+const { projectId, inspectionId: routeInspectionId, projectData: projectDataJson } =
   useLocalSearchParams<{
     projectId: string;
     inspectionId?: string;
+    projectData?: string;
   }>();
 
 const {
+  project: contextProject,
   setProject,
   setInspectionDate,
   setInspectionId,
@@ -84,8 +87,13 @@ const validateBeforeExit = async (): Promise<boolean> => {
 };
 
 useEffect(() => {
+  if (initDoneRef.current) return;
+  initDoneRef.current = true;
   initialize();
-}, []);
+  return () => {
+    initDoneRef.current = false;
+  };
+}, [projectId, routeInspectionId]);
 
 useEffect(() => {
   const subscription = BackHandler.addEventListener(
@@ -106,16 +114,38 @@ useEffect(() => {
 
 async function initialize() {
   await loadProject();
-  await loadSections();
+
+  const data = await InspectionRepository.getSections();
+  if (data.length > 0) {
+    setSections(data);
+  }
 }
-async function loadProject() {
-  if (!projectId) return;
+async function loadProject(): Promise<Project | null> {
+  if (!projectId) return null;
 
-  const data = await ProjectRepository.getProjectById(
-    Number(projectId)
-  );
+  let data: Project | null = null;
 
-  if (!data) return;
+  // 1. Use projectData passed via navigation params (most reliable — no DB call needed)
+  if (projectDataJson) {
+    try {
+      data = JSON.parse(projectDataJson) as Project;
+    } catch {
+      // fall through
+    }
+  }
+
+  // 2. Use context (may not have propagated yet due to React batching)
+  if (!data && contextProject && contextProject.ProjectID === Number(projectId)) {
+    data = contextProject;
+  }
+
+  // 3. NEVER call getProjectById() — it calls getGlobalDatabase() which corrupts
+  //    the native handle on Android when the project DB is active.
+
+  if (!data) {
+    console.error("[new.tsx] No project data available — check navigation params");
+    return null;
+  }
 
 setProjectState(data);
 
@@ -147,6 +177,8 @@ if (routeInspectionId) {
 
   setInspectionId(newInspectionId);
 }
+
+return data;
 }
   async function loadSections() {
     const data = await InspectionRepository.getSections();
@@ -298,7 +330,7 @@ return (
       titleStyle={styles.sectionTitle}
     >
       <Card.Content>
-    {section.SectionID === 1 ? (
+    {section.SectionKey === "general_information" ? (
       <GeneralInformation />
     ) : (
       <SectionRenderer

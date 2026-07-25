@@ -33,19 +33,54 @@ export interface InspectionField {
 }
 
 export class InspectionRepository {
-static async getSections(): Promise<InspectionSection[]> {
+static async getSections(templateId?: number): Promise<InspectionSection[]> {
     const db = await getDatabase();
 
-    return await db.getAllAsync<InspectionSection>(`
-      SELECT
-        SectionID,
-        SectionName,
-        SectionKey,
-        DisplayOrder
-      FROM InspectionSections
-      WHERE IsActive = 1
-      ORDER BY DisplayOrder;
-    `);
+    if (!templateId) {
+      const defaultTpl = await db.getFirstAsync<{ TemplateID: number }>(
+        `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
+      );
+      templateId = defaultTpl?.TemplateID;
+    }
+
+    if (templateId) {
+      return await db.getAllAsync<InspectionSection>(`
+        SELECT
+          SectionID,
+          SectionName,
+          SectionKey,
+          DisplayOrder
+        FROM InspectionSections
+        WHERE IsActive = 1 AND TemplateID = ?
+        ORDER BY CASE WHEN SectionKey = 'photos' THEN 1 ELSE 0 END, DisplayOrder;
+      `, [templateId]);
+    }
+    return [];
+  }
+
+  static async getAllSections(templateId?: number): Promise<InspectionSection[]> {
+    const db = await getDatabase();
+
+    if (!templateId) {
+      const defaultTpl = await db.getFirstAsync<{ TemplateID: number }>(
+        `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
+      );
+      templateId = defaultTpl?.TemplateID;
+    }
+
+    if (templateId) {
+      return await db.getAllAsync<InspectionSection>(`
+        SELECT
+          SectionID,
+          SectionName,
+          SectionKey,
+          DisplayOrder
+        FROM InspectionSections
+        WHERE IsActive = 1 AND TemplateID = ?
+        ORDER BY CASE WHEN SectionKey = 'photos' THEN 1 ELSE 0 END, DisplayOrder;
+      `, [templateId]);
+    }
+    return [];
   }
 
 static async getFieldsBySection(
@@ -64,6 +99,39 @@ static async getFieldsBySection(
     `,
     [sectionId]
   );
+}
+
+static async getFieldsByKey(
+  sectionKey: string,
+  templateId?: number
+): Promise<InspectionField[]> {
+  const db = await getDatabase();
+
+  if (!templateId) {
+    const defaultTpl = await db.getFirstAsync<{ TemplateID: number }>(
+      `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
+    );
+    templateId = defaultTpl?.TemplateID;
+  }
+
+  if (templateId) {
+    return await db.getAllAsync<InspectionField>(
+      `
+      SELECT f.*
+      FROM InspectionFields f
+      INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
+      WHERE s.SectionKey = ?
+        AND s.TemplateID = ?
+        AND f.IsActive = 1
+        AND f.IsVisible = 1
+        AND s.IsActive = 1
+      ORDER BY f.DisplayOrder ASC
+      `,
+      [sectionKey, templateId]
+    );
+  }
+
+  return [];
 }
 static async createInspection(
   projectId: number,
@@ -196,21 +264,29 @@ static async validateInspection(
 }> {
   const db = await getDatabase();
 
-  const requiredFields = await db.getAllAsync<{
+    const requiredFields = await db.getAllAsync<{
     FieldKey: string;
     FieldName: string;
     DefaultValue: string | null;
   }>(
     `
-    SELECT
-      FieldKey,
-      FieldName,
-      DefaultValue
-    FROM InspectionFields
-    WHERE IsRequired = 1
-      AND IsActive = 1
-      AND IsVisible = 1
-    `
+    SELECT DISTINCT
+      f.FieldKey,
+      f.FieldName,
+      f.DefaultValue
+    FROM InspectionFields f
+    INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
+    INNER JOIN Inspections i ON 1=1
+    INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
+    WHERE f.IsRequired = 1
+      AND f.IsActive = 1
+      AND f.IsVisible = 1
+      AND s.IsActive = 1
+      AND t.IsDefault = 1
+      AND i.InspectionID = ?
+    GROUP BY f.FieldKey
+    `,
+    [inspectionId]
   );
 
   const values = await this.getInspectionValues(inspectionId);

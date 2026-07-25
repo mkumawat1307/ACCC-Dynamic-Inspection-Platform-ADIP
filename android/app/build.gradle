@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.emergent.poledataexcel.p9sjtu'
+    namespace 'com.accc.dynamicinspection'
     defaultConfig {
-        applicationId 'com.emergent.poledataexcel.p9sjtu'
+        applicationId 'com.accc.dynamicinspection'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

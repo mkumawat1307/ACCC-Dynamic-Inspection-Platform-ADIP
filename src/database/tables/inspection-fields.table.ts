@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS InspectionFields (
 
     FieldName TEXT NOT NULL,
 
-    FieldKey TEXT NOT NULL UNIQUE,
+    FieldKey TEXT NOT NULL,
 
     FieldType TEXT NOT NULL,
 

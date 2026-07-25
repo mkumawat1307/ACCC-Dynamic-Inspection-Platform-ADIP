@@ -1,90 +1,125 @@
-//frontend\app\projects\new.tsx
 import React, { useEffect, useState } from "react";
-import { ScrollView, StyleSheet } from "react-native";
+import { ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Button, Text, TextInput } from "react-native-paper";
+import { Button, Text, TextInput, Appbar } from "react-native-paper";
 import { DistrictRepository } from "@/src/database/repositories/DistrictRepository";
 import { District } from "@/src/models/District";
 import { Dropdown } from "react-native-paper-dropdown";
-import { Alert } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
-
+import { createProjectDb, getProjectDbPath } from "@/src/database/helpers/ProjectDBManager";
 
 export default function NewProjectScreen() {
+  const { editProjectId } = useLocalSearchParams<{ editProjectId?: string }>();
+  const isEdit = !!editProjectId;
+
   const [projectName, setProjectName] = useState("");
   const [district, setDistrict] = useState<string>();
-
   const [block, setBlock] = useState("");
   const [client, setClient] = useState("");
   const [description, setDescription] = useState("");
+  const [inspectorName, setInspectorName] = useState("");
   const [districts, setDistricts] = useState<District[]>([]);
   const [loading, setLoading] = useState(true);
-const districtOptions = districts.map((item) => ({
-  label: item.DistrictName,
-  value: item.DistrictID.toString(),
-}));
+  const [saving, setSaving] = useState(false);
+
+  const districtOptions = districts.map((item) => ({
+    label: item.DistrictName,
+    value: item.DistrictID.toString(),
+  }));
 
   useEffect(() => {
-  loadDistricts();
-}, []);
+    loadDistricts();
+  }, []);
 
-async function loadDistricts() {
-  try {
-    const result = await DistrictRepository.getAll();
+  async function loadDistricts() {
+    try {
+      const result = await DistrictRepository.getAll();
+      setDistricts(result);
 
-    console.log("Districts:", result);
-
-    setDistricts(result);
-  } catch (error) {
-    console.error("Failed to load districts:", error);
-  } finally {
-    setLoading(false);
-  }
-}
-
-async function createProject() {
-  if (!projectName.trim()) {
-    Alert.alert("Validation", "Please enter Project Name.");
-    return;
-  }
-
-  if (!district) {
-    Alert.alert("Validation", "Please select District.");
-    return;
+      if (isEdit && editProjectId) {
+        const project = await ProjectRepository.getProjectById(Number(editProjectId));
+        if (project) {
+          setProjectName(project.ProjectName);
+          setDistrict(project.DistrictID.toString());
+          setBlock(project.Block ?? "");
+          setClient(project.Client ?? "");
+          setDescription(project.Description ?? "");
+          setInspectorName(project.InspectorName ?? "");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load data:", error);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  try {
-    await ProjectRepository.createProject({
-      projectName: projectName.trim(),
-      districtId: Number(district),
-      block: block.trim(),
-      client: client.trim(),
-      description: description.trim(),
-    });
+  async function saveProject() {
+    if (!projectName.trim()) {
+      Alert.alert("Validation", "Please enter Project Name.");
+      return;
+    }
+    if (!district) {
+      Alert.alert("Validation", "Please select District.");
+      return;
+    }
+    if (!inspectorName.trim()) {
+      Alert.alert("Validation", "Please enter Inspector Name.");
+      return;
+    }
 
-    Alert.alert("Success", "Project created successfully.");
+    setSaving(true);
+    try {
+      if (isEdit && editProjectId) {
+        await ProjectRepository.updateProject(Number(editProjectId), {
+          projectName: projectName.trim(),
+          districtId: Number(district),
+          block: block.trim(),
+          client: client.trim(),
+          description: description.trim(),
+          inspectorName: inspectorName.trim(),
+        });
+        Alert.alert("Success", "Project updated successfully.");
+      } else {
+        const dbPath = getProjectDbPath(projectName.trim());
 
-    router.back();
-  } catch (error) {
-    console.error(error);
+        // Create the project DB with full schema + seed data
+        await createProjectDb(projectName.trim(), dbPath);
 
-    Alert.alert(
-      "Error",
-      "Unable to create project."
-    );
+        // Store project record in global DB with DBPath
+        await ProjectRepository.createProject({
+          projectName: projectName.trim(),
+          districtId: Number(district),
+          dbPath: dbPath,
+          block: block.trim(),
+          client: client.trim(),
+          description: description.trim(),
+          inspectorName: inspectorName.trim(),
+        });
+        Alert.alert("Success", "Project created successfully.");
+      }
+      router.back();
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Error", "Unable to save project.");
+    } finally {
+      setSaving(false);
+    }
   }
-}
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <Appbar.Header>
+        <Appbar.BackAction onPress={() => router.back()} />
+        <Appbar.Content title={isEdit ? "Edit Project" : "Create Project"} />
+      </Appbar.Header>
 
-        <Text variant="headlineMedium" style={styles.title}>
-        Create Inspection Project
-        </Text>
+      <ScrollView contentContainerStyle={styles.content}>
         <Text variant="bodyMedium" style={styles.subtitle}>
-        Provide the project information to organize inspections and reports.
+          {isEdit
+            ? "Update the project information below."
+            : "Provide the project information to organize inspections and reports."}
         </Text>
 
         <TextInput
@@ -96,18 +131,26 @@ async function createProject() {
         />
 
         <Dropdown
-        label="District *"
-        placeholder="Select District"
-        mode="outlined"
-        options={districtOptions}
-        value={district}
-        onSelect={setDistrict}
+          label="District *"
+          placeholder="Select District"
+          mode="outlined"
+          options={districtOptions}
+          value={district}
+          onSelect={setDistrict}
         />
 
         <TextInput
           label="Block (Optional)"
           value={block}
           onChangeText={setBlock}
+          mode="outlined"
+          style={styles.input}
+        />
+
+        <TextInput
+          label="Inspector Name *"
+          value={inspectorName}
+          onChangeText={setInspectorName}
           mode="outlined"
           style={styles.input}
         />
@@ -130,14 +173,9 @@ async function createProject() {
           style={styles.input}
         />
 
-        <Button
-        mode="contained"
-        onPress={createProject}
-        style={styles.button}
-        >
-        Create
+        <Button mode="contained" onPress={saveProject} style={styles.button} loading={saving} disabled={saving}>
+          {isEdit ? "Update" : "Create"}
         </Button>
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -148,27 +186,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F5F5F5",
   },
-
   content: {
     padding: 20,
   },
-
-  title: {
-    textAlign: "center",
-    marginBottom: 25,
-    fontWeight: "bold",
-  },
-
   input: {
     marginBottom: 16,
   },
-
   button: {
     marginTop: 20,
   },
   subtitle: {
-  textAlign: "center",
-  marginBottom: 24,
-  color: "#666",
-},
+    textAlign: "center",
+    marginBottom: 24,
+    color: "#666",
+  },
 });

@@ -19,6 +19,7 @@ import { Dropdown } from "react-native-element-dropdown";
 
 import SwitchRepository from "@/src/database/repositories/SwitchRepository";
 import { Switch } from "@/src/models/Switch";
+import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
 
 interface Props {
   inspectionId: number;
@@ -39,34 +40,38 @@ function makeEmptySwitch(inspectionId: number, no: number): Switch {
   };
 }
 
-const switchTypeOptions = [
-  { label: "4-Port", value: "4-Port" },
-  { label: "8-Port", value: "8-Port" },
-];
+interface DropdownItem {
+  label: string;
+  value: string;
+}
 
-const switchStatusOptions = [
-  { label: "VMS", value: "VMS" },
-  { label: "Local", value: "Local" },
-  { label: "Non-Live", value: "Non-Live" },
-  { label: "In Stock", value: "In Stock" },
-  { label: "Dismantled", value: "Dismantled" },
-  { label: "Not Verified", value: "Not Verified" },
-];
-
-const switchMakeOptions = [
-  { label: "D-Link", value: "D-Link" },
-  { label: "Cisco", value: "Cisco" },
-  { label: "Allied", value: "Allied" },
-  { label: "Tejas", value: "Tejas" },
-];
-
-const switchSIOptions = [
-  { label: "Technosys (LSY)", value: "Technosys (LSY)" },
-  { label: "TCIL (LSY)", value: "TCIL (LSY)" },
-  { label: "TCIL (RC)", value: "TCIL (RC)" },
-  { label: "TCIL (Smart City)", value: "TCIL (Smart City)" },
-  { label: "TASL (Technosys)", value: "TASL (Technosys)" },
-];
+const defaultOptions: Record<string, DropdownItem[]> = {
+  SwitchType: [
+    { label: "4-Port", value: "4-Port" },
+    { label: "8-Port", value: "8-Port" },
+  ],
+  SwitchStatus: [
+    { label: "VMS", value: "VMS" },
+    { label: "Local", value: "Local" },
+    { label: "Non-Live", value: "Non-Live" },
+    { label: "In Stock", value: "In Stock" },
+    { label: "Dismantled", value: "Dismantled" },
+    { label: "Not Verified", value: "Not Verified" },
+  ],
+  SwitchMake: [
+    { label: "D-Link", value: "D-Link" },
+    { label: "Cisco", value: "Cisco" },
+    { label: "Allied", value: "Allied" },
+    { label: "Tejas", value: "Tejas" },
+  ],
+  SwitchSI: [
+    { label: "Technosys (LSY)", value: "Technosys (LSY)" },
+    { label: "TCIL (LSY)", value: "TCIL (LSY)" },
+    { label: "TCIL (RC)", value: "TCIL (RC)" },
+    { label: "TCIL (Smart City)", value: "TCIL (Smart City)" },
+    { label: "TASL (Technosys)", value: "TASL (Technosys)" },
+  ],
+};
 
 export default function SwitchSection({
   inspectionId,
@@ -74,6 +79,7 @@ export default function SwitchSection({
 }: Props) {
   const [switches, setSwitches] = useState<Switch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [opts, setOpts] = useState<Record<string, DropdownItem[]>>(defaultOptions);
   const saveTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(
     new Map()
   );
@@ -81,6 +87,13 @@ export default function SwitchSection({
   useEffect(() => {
     (async () => {
       setLoading(true);
+      const fields = ["SwitchType", "SwitchStatus", "SwitchMake", "SwitchSI"];
+      const loaded: Record<string, DropdownItem[]> = {};
+      for (const f of fields) {
+        const dbOpts = await DeviceOptionsRepository.getDropdownData("Switch", f);
+        loaded[f] = dbOpts.length > 0 ? dbOpts : defaultOptions[f] ?? [];
+      }
+      setOpts(loaded);
       const existing = await SwitchRepository.getByInspection(inspectionId);
       let list = existing.length > 0 ? existing : [];
 
@@ -209,7 +222,7 @@ export default function SwitchSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={switchTypeOptions}
+                  data={opts.SwitchType}
                   labelField="label"
                   valueField="value"
                   placeholder="Select Type"
@@ -226,7 +239,7 @@ export default function SwitchSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={switchStatusOptions}
+                  data={opts.SwitchStatus}
                   labelField="label"
                   valueField="value"
                   placeholder="Select Status"
@@ -245,7 +258,7 @@ export default function SwitchSection({
                   style={styles.dropdown}
                   placeholderStyle={styles.placeholder}
                   selectedTextStyle={styles.selectedText}
-                  data={switchMakeOptions}
+                  data={opts.SwitchMake}
                   labelField="label"
                   valueField="value"
                   placeholder="Select Make"
@@ -303,7 +316,7 @@ export default function SwitchSection({
               style={styles.dropdown}
               placeholderStyle={styles.placeholder}
               selectedTextStyle={styles.selectedText}
-              data={switchSIOptions}
+              data={opts.SwitchSI}
               labelField="label"
               valueField="value"
               placeholder="Select SI"

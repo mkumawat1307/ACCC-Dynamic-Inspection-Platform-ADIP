@@ -1,4 +1,4 @@
-package com.emergent.poledataexcel.p9sjtu
+package com.accc.dynamicinspection
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

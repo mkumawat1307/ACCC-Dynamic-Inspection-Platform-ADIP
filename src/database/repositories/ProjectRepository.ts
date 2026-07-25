@@ -1,23 +1,26 @@
-//frontend\src\database\repositories\ProjectRepository.ts
-import { getDatabase } from "../db";
+import { getGlobalDatabase } from "../db";
 import { Project } from "@/src/models/Project";
-
+import * as FileSystem from "expo-file-system/legacy";
 
 export class ProjectRepository {
   static async getProjects(): Promise<Project[]> {
-    const db = await getDatabase();
+    console.log("[ProjectRepository] getProjects() — START");
+    const db = await getGlobalDatabase();
+    console.log("[ProjectRepository] Got global DB handle");
 
-    return await db.getAllAsync<Project>(
+    const projects = await db.getAllAsync<Project>(
       `
     SELECT
         p.ProjectID,
         p.ProjectName,
         p.DistrictID,
+        p.DBPath,
         dv.DivisionName,
         d.DistrictName,
         p.Block,
         p.Client,
         p.Description,
+        p.InspectorName,
         p.CreatedAt,
         p.UpdatedAt
     FROM Projects p
@@ -28,9 +31,15 @@ export class ProjectRepository {
     ORDER BY p.CreatedAt DESC;
       `
     );
+    console.log(`[ProjectRepository] getProjects() — returned ${projects.length} projects`);
+    console.log(`[ProjectRepository] getProjects() — END`);
+    return projects;
   }
+
 static async getProjectById(projectId: number): Promise<Project | null> {
-  const db = await getDatabase();
+  console.log(`[ProjectRepository] getProjectById(${projectId}) — START`);
+  const db = await getGlobalDatabase();
+  console.log(`[ProjectRepository] Got global DB handle`);
 
   const project = await db.getFirstAsync<Project>(
     `
@@ -38,11 +47,13 @@ static async getProjectById(projectId: number): Promise<Project | null> {
         p.ProjectID,
         p.ProjectName,
         p.DistrictID,
+        p.DBPath,
         d.DistrictName,
         dv.DivisionName,
         p.Block,
         p.Client,
         p.Description,
+        p.InspectorName,
         p.CreatedAt,
         p.UpdatedAt
     FROM Projects p
@@ -55,117 +66,130 @@ static async getProjectById(projectId: number): Promise<Project | null> {
     [projectId]
   );
 
+  console.log(`[ProjectRepository] getProjectById() — ${project ? "found" : "not found"}`);
+  console.log(`[ProjectRepository] getProjectById() — END`);
   return project ?? null;
 }
+
   static async createProject(data: {
   projectName: string;
   districtId: number;
+  dbPath: string;
   block?: string;
   client?: string;
   description?: string;
+  inspectorName?: string;
 }
 ): Promise<number> {
-  const db = await getDatabase();
+  console.log(`[ProjectRepository] createProject(name="${data.projectName}", districtId=${data.districtId}) — START`);
+  const db = await getGlobalDatabase();
+  console.log(`[ProjectRepository] Got global DB handle`);
 
   const result = await db.runAsync(
     `
     INSERT INTO Projects (
       ProjectName,
       DistrictID,
+      DBPath,
       Block,
       Client,
-      Description
+      Description,
+      InspectorName
     )
-    VALUES (?, ?, ?, ?, ?);
+    VALUES (?, ?, ?, ?, ?, ?, ?);
     `,
 [
   data.projectName,
   data.districtId,
+  data.dbPath,
   data.block ?? null,
   data.client ?? null,
   data.description ?? null,
+  data.inspectorName ?? null,
 ]
   );
 
-  return result.lastInsertRowId as number;
+  const newId = result.lastInsertRowId as number;
+  console.log(`[ProjectRepository] createProject() — inserted with ID ${newId}`);
+  console.log(`[ProjectRepository] createProject() — END`);
+  return newId;
+}
 
+static async updateProject(
+  projectId: number,
+  data: {
+    projectName: string;
+    districtId: number;
+    block?: string;
+    client?: string;
+    description?: string;
+    inspectorName?: string;
+  }
+): Promise<void> {
+  console.log(`[ProjectRepository] updateProject(${projectId}) — START`);
+  const db = await getGlobalDatabase();
+  console.log(`[ProjectRepository] Got global DB handle`);
+
+  await db.runAsync(
+    `
+    UPDATE Projects SET
+      ProjectName = ?,
+      DistrictID = ?,
+      Block = ?,
+      Client = ?,
+      Description = ?,
+      InspectorName = ?,
+      UpdatedAt = CURRENT_TIMESTAMP
+    WHERE ProjectID = ?
+    `,
+    [
+      data.projectName,
+      data.districtId,
+      data.block ?? null,
+      data.client ?? null,
+      data.description ?? null,
+      data.inspectorName ?? null,
+      projectId,
+    ]
+  );
+  console.log(`[ProjectRepository] updateProject() — END`);
+}
+
+static async cloneProject(
+  sourceProjectId: number,
+  newName: string
+): Promise<number> {
+  console.log(`[ProjectRepository] cloneProject(sourceId=${sourceProjectId}, newName="${newName}") — START`);
+  const db = await getGlobalDatabase();
+  console.log(`[ProjectRepository] Got global DB handle`);
+
+  const source = await this.getProjectById(sourceProjectId);
+  if (!source) {
+    console.log(`[ProjectRepository] cloneProject() — source not found, returning 0`);
+    return 0;
+  }
+
+  const result = await db.runAsync(
+    `INSERT INTO Projects (ProjectName, DistrictID, Block, Client, Description, InspectorName)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [newName, source.DistrictID, source.Block ?? null, source.Client ?? null, source.Description ?? null, source.InspectorName ?? null]
+  );
+
+  const newId = result.lastInsertRowId as number;
+  console.log(`[ProjectRepository] cloneProject() — cloned with ID ${newId}`);
+  console.log(`[ProjectRepository] cloneProject() — END`);
+  return newId;
 }
 
 static async deleteProject(projectId: number): Promise<void> {
-  const db = await getDatabase();
+  console.log(`[ProjectRepository] deleteProject(${projectId}) — START`);
+  const db = await getGlobalDatabase();
+  console.log(`[ProjectRepository] Got global DB handle`);
 
-  await db.withTransactionAsync(async () => {
-
-    // Delete Photos
-    await db.runAsync(
-      `
-      DELETE FROM Photos
-      WHERE InspectionID IN (
-        SELECT InspectionID
-        FROM Inspections
-        WHERE ProjectID = ?
-      );
-      `,
-      [projectId]
-    );
-
-    // Delete Cameras
-    await db.runAsync(
-      `
-      DELETE FROM Cameras
-      WHERE InspectionID IN (
-        SELECT InspectionID
-        FROM Inspections
-        WHERE ProjectID = ?
-      );
-      `,
-      [projectId]
-    );
-
-    // Delete Switches
-    await db.runAsync(
-      `
-      DELETE FROM Switches
-      WHERE InspectionID IN (
-        SELECT InspectionID
-        FROM Inspections
-        WHERE ProjectID = ?
-      );
-      `,
-      [projectId]
-    );
-
-    // Delete Values
-    await db.runAsync(
-      `
-      DELETE FROM InspectionValues
-      WHERE InspectionID IN (
-        SELECT InspectionID
-        FROM Inspections
-        WHERE ProjectID = ?
-      );
-      `,
-      [projectId]
-    );
-
-    // Delete Inspections
-    await db.runAsync(
-      `
-      DELETE FROM Inspections
-      WHERE ProjectID = ?;
-      `,
-      [projectId]
-    );
-
-    // Delete Project
-    await db.runAsync(
-      `
-      DELETE FROM Projects
-      WHERE ProjectID = ?;
-      `,
-      [projectId]
-    );
-
-  });
+  await db.runAsync(
+    `DELETE FROM Projects WHERE ProjectID = ?;`,
+    [projectId]
+  );
+  console.log(`[ProjectRepository] deleteProject() — END`);
 }
 }

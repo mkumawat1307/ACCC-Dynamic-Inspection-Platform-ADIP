@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ACCC Pole Inspect",
+    "name": "ACCC Dynamic Inspection Platform",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.poledataexcel.p9sjtu",
+      "bundleIdentifier": "com.accc.dynamicinspection",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Capture GPS coordinates of the pole site",
         "NSCameraUsageDescription": "Take photos of the pole and equipment",
@@ -23,7 +23,7 @@
         "foregroundImage": "./assets/images/abhay-logo.png",
         "backgroundColor": "#FFFFFF"
       },
-      "package": "com.emergent.poledataexcel.p9sjtu",
+      "package": "com.accc.dynamicinspection",
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -63,8 +63,8 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow ACCC Pole Inspect to access attached photos",
-          "savePhotosPermission": "Allow ACCC Pole Inspect to save attached photos to your gallery",
+          "photosPermission": "Allow ACCC Dynamic Inspection Platform to access attached photos",
+          "savePhotosPermission": "Allow ACCC Dynamic Inspection Platform to save attached photos to your gallery",
           "granularPermissions": [
             "photo"
           ]

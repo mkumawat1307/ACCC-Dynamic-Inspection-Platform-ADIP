@@ -1,4 +1,4 @@
-package com.emergent.poledataexcel.p9sjtu
+package com.accc.dynamicinspection
 
 import android.app.Application
 import android.content.res.Configuration

@@ -25,11 +25,11 @@ CREATE TABLE IF NOT EXISTS Inspections (
 
     SyncStatus INTEGER DEFAULT 0,
 
+    SectionsSnapshot TEXT,
+
     CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
     UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY(ProjectID)
-        REFERENCES Projects(ProjectID)
 );
 `;

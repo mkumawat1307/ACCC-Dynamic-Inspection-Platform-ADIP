@@ -32,8 +32,8 @@ export async function seedInspectionTemplate() {
         );
         `,
         [
-            "ACCC Pole Inspection",
-            "Default ACCC Pole Inspection Template",
+            "ACCC Dynamic Inspection Platform",
+            "Default ACCC Dynamic Inspection Template",
             1
         ]
     );

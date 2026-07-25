@@ -1,0 +1,746 @@
+# ACCC Dynamic Inspection Platform (ADIP)
+
+# Architecture Decision Records (ADR)
+
+Version: 1.3
+
+Status: Active
+
+---
+
+# Purpose
+
+This document records significant architectural and technical decisions made during the development of the ACCC Dynamic Inspection Platform.
+
+The objective is to preserve the reasoning behind each decision so that future developers and AI assistants understand not only **what** was implemented, but also **why** it was implemented.
+
+Every major architectural decision should be recorded here.
+
+---
+
+# ADR-001
+
+## Title
+
+Offline-First Architecture
+
+### Status
+
+Accepted
+
+### Date
+
+July 2026
+
+### Context
+
+Field inspections are often performed in areas with poor or no internet connectivity.
+
+Inspectors must continue working regardless of network availability.
+
+### Decision
+
+The application will follow an Offline-First architecture.
+
+All inspection data will be stored locally on the device.
+
+Cloud synchronization will be optional and occur only when connectivity is available.
+
+### Consequences
+
+Positive
+
+- Works without internet
+- Better performance
+- Reliable field operation
+- Reduced dependency on servers
+
+Negative
+
+- Synchronization logic becomes more complex
+- Conflict resolution is required for cloud sync
+
+---
+
+# ADR-002
+
+## Title
+
+SQLite as Local Database
+
+### Status
+
+Accepted
+
+### Context
+
+The application requires a lightweight, reliable, offline database.
+
+### Decision
+
+SQLite is selected as the local database.
+
+### Alternatives Considered
+
+- Firebase Firestore
+- Realm
+- Supabase
+- AsyncStorage
+
+### Reasons
+
+- Fully offline
+- Mature
+- Fast
+- No internet dependency
+- Easy backup and restore
+
+### Consequences
+
+Positive
+
+- Reliable local storage
+- Structured relational data
+- Good performance
+
+Negative
+
+- Manual synchronization required
+
+---
+
+# ADR-003
+
+## Title
+
+Repository Pattern
+
+### Status
+
+Accepted
+
+### Context
+
+Direct database access from UI components would create tightly coupled code.
+
+### Decision
+
+All database operations must go through repositories.
+
+### Structure
+
+UI
+
+↓
+
+Context
+
+↓
+
+Repository
+
+↓
+
+SQLite
+
+### Benefits
+
+- Separation of concerns
+- Easier testing
+- Better maintainability
+- Reusable database logic
+
+---
+
+# ADR-004
+
+## Title
+
+React Context for State Management
+
+### Status
+
+Accepted
+
+### Context
+
+The application needs shared state without unnecessary complexity.
+
+### Decision
+
+Use React Context.
+
+### Alternatives
+
+- Redux
+- MobX
+- Zustand
+
+### Reasons
+
+- Simple
+- Built into React
+- Easy to maintain
+- Suitable for project size
+
+---
+
+# ADR-005
+
+## Title
+
+Configuration-Driven Inspection Forms
+
+### Status
+
+Accepted
+
+### Context
+
+Future inspection types should be added without rewriting the application.
+
+### Decision
+
+Inspection forms will be generated from database configuration.
+
+Templates
+
+↓
+
+Sections
+
+↓
+
+Fields
+
+↓
+
+Dynamic UI
+
+### Benefits
+
+- Reusable engine
+- Easy expansion
+- Minimal code duplication
+
+---
+
+# ADR-006
+
+## Title
+
+Auto Save
+
+### Status
+
+Accepted
+
+### Context
+
+Inspectors may accidentally close the application or lose power.
+
+### Decision
+
+Inspection data will be automatically saved whenever changes occur.
+
+### Benefits
+
+- Reduced data loss
+- Better user experience
+- No manual Save button required
+
+---
+
+# ADR-007
+
+## Title
+
+TypeScript
+
+### Status
+
+Accepted
+
+### Decision
+
+Use TypeScript throughout the project.
+
+### Reasons
+
+- Strong typing
+- Better IntelliSense
+- Easier refactoring
+- Fewer runtime errors
+
+---
+
+# ADR-008
+
+## Title
+
+Expo Framework
+
+### Status
+
+Accepted
+
+### Decision
+
+Use Expo for development.
+
+### Reasons
+
+- Faster development
+- Simplified native integration
+- OTA updates (future)
+- Rich ecosystem
+
+---
+
+# ADR-009
+
+## Title
+
+Professional Documentation
+
+### Status
+
+Accepted
+
+### Decision
+
+Maintain a structured documentation system.
+
+### Documents
+
+- PRD
+- Architecture
+- Rules
+- Phases
+- Design
+- Memory
+- Changelog
+- README
+- Decisions
+
+### Benefits
+
+- Easier onboarding
+- AI-friendly
+- Better maintainability
+
+---
+
+# ADR-010
+
+## Title
+
+Photo-Centric Inspection Workflow
+
+### Status
+
+Accepted
+
+### Context
+
+Inspection evidence depends heavily on photographs.
+
+### Decision
+
+Every inspection should support photo capture with metadata.
+
+Implemented metadata
+
+- GPS
+- Timestamp
+- Pole ID
+- District + Block
+- Green watermark (#76FF03) on light black background
+- Watermark burned into gallery photos via react-native-view-shot
+
+Future metadata
+
+- OCR
+- AI Classification
+
+---
+
+# ADR-011
+
+## Title
+
+Dynamic Device Expansion
+
+### Status
+
+Accepted
+
+### Context
+
+Different poles have different numbers of cameras, switches, and other devices.
+
+### Decision
+
+The inspection form shall automatically expand device sections based on user input or configuration.
+
+### Benefits
+
+- Flexible inspections
+- Reduced manual setup
+- Scalable for future device types
+
+---
+
+# ADR-012
+
+## Title
+
+Future Cloud Synchronization
+
+### Status
+
+Planned
+
+### Context
+
+Organizations require centralized reporting and backup.
+
+### Decision
+
+Cloud synchronization will be introduced after the offline platform is stable.
+
+Synchronization must never replace offline functionality.
+
+---
+
+# Decision Template
+
+For future decisions, use the following format:
+
+## ADR-XXX
+
+### Title
+
+### Status
+
+- Proposed
+- Accepted
+- Deprecated
+- Superseded
+
+### Context
+
+Why was this decision required?
+
+### Decision
+
+What was decided?
+
+### Alternatives
+
+What other options were considered?
+
+### Consequences
+
+Positive outcomes
+
+Negative outcomes
+
+---
+
+# Review Process
+
+Every architectural decision should be reviewed before implementation.
+
+When a decision changes:
+
+- Update this document.
+- Update Architecture.md.
+- Update Memory.md.
+- Update Changelog.md.
+
+---
+
+# Guiding Principle
+
+Architectural decisions should prioritize:
+
+- Simplicity
+- Maintainability
+- Scalability
+- Reliability
+- Offline capability
+- Reusability
+- Performance
+
+Long-term maintainability should always take precedence over short-term convenience.
+
+---
+# ADR-013
+
+## Title
+
+Project Isolation Architecture
+
+### Status
+
+Accepted
+
+### Date
+
+July 2026
+
+---
+
+## Context
+
+The ACCC Dynamic Inspection Platform originally stored project data in a shared application database. While projects were logically separated, several configurations and administrative changes could affect multiple projects.
+
+The platform is evolving into a professional multi-project inspection system where each project must function as an independent workspace.
+
+Examples include:
+
+* Smart City Jaipur
+* Smart City Kota
+* Smart City Baran
+* Smart City Jodhpur
+
+Each project may have different inspection templates, custom fields, device types, dashboard statistics, reports, photos, and settings.
+
+Changes made in one project must never impact another project.
+
+---
+
+## Decision
+
+The platform shall adopt a **Project Isolation Architecture**.
+
+Every project will operate as a self-contained workspace.
+
+Each project shall maintain its own:
+
+* SQLite database
+* Inspection templates
+* Dynamic sections
+* Dynamic fields
+* Device types
+* Device options
+* Inspection records
+* Dashboard data
+* Reports
+* Photos
+* Export files
+* Configuration
+* Validation rules
+* Draft inspections
+* Future synchronization metadata
+
+The application shall contain only one global Project Manager responsible for creating, opening, renaming, deleting, and listing projects.
+
+No project-specific information shall be stored globally.
+
+---
+
+## Architecture
+
+Application
+
+↓
+
+Project Manager
+
+↓
+
+Select Project
+
+↓
+
+Load Project Context
+
+↓
+
+Open Project Database
+
+↓
+
+Load Project Modules
+
+* Dashboard
+* Inspection Forms
+* Reports
+* Settings
+* Photos
+* Device Types
+* Templates
+
+---
+
+## Project Storage Structure
+
+Projects/
+
+* Jaipur/
+
+  * inspection.db
+  * photos/
+  * reports/
+  * exports/
+  * backups/
+  * settings.json
+
+* Kota/
+
+  * inspection.db
+  * photos/
+  * reports/
+  * exports/
+  * backups/
+  * settings.json
+
+Each project folder is fully independent.
+
+---
+
+## Global Application Data
+
+The global application database shall contain only:
+
+* Project ID
+* Project Name
+* Project Folder Path
+* Created Date
+* Last Opened Date
+* Project Version
+
+No inspection or configuration data shall be stored globally.
+
+---
+
+## Consequences
+
+### Positive
+
+* Complete project independence.
+* No cross-project data leakage.
+* Easier backup and restore.
+* Easier project sharing.
+* Simpler maintenance.
+* Better scalability.
+* Improved data security.
+* Cleaner architecture.
+* Better preparation for cloud synchronization.
+* Future support for importing/exporting complete projects.
+
+### Negative
+
+* More complex project initialization.
+* Separate database management for each project.
+* Additional migration logic when updating application versions.
+
+---
+
+## Alternatives Considered
+
+### Shared SQLite Database
+
+Rejected.
+
+Reason:
+
+Risk of configuration leakage and increased complexity when isolating project-specific data.
+
+### Project Prefix in Every Table
+
+Rejected.
+
+Reason:
+
+Requires every query to filter by ProjectID and increases the chance of developer mistakes causing cross-project data access.
+
+### Separate SQLite Database per Project
+
+Accepted.
+
+Reason:
+
+Provides true isolation, simplifies backup and restore, reduces the possibility of cross-project contamination, and improves long-term maintainability.
+
+---
+
+## Future Impact
+
+This decision establishes the foundation for:
+
+* Multi-client deployments.
+* Cloud synchronization.
+* Team collaboration.
+* Project import/export.
+* Project archiving.
+* Versioned project upgrades.
+* AI-assisted inspection workflows.
+* Additional inspection modules (UPS, NVR, Solar, OFC, Data Centre, Traffic Signal, etc.).
+
+All future development must preserve project isolation and ensure that every repository, service, screen, and database operation is executed within the currently active project context.
+
+
+# ADR-014
+
+## Title
+
+Sequential Open/Close DB Model + Context-Based Data Passing
+
+### Status
+
+Accepted
+
+### Date
+
+July 2026
+
+### Context
+
+The expo-sqlite v16 Android module has a confirmed bug: `openDatabaseAsync()` with different file paths returns `SQLiteDatabase` handles that actually point to the wrong database file when multiple handles are open simultaneously.
+
+Three approaches were tried and rejected:
+
+1. **Dual-connection** (two `SQLiteDatabase` handles open simultaneously) — the second handle is backed by the first file. Rejected.
+2. **Close+reopen** (switch databases by closing one and opening the other) — `closeAsync()` doesn't fully release the native handle before `openDatabaseAsync()` is called, causing the same bug. Rejected.
+3. **ATTACH DATABASE** (single connection, attach project DB as `p` schema) — works for DML (SELECT/INSERT) but **rejected on Android** because `execAsync` throws `near ".": syntax error` when executing DDL with dot-qualified table names like `CREATE TABLE p.InspectionSections(...)`. ATTACH is fundamentally incompatible with DDL in expo-sqlite Android.
+
+The root cause during the inspection flow was that `getGlobalDatabase()` (used by `ProjectRepository.getProjectById()`) closed the project DB and reopened the global DB, then `getDatabase()` (used by `InspectionRepository`) closed the global DB and reopened the project DB. This close+reopen cycle corrupted the native handle on Android.
+
+### Decision
+
+Use a **sequential open/close model** with a single `SQLiteDatabase` handle. Pass project data via React Context to avoid switching databases during the inspection flow.
+
+- **Single handle**: One `SQLiteDatabase` at a time. `currentDbTarget` tracks which file is open. `closeCurrentDb()` catches errors silently.
+- **`cleanPath()`**: Strips `file://` prefix before path comparison to avoid mismatches.
+- **No `getInfoAsync`**: expo-file-system's `getInfoAsync` returns `exists: false` for SQLite `.db` files on Android (file is locked by native layer). Project DB validation uses `SELECT COUNT(*) FROM sqlite_master` instead.
+- **Navigation params + context data passing**: `index.tsx` calls `openProject(item)` which opens the DB AND sets the project in `InspectionContext`. It also passes `projectData` as a JSON navigation param. `dashboard.tsx` and `inspection/new.tsx` read project data from the `projectData` navigation param first (synchronous, no DB call needed), then fall back to context. This eliminates all `getProjectById()` → `getGlobalDatabase()` calls during the inspection flow — the project DB stays open the entire time. Navigation params are preferred over context because React state batching means `setProject()` may not propagate before the target screen mounts.
+- All project repos and seeds use plain table names (no `p.` prefix). Each DB file is standalone.
+
+### Alternatives
+
+**ATTACH DATABASE with `p.` prefix** — rejected because expo-sqlite Android's `execAsync` does not support dot-qualified DDL (`CREATE TABLE p.TableName(...)`). Works for DML but not schema creation.
+
+**Dual-connection** — rejected because the second `openDatabaseAsync()` returns a handle backed by the first file.
+
+**Close+reopen between global and project DB** — rejected because `closeAsync()` doesn't fully release the native handle, causing the same file-mixing bug.
+
+### Consequences
+
+Positive:
+- Eliminates all multi-connection expo-sqlite Android bugs.
+- No `ATTACH`/`DETACH` complexity.
+- No `p.` prefix burden on all SQL queries.
+- Context + navigation params data passing means zero database switching during the inspection flow.
+- `getInfoAsync` removed — no false negatives for DB file existence checks.
+- Simple, predictable: one handle, one file, one DB at a time.
+
+Negative:
+- Global queries during a project session (e.g., `getProjectById()`) close the project DB and reopen the global DB. This is why navigation params + context data passing is essential.
+- Each call to `getDatabase()` / `getGlobalDatabase()` may close and reopen the DB if switching is needed (only happens outside the inspection flow).
+
+---
+
+# End of Architecture Decision Records

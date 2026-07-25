@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS Projects (
 
     Description TEXT,
 
+    InspectorName TEXT,
+
     CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
     UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP,

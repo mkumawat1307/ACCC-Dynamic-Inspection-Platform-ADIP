@@ -9,21 +9,28 @@ import { PaperProvider } from "react-native-paper";
 import { InspectionProvider } from "@/src/context/InspectionContext";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
-import { initializeDatabase } from "@/src/database";
+import { initializeDatabase, getInitError } from "@/src/database";
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
   const [dbReady, setDbReady] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   useEffect(() => {
 async function init() {
   await SystemUI.setBackgroundColorAsync("#F5F5F5");
 
-  await initializeDatabase();
-
-  setDbReady(true);
+  try {
+    await initializeDatabase();
+    setDbReady(true);
+  } catch (e) {
+    const msg = getInitError() || (e instanceof Error ? e.message : String(e));
+    console.error("❌ [RootLayout] DB init failed:", msg);
+    setDbError(msg);
+    setDbReady(true);
+  }
 }
 
     init();
@@ -38,6 +45,29 @@ async function init() {
   if (!loaded || !dbReady) {
   return null;
 }
+
+if (dbError) {
+  return (
+    <PaperProvider>
+      <SafeAreaProvider>
+        <StatusBar
+          style="light"
+          translucent={false}
+          backgroundColor="#D32F2F"
+        />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: {
+              backgroundColor: "#F5F5F5",
+            },
+          }}
+        />
+      </SafeAreaProvider>
+    </PaperProvider>
+  );
+}
+
 return (
   <PaperProvider>
     <InspectionProvider>

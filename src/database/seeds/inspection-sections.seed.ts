@@ -118,11 +118,12 @@ export async function seedInspectionSections() {
                 DisplayOrder,
                 IsRepeatable,
                 IsVisible,
+                IsDefault,
                 IsActive
             )
             VALUES
             (
-                ?, ?, ?, ?, ?, ?, ?, 1, 1
+                ?, ?, ?, ?, ?, ?, ?, 1, 1, 1
             );
             `,
             [

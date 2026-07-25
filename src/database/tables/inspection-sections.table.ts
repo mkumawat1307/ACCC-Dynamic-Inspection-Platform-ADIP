@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS InspectionSections (
 
     SectionName TEXT NOT NULL,
 
-    SectionKey TEXT NOT NULL UNIQUE,
+    SectionKey TEXT NOT NULL,
 
     Description TEXT,
 
@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS InspectionSections (
     IsRepeatable INTEGER NOT NULL DEFAULT 0,
 
     IsVisible INTEGER NOT NULL DEFAULT 1,
+
+    IsDefault INTEGER NOT NULL DEFAULT 0,
 
     IsActive INTEGER NOT NULL DEFAULT 1,
 
