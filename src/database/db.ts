@@ -54,6 +54,7 @@ async function ensureProjectDb(dbPath: string): Promise<SQLite.SQLiteDatabase> {
   currentDbTarget = cp;
   try {
     await database.execAsync(`PRAGMA journal_mode = WAL;`);
+    await database.execAsync(`PRAGMA foreign_keys = ON;`);
     await database.execAsync(`PRAGMA synchronous = NORMAL;`);
   } catch (e) {
     console.log(`[db.ts] ensureProjectDb — PRAGMA failed (non-fatal):`, e);

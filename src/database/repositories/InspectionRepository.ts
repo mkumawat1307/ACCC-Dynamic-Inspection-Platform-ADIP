@@ -159,11 +159,6 @@ static async createInspection(
       "Draft",
     ]
   );
-console.log(
-  "NEW INSPECTION CREATED:",
-  result.lastInsertRowId
-);
-
 return result.lastInsertRowId as number;
 }
 
