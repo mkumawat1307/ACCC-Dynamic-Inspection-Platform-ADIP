@@ -269,6 +269,68 @@ describe("buildReportTable", () => {
       { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "", "", "", "Completed", ""], isDeviceRow: false },
     ]);
   });
+
+  it("does not attach device columns or emit device rows for non-repeatable sections", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID", FieldDisplayOrder: 1 },
+        { SectionID: 2, SectionKey: "router_information", SectionName: "Router Information", IsRepeatable: 0, SectionDisplayOrder: 2, FieldID: 2, FieldKey: "router_count", FieldName: "Router Count", FieldDisplayOrder: 1 },
+      ])
+      .mockResolvedValueOnce([
+        { DeviceType: "Router", FieldName: "RouterModel", Label: "Router Model", DisplayOrder: 1 },
+      ])
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+        { InspectionID: 1, FieldID: 2, FieldValue: "1" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, DeviceType: "Router", DeviceNo: 1, DeviceData: JSON.stringify({ RouterModel: "R1" }) },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
+
+    expect(table.headers).toEqual(["Pole ID", "Router Count", "Status", "Photos"]);
+    expect(table.rows).toEqual([
+      { cells: ["P001", "1", "Completed", ""], isDeviceRow: false },
+    ]);
+  });
+
+  it("falls back to getCurrentInspectionDate when saved date is blank on base and device rows", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID", FieldDisplayOrder: 1 },
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 2, FieldKey: "date", FieldName: "Date", FieldDisplayOrder: 2 },
+        { SectionID: 2, SectionKey: "camera_information", SectionName: "Camera Information", IsRepeatable: 1, SectionDisplayOrder: 2, FieldID: 3, FieldKey: "camera_count", FieldName: "Camera Count", FieldDisplayOrder: 1 },
+      ])
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+        { InspectionID: 1, FieldID: 2, FieldValue: "" },
+        { InspectionID: 1, FieldID: 3, FieldValue: "2" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "IP" }) },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const { getCurrentInspectionDate } = require("@/src/utils/date");
+    const fallback = getCurrentInspectionDate();
+    const table = await buildReportTable(1);
+
+    expect(table.headers).toEqual([
+      "Pole ID", "Date", "Camera Count", "Device No", "Camera Type",
+      "Status", "Photos",
+    ]);
+    expect(table.rows).toEqual([
+      { cells: ["P001", fallback, "2", "", "", "Completed", ""], isDeviceRow: false },
+      { cells: ["P001", fallback, "2", "1", "IP", "Completed", ""], isDeviceRow: true },
+    ]);
+  });
 });
 
 describe("splitLatLong", () => {

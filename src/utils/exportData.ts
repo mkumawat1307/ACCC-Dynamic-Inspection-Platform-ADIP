@@ -18,6 +18,7 @@ export interface ReportSection {
   index: number;
   name: string;
   sectionKey: string;
+  isRepeatable: boolean;
   deviceType?: string;
   columns: ReportColumn[];
 }
@@ -102,7 +103,7 @@ export async function buildReportTable(projectId: number, inspectionId?: number)
   for (const r of rows) {
     let section = sectionsById.get(r.SectionID);
     if (!section) {
-      section = { index: sections.length, name: r.SectionName, sectionKey: r.SectionKey, columns: [] };
+      section = { index: sections.length, name: r.SectionName, sectionKey: r.SectionKey, isRepeatable: r.IsRepeatable === 1, columns: [] };
       sectionsById.set(r.SectionID, section);
       sections.push(section);
     }
@@ -122,7 +123,7 @@ export async function buildReportTable(projectId: number, inspectionId?: number)
   }
 
   for (const section of sections) {
-    if (!section.sectionKey.endsWith("_information")) continue;
+    if (!section.isRepeatable || !section.sectionKey.endsWith("_information")) continue;
     const deviceType = deviceTypes.find((t) => normalizeDeviceType(t) === section.sectionKey);
     if (!deviceType) continue;
     section.deviceType = deviceType;
@@ -142,6 +143,7 @@ export async function buildReportTable(projectId: number, inspectionId?: number)
     index: sections.length,
     name: "Summary",
     sectionKey: "summary",
+    isRepeatable: false,
     columns: [
       { key: "status", label: "Status", isDeviceColumn: false, sectionIndex: sections.length },
       { key: "photos", label: "Photos", isDeviceColumn: false, sectionIndex: sections.length },
