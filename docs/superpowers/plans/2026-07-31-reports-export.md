@@ -1849,9 +1849,11 @@ git commit -m "feat: add single-inspection PDF Excel CSV export to Inspection Li
 **Files:**
 - Modify: `app/projects/dashboard.tsx`
 - Modify: `src/utils/exportData.ts` (remove `exportProjectData`)
+- Modify: `app/index.tsx` (remove Home screen export button)
+- Modify: `src/__tests__/utils/exportData.test.ts` (remove `exportProjectData` tests)
 
 **Interfaces:**
-- Dashboard no longer imports `exportData`; the "Generate inspection reports" card passes `params: { projectId, projectName }` to `/reports`; the CSV export card is gone.
+- Dashboard no longer imports `exportData`; the "Generate inspection reports" card passes `params: { projectId, projectName }` to `/reports`; the CSV export card is gone. Home screen no longer imports `exportData`. `exportProjectData` and its tests are deleted entirely.
 
 - [ ] **Step 1: Make the edits**
 
@@ -1879,6 +1881,17 @@ In `app/projects/dashboard.tsx`:
 In `src/utils/exportData.ts`:
 - Delete the `exportProjectData` function entirely.
 
+In `app/index.tsx` (Home screen):
+- Remove `import { exportProjectData } from "@/src/utils/exportData";`.
+- Remove `const [exportingId, setExportingId] = useState<number | null>(null);`.
+- Remove the whole `handleExportProject` function block.
+- Remove the `Export` button on each project card (the block using `loading={exportingId === item.ProjectID}` / `disabled={exportingId === item.ProjectID}` / `onPress={() => handleExportProject(item)}`).
+- If `Alert` or `logger` become unused after removing `handleExportProject`, remove the now-unused imports (verify with tsc/lint).
+- Project export now lives in Reports (reachable from the dashboard), so the Home card keeps only its existing navigation actions.
+
+In `src/__tests__/utils/exportData.test.ts`:
+- Delete the entire `describe("exportProjectData", () => {...})` block.
+
 - [ ] **Step 2: Verify types, lint, and full test suite**
 
 Run: `npx tsc --noEmit` — clean. Run: `corepack yarn lint` — 0 errors. Run: `corepack yarn test --watch=false` — all suites pass.
@@ -1886,7 +1899,7 @@ Run: `npx tsc --noEmit` — clean. Run: `corepack yarn lint` — 0 errors. Run: 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/projects/dashboard.tsx src/utils/exportData.ts
+git add app/projects/dashboard.tsx app/index.tsx src/utils/exportData.ts src/__tests__/utils/exportData.test.ts
 git commit -m "refactor: move export off dashboard into Reports screen"
 ```
 
