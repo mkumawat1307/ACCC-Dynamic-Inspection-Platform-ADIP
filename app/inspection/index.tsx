@@ -2,6 +2,7 @@
 
 import React, { useCallback, useState } from "react";
 import {
+  Alert,
   FlatList,
   StyleSheet,
   View,
@@ -24,6 +25,9 @@ import {
 } from "@/src/database/repositories/InspectionListRepository";
 
 import { useInspection } from "@/src/context/InspectionContext";
+
+import { exportInspection, ExportFormat } from "@/src/utils/exportData";
+import { logger } from "@/src/utils/logger";
 
 import DeleteInspectionsDialog from "./components/DeleteInspectionsDialog";
 
@@ -50,6 +54,9 @@ export default function InspectionListScreen() {
 
   const [deleteDialogVisible, setDeleteDialogVisible] =
     useState(false);
+
+  const [exportingId, setExportingId] =
+    useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,6 +92,37 @@ export default function InspectionListScreen() {
       params,
     });
 
+  }
+
+  function handleExport(item: InspectionListItem, format: ExportFormat) {
+    if (!projectId || exportingId !== null) return;
+    setExportingId(item.InspectionID);
+    exportInspection(
+      Number(projectId),
+      project?.ProjectName ?? "Project",
+      item.InspectionID,
+      item.PoleID,
+      format
+    )
+      .then((success) => {
+        if (!success) {
+          Alert.alert("No Data", "No inspection data found to export.");
+        }
+      })
+      .catch((error) => {
+        logger.error("Export error:", error);
+        Alert.alert("Export Failed", "Unable to export inspection data.");
+      })
+      .finally(() => setExportingId(null));
+  }
+
+  function promptExport(item: InspectionListItem) {
+    Alert.alert(`Export ${item.PoleID || "Inspection"}`, "Choose a format", [
+      { text: "PDF", onPress: () => handleExport(item, "pdf") },
+      { text: "Excel", onPress: () => handleExport(item, "excel") },
+      { text: "CSV", onPress: () => handleExport(item, "csv") },
+      { text: "Cancel", style: "cancel" },
+    ]);
   }
 
   function toggleSelection(id: number) {
@@ -321,12 +359,21 @@ export default function InspectionListScreen() {
                 </View>
 
                 {!selectionMode && (
-                  <IconButton
-                    icon="pencil"
-                    size={20}
-                    onPress={() => openEdit(item)}
-                  />
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <IconButton
+                      icon="export-variant"
+                      size={20}
+                      disabled={exportingId === item.InspectionID}
+                      onPress={() => promptExport(item)}
+                    />
+                    <IconButton
+                      icon="pencil"
+                      size={20}
+                      onPress={() => openEdit(item)}
+                    />
+                  </View>
                 )}
+
               </View>
 
             </Card.Content>
