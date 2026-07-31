@@ -11,6 +11,7 @@ jest.mock("expo-file-system/legacy", () => ({
   getInfoAsync: jest.fn().mockResolvedValue({ exists: true, isDirectory: false, size: 100 }),
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
+  copyAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("expo-sharing", () => {
@@ -20,6 +21,12 @@ jest.mock("expo-sharing", () => {
     shareAsync: jest.fn().mockResolvedValue(undefined),
   };
 });
+
+jest.mock("expo-print", () => ({
+  printToFileAsync: jest.fn().mockResolvedValue({ uri: "file:///mock/cache/print.pdf" }),
+}));
+import * as XLSX from "xlsx";
+import * as Print from "expo-print";
 
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -339,5 +346,170 @@ describe("splitLatLong", () => {
     expect(splitLatLong("12.9716, 77.5946")).toEqual(["12.9716", "77.5946"]);
     expect(splitLatLong("12.9716")).toEqual(["12.9716", ""]);
     expect(splitLatLong("")).toEqual(["", ""]);
+  });
+});
+
+interface ReportTableLike {
+  sections: { index: number; name: string; sectionKey: string; deviceType?: string; columns: { key: string; label: string; fieldId?: number; deviceFieldName?: string; isDeviceColumn: boolean; sectionIndex: number }[] }[];
+  headers: string[];
+  rows: { cells: string[]; isDeviceRow: boolean }[];
+}
+
+function sampleTable(): ReportTableLike {
+  return {
+    sections: [
+      { index: 0, name: "General Information", sectionKey: "general_information", columns: [
+        { key: "pole_id", label: "Pole ID", isDeviceColumn: false, sectionIndex: 0 },
+        { key: "gps", label: "Lat/Long", isDeviceColumn: false, sectionIndex: 0 },
+        { key: "gps_lat", label: "Latitude", isDeviceColumn: false, sectionIndex: 0 },
+        { key: "gps_lng", label: "Longitude", isDeviceColumn: false, sectionIndex: 0 },
+      ]},
+      { index: 1, name: "Camera Information", sectionKey: "camera_information", deviceType: "Camera", columns: [
+        { key: "camera_count", label: "Camera Count", isDeviceColumn: false, sectionIndex: 1 },
+        { key: "device_no", label: "Device No", isDeviceColumn: true, sectionIndex: 1 },
+        { key: "device:Camera:CameraType", label: "Camera Type", deviceFieldName: "CameraType", isDeviceColumn: true, sectionIndex: 1 },
+      ]},
+      { index: 2, name: "Summary", sectionKey: "summary", columns: [
+        { key: "status", label: "Status", isDeviceColumn: false, sectionIndex: 2 },
+        { key: "photos", label: "Photos", isDeviceColumn: false, sectionIndex: 2 },
+      ]},
+    ],
+    headers: ["Pole ID", "Lat/Long", "Latitude", "Longitude", "Camera Count", "Device No", "Camera Type", "Status", "Photos"],
+    rows: [
+      { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "1", "", "", "Completed", "p1.jpg"], isDeviceRow: false },
+      { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "1", "1", "IP", "Completed", ""], isDeviceRow: true },
+    ],
+  };
+}
+
+describe("buildCsv", () => {
+  it("emits a band row, a header row, and data rows with CSV escaping", () => {
+    const { buildCsv } = require("@/src/utils/exportData");
+    const csv = buildCsv(sampleTable());
+    const lines = csv.split("\n");
+    expect(lines[0]).toContain("General Information");
+    expect(lines[1].split(",")).toEqual([
+      "Pole ID", "Lat/Long", "Latitude", "Longitude",
+      "Camera Count", "Device No", "Camera Type", "Status", "Photos",
+    ]);
+    expect(lines[2]).toContain("P001");
+  });
+
+  it("escapes commas, quotes, and newlines", () => {
+    const { buildCsv } = require("@/src/utils/exportData");
+    const table = { ...sampleTable(), rows: [{ cells: ["1,2", 'say "hi"', "line1\nline2", "", "", "", "", "", ""], isDeviceRow: false }] };
+    const csv = buildCsv(table);
+    expect(csv).toContain('"1,2"');
+    expect(csv).toContain('"say ""hi"""');
+    expect(csv).toContain('"line1\nline2"');
+  });
+
+  it("prefixes formula injection cells with a single quote", () => {
+    const { buildCsv } = require("@/src/utils/exportData");
+    const table = { ...sampleTable(), rows: [{ cells: ["=SUM(1,2)", "", "", "", "", "", "", "", ""], isDeviceRow: false }] };
+    const csv = buildCsv(table);
+    expect(csv).toContain("'=SUM(1,2)");
+  });
+});
+
+describe("buildExcelBase64", () => {
+  it("produces a valid xlsx with band merges that round-trips", () => {
+    const { buildExcelBase64 } = require("@/src/utils/exportData");
+    const base64 = buildExcelBase64(sampleTable());
+
+    const buf = Buffer.from(base64, "base64");
+    expect(buf[0]).toBe(0x50); // P
+    expect(buf[1]).toBe(0x4b); // K
+
+    const workbook = XLSX.read(buf, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { header: 1 });
+    expect(json[0]).toEqual(["General Information", "General Information", "General Information", "General Information", "Camera Information", "Camera Information", "Camera Information", "Summary", "Summary"]);
+    expect(json[1]).toEqual(sampleTable().headers);
+    expect(json[2]).toEqual(["P001", "12.9716, 77.5946", "12.9716", "77.5946", "1", "", "", "Completed", "p1.jpg"]);
+    expect(json[3]).toEqual(["P001", "12.9716, 77.5946", "12.9716", "77.5946", "1", "1", "IP", "Completed", ""]);
+    expect(Array.isArray(sheet["!merges"]) && sheet["!merges"].length).toBeGreaterThan(0);
+  });
+});
+
+describe("exportInspections", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+    setSharingAvailable(true);
+  });
+
+  it("exports CSV with a band row and shares it", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([]) // sections+fields (empty template -> Summary only)
+      .mockResolvedValueOnce([]) // device defs
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([]) // values
+      .mockResolvedValueOnce([]) // records
+      .mockResolvedValueOnce([]); // photos
+
+    const { exportInspections } = require("@/src/utils/exportData");
+    const result = await exportInspections(1, "TestProject", "csv");
+
+    expect(result).toBe(true);
+    const writeCall = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0];
+    expect(writeCall[1]).toContain("Summary");
+    expect(Sharing.shareAsync).toHaveBeenCalled();
+  });
+
+  it("returns false when no inspections exist", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { exportInspections } = require("@/src/utils/exportData");
+    const result = await exportInspections(999, "EmptyProject", "csv");
+
+    expect(result).toBe(false);
+    expect(FileSystem.writeAsStringAsync).not.toHaveBeenCalled();
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  it("exports Excel as base64 with Base64 encoding and shares it", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { exportInspections } = require("@/src/utils/exportData");
+    const result = await exportInspections(1, "TestProject", "excel");
+
+    expect(result).toBe(true);
+    const writeCall = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0];
+    expect(writeCall[2].encoding).toBe(FileSystem.EncodingType.Base64);
+    expect(writeCall[1]).toMatch(/^UEsDB/);
+    expect(Sharing.shareAsync).toHaveBeenCalled();
+  });
+
+  it("returns false when sharing is unavailable", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    setSharingAvailable(false);
+
+    const { exportInspections } = require("@/src/utils/exportData");
+    const result = await exportInspections(1, "TestProject", "csv");
+
+    expect(result).toBe(false);
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 });

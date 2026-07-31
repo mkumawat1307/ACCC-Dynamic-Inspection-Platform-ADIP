@@ -1,5 +1,6 @@
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
+import * as XLSX from "xlsx";
 import { getDatabase } from "../database/db";
 import { getCurrentInspectionDate } from "./date";
 
@@ -54,6 +55,45 @@ export function splitLatLong(value: string): [string, string] {
   const comma = value.indexOf(",");
   if (comma === -1) return [value.trim(), ""];
   return [value.slice(0, comma).trim(), value.slice(comma + 1).trim()];
+}
+
+function escapeCell(cell: string): string {
+  const escaped = cell.replace(/"/g, '""');
+  const safe = /^[=+\-@\t]/.test(escaped) ? "'" + escaped : escaped;
+  return safe.includes(",") || safe.includes('"') || safe.includes("\n") ? `"${safe}"` : safe;
+}
+
+function bandRowOf(table: ReportTable): string[] {
+  return table.sections.flatMap((s) => s.columns.map(() => s.name));
+}
+
+export function buildCsv(table: ReportTable): string {
+  const lines = [bandRowOf(table), table.headers, ...table.rows.map((r) => r.cells)];
+  return lines.map((row) => row.map(escapeCell).join(",")).join("\n");
+}
+
+export function buildExcelBase64(table: ReportTable): string {
+  const aoa: (string | number)[][] = [bandRowOf(table), table.headers, ...table.rows.map((r) => r.cells)];
+  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+
+  const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
+  let col = 0;
+  for (const s of table.sections) {
+    if (s.columns.length > 1) {
+      merges.push({ s: { r: 0, c: col }, e: { r: 0, c: col + s.columns.length - 1 } });
+    }
+    col += s.columns.length;
+  }
+  if (merges.length > 0) worksheet["!merges"] = merges;
+
+  const lastRow = aoa.length - 1;
+  const lastCol = aoa[0].length - 1;
+  worksheet["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: lastCol } }) };
+  worksheet["!freeze"] = { xSplit: 0, ySplit: 2 };
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Inspections");
+  return XLSX.write(workbook, { type: "base64", bookType: "xlsx" });
 }
 
 export async function buildReportTable(projectId: number, inspectionId?: number): Promise<ReportTable> {
@@ -267,6 +307,56 @@ function parseDeviceData(data: string | null): Record<string, string> {
   } catch {
     return {};
   }
+}
+
+function buildFileName(projectName: string, poleId: string | null, ext: string): string {
+  const safeName = projectName.replace(/[^a-zA-Z0-9]/g, "_");
+  const date = new Date().toISOString().slice(0, 10);
+  if (poleId) {
+    const safePoleId = poleId.replace(/[^a-zA-Z0-9]/g, "_");
+    return `${safeName}_${safePoleId}_inspection_${date}.${ext}`;
+  }
+  return `${safeName}_inspections_${date}.${ext}`;
+}
+
+async function writeAndShare(fileUri: string, mimeType: string, dialogTitle: string, uti: string): Promise<boolean> {
+  if (!(await Sharing.isAvailableAsync())) return false;
+  await Sharing.shareAsync(fileUri, { mimeType, dialogTitle, UTI: uti });
+  return true;
+}
+
+async function shareTableFile(table: ReportTable, projectName: string, poleId: string | null, format: "csv" | "excel"): Promise<boolean> {
+  const ext = format === "csv" ? "csv" : "xlsx";
+  const fileUri = FileSystem.documentDirectory + buildFileName(projectName, poleId, ext);
+  const dialogTitle = poleId ? `Export ${poleId} Inspection` : `Export ${projectName} Inspection Data`;
+  if (format === "csv") {
+    await FileSystem.writeAsStringAsync(fileUri, buildCsv(table), { encoding: FileSystem.EncodingType.UTF8 });
+    return writeAndShare(fileUri, "text/csv", dialogTitle, "public.comma-separated-values-text");
+  }
+  await FileSystem.writeAsStringAsync(fileUri, buildExcelBase64(table), { encoding: FileSystem.EncodingType.Base64 });
+  return writeAndShare(
+    fileUri,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    dialogTitle,
+    "org.openxmlformats.spreadsheetml.sheet"
+  );
+}
+
+export async function exportInspections(projectId: number, projectName: string, format: ExportFormat): Promise<boolean> {
+  const table = await buildReportTable(projectId);
+  if (!table.rows.some((r) => !r.isDeviceRow)) return false;
+  if (format === "pdf") {
+    return sharePdfFile(buildProjectPdfHtml(table, projectName), projectName, null);
+  }
+  return shareTableFile(table, projectName, null, format);
+}
+
+function buildProjectPdfHtml(_table: ReportTable, _projectName: string): string {
+  return "";
+}
+
+async function sharePdfFile(_html: string, _projectName: string, _poleId: string | null): Promise<boolean> {
+  return false;
 }
 
 export async function exportProjectData(projectId: number, projectName: string): Promise<boolean> {
