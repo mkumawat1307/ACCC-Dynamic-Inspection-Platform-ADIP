@@ -2,6 +2,69 @@ import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
 import { getDatabase } from "../database/db";
 
+export interface InspectionTable {
+  headers: string[];
+  rows: string[][];
+}
+
+export async function buildInspectionTable(projectId: number): Promise<InspectionTable> {
+  const db = await getDatabase();
+
+  const columns = await db.getAllAsync<{ FieldID: number; FieldName: string }>(
+    `SELECT f.FieldID, f.FieldName
+     FROM InspectionFields f
+     JOIN InspectionSections s ON f.SectionID = s.SectionID
+     WHERE f.IsActive = 1 AND f.IsVisible = 1
+       AND s.IsActive = 1 AND s.IsVisible = 1 AND s.IsRepeatable = 0
+     ORDER BY s.DisplayOrder, f.DisplayOrder`
+  );
+
+  const headers = [...columns.map((c) => c.FieldName), "Status", "Remarks"];
+
+  const inspections = await db.getAllAsync<{
+    InspectionID: number;
+    Status: string;
+    Remarks: string | null;
+  }>(
+    `SELECT InspectionID, Status, Remarks
+     FROM Inspections
+     WHERE ProjectID = ?
+     ORDER BY InspectionID`,
+    [projectId]
+  );
+
+  const values = await db.getAllAsync<{
+    InspectionID: number;
+    FieldID: number;
+    FieldValue: string | null;
+  }>(
+    `SELECT v.InspectionID, v.FieldID, v.FieldValue
+     FROM InspectionValues v
+     JOIN Inspections i ON v.InspectionID = i.InspectionID
+     WHERE i.ProjectID = ?`,
+    [projectId]
+  );
+
+  const valueMapByInspection = new Map<number, Map<number, string>>();
+  for (const v of values) {
+    if (!valueMapByInspection.has(v.InspectionID)) {
+      valueMapByInspection.set(v.InspectionID, new Map());
+    }
+    valueMapByInspection.get(v.InspectionID)!.set(v.FieldID, v.FieldValue ?? "");
+  }
+
+  const rows = inspections.map((insp) => {
+    const valueMap = valueMapByInspection.get(insp.InspectionID) ?? new Map<number, string>();
+    return [
+      ...columns.map((c) => valueMap.get(c.FieldID) ?? ""),
+      insp.Status,
+      insp.Remarks ?? "",
+    ];
+  });
+
+  return { headers, rows };
+}
+
 export async function exportProjectData(projectId: number, projectName: string): Promise<boolean> {
   const db = await getDatabase();
 
@@ -84,9 +147,10 @@ export async function exportProjectData(projectId: number, projectName: string):
     ...rows.map((row) =>
       row.map((cell) => {
         const escaped = cell.replace(/"/g, '""');
-        return escaped.includes(",") || escaped.includes('"') || escaped.includes("\n")
-          ? `"${escaped}"`
-          : escaped;
+        const safe = /^[=+\-@\t]/.test(escaped) ? "'" + escaped : escaped;
+        return safe.includes(",") || safe.includes('"') || safe.includes("\n")
+          ? `"${safe}"`
+          : safe;
       }).join(",")
     ),
   ].join("\n");
