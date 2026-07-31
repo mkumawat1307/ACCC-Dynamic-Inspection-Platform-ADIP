@@ -8,8 +8,11 @@ const COLUMN_WIDTH = 150;
 export default function ReportTablePreview({ table }: { table: ReportTable }) {
   const bandRow = table.sections.flatMap((s) => s.columns.map(() => s.name));
 
-  const renderRow = (cells: string[], isHeader: boolean, tinted: boolean) => (
-    <View style={styles.row} key={`${isHeader ? "h" : "d"}-${cells[0] ?? ""}-${cells.length}`}>
+  const renderRow = (cells: string[], isHeader: boolean, tinted: boolean, index: number) => (
+    <View
+      style={styles.row}
+      key={`${isHeader ? "h" : "d"}-${index}-${cells[0] ?? ""}-${cells.length}`}
+    >
       {cells.map((cell, i) => (
         <View key={i} style={[styles.cell, isHeader && styles.headerCell, tinted && styles.tintedCell]}>
           <Text style={isHeader ? styles.headerText : styles.cellText} numberOfLines={2}>
@@ -23,9 +26,9 @@ export default function ReportTablePreview({ table }: { table: ReportTable }) {
   return (
     <ScrollView horizontal style={styles.scroll}>
       <View>
-        {renderRow(bandRow, true, false)}
-        {renderRow(table.headers, true, false)}
-        {table.rows.map((row, i) => renderRow(row.cells, false, row.isDeviceRow))}
+        {renderRow(bandRow, true, false, 0)}
+        {renderRow(table.headers, true, false, 1)}
+        {table.rows.map((row, i) => renderRow(row.cells, false, row.isDeviceRow, i))}
       </View>
     </ScrollView>
   );
