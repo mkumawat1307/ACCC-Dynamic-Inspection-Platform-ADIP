@@ -6,13 +6,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Card,
   Text,
-  Button,
   ActivityIndicator,
   Appbar,
   Menu,
   Divider,
-  Portal,
-  Dialog,
 } from "react-native-paper";
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
@@ -20,6 +17,9 @@ import { exportProjectData } from "@/src/utils/exportData";
 import { useInspection } from "@/src/context/InspectionContext";
 import StatCard from "@/src/components/StatCard";
 import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
+
+import { logger } from "@/src/utils/logger";
+import DeleteProjectDialog from "./components/DeleteProjectDialog";
 export default function ProjectDashboard() {
   const { projectId, projectData: projectDataJson } = useLocalSearchParams<{
     projectId: string;
@@ -44,7 +44,7 @@ useEffect(() => {
 async function loadProject() {
   if (!projectId) return;
 
-  // 1. Use projectData passed via navigation params (most reliable — no DB call needed)
+  // 1. Use projectData passed via navigation params (most reliable -- no DB call needed)
   if (projectDataJson) {
     try {
       const parsed = JSON.parse(projectDataJson) as Project;
@@ -64,7 +64,7 @@ async function loadProject() {
   }
 
   // 3. Last resort: query global DB (will corrupt handle on Android if project DB is active)
-  console.warn("[dashboard] Falling back to getProjectById — may corrupt DB handle on Android");
+  logger.warn("[dashboard] Falling back to getProjectById -- may corrupt DB handle on Android");
   const data = await ProjectRepository.getProjectById(
     Number(projectId)
   );
@@ -89,6 +89,7 @@ const handleExport = async () => {
     setExporting(false);
   }
 };
+
     if (loading) {
   return (
     <SafeAreaView
@@ -343,86 +344,15 @@ return (
 
     </ScrollView>
 
-    <Portal>
-    <Dialog
-        visible={deleteDialogVisible}
-        onDismiss={() => setDeleteDialogVisible(false)}
-    >
-        <Dialog.Title>Delete Project</Dialog.Title>
-
-        <Dialog.Content>
-        <Text variant="bodyMedium">
-            Project:
-        </Text>
-
-        <Text
-            variant="titleMedium"
-            style={{ marginBottom: 16 }}
-        >
-            {project.ProjectName}
-        </Text>
-
-        <Text variant="bodyMedium">
-            Deleting this project will permanently remove:
-        </Text>
-
-        <Text style={{ marginTop: 10 }}>
-            • Project{"\n"}
-            • All inspections{"\n"}
-            • All photos{"\n"}
-            • Inspection values{"\n"}
-            • Inspection devices
-        </Text>
-
-        <Text
-            style={{
-            marginTop: 20,
-            fontWeight: "bold",
-            }}
-        >
-            Would you like to export the data before deleting?
-        </Text>
-        </Dialog.Content>
-
-        <Dialog.Actions>
-
-        <Button
-            onPress={() => {
-            setDeleteDialogVisible(false);
-
-            // Export Excel (Next Step)
-            }}
-        >
-            Export & Delete
-        </Button>
-
-        <Button
-        textColor="red"
-        onPress={async () => {
-            try {
-            setDeleteDialogVisible(false);
-
-            await ProjectRepository.deleteProject(project.ProjectID);
-
-            router.back();
-
-            } catch (error) {
-            console.error("Delete Project Error:", error);
-            }
-        }}
-        >
-        Delete
-        </Button>
-
-        <Button
-            onPress={() => setDeleteDialogVisible(false)}
-        >
-            Cancel
-        </Button>
-
-        </Dialog.Actions>
-    </Dialog>
-    </Portal>
+    <DeleteProjectDialog
+      visible={deleteDialogVisible}
+      projectName={project.ProjectName}
+      onDismiss={() => setDeleteDialogVisible(false)}
+      onDeleted={async () => {
+        await ProjectRepository.deleteProject(project.ProjectID);
+        router.back();
+      }}
+    />
    </SafeAreaView>
     
 );

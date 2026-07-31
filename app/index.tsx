@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { StyleSheet, View, FlatList, Alert } from "react-native";
+import { logger } from "@/src/utils/logger";
+import { View, FlatList, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Searchbar,
@@ -7,20 +8,17 @@ import {
   Text,
   Card,
   Menu,
-  IconButton,
   Divider,
-  Portal,
-  Dialog,
-  ActivityIndicator,
-  TextInput,
 } from "react-native-paper";
 import { useRouter, useFocusEffect } from "expo-router";
 
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
 import { exportProjectData } from "@/src/utils/exportData";
+import { DeleteProjectDialog, CloneProjectDialog } from "@/app/components/ProjectDialogs";
+import { styles } from "@/app/index.styles";
 import { useInspection } from "@/src/context/InspectionContext";
-import { deleteProjectDb, deleteProjectFolder } from "@/src/database/helpers/ProjectDBManager";
+import { deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -50,14 +48,17 @@ export default function HomeScreen() {
       const data = await ProjectRepository.getProjects();
       setProjects(data);
     } catch (error) {
-      console.error("Error loading projects:", error);
+      logger.error("Error loading projects:", error);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      loadProjects();
-    }, [])
+      (async () => {
+        await closeProject();
+        await loadProjects();
+      })();
+    }, [closeProject])
   );
 
   const searchText = search.trim().toLowerCase();
@@ -129,7 +130,7 @@ export default function HomeScreen() {
       setSelectedProject(null);
       loadProjects();
     } catch (error) {
-      console.error("Delete error:", error);
+      logger.error("Delete error:", error);
       Alert.alert("Error", "Unable to delete project.");
     }
   };
@@ -158,7 +159,7 @@ export default function HomeScreen() {
         });
       }
     } catch (error) {
-      console.error("Clone error:", error);
+      logger.error("Clone error:", error);
       Alert.alert("Error", "Unable to clone project.");
     }
   };
@@ -228,7 +229,7 @@ export default function HomeScreen() {
         <View style={styles.emptyContainer}>
           <Text variant="titleMedium">No Projects Found</Text>
           <Text variant="bodyMedium" style={styles.subtitle}>
-            Tap "New Project" to create your first project.
+            Tap {'\u201C'}New Project{'\u201D'} to create your first project.
           </Text>
         </View>
       ) : (
@@ -269,7 +270,7 @@ export default function HomeScreen() {
                             projectData: JSON.stringify(item),
                           },
                         });
-                      } catch (error) {
+                      } catch {
                         Alert.alert("Error", "Unable to open project database.");
                       }
                     }}
@@ -327,142 +328,24 @@ export default function HomeScreen() {
         />
       )}
 
-      <Portal>
-        <Dialog
-          visible={deleteDialogVisible}
-          onDismiss={() => setDeleteDialogVisible(false)}
-        >
-          <Dialog.Icon icon="alert" color="#D32F2F" size={40} />
-          <Dialog.Title style={{ textAlign: "center" }}>
-            Delete Project?
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyMedium" style={{ textAlign: "center", fontWeight: "600", marginBottom: 8 }}>
-              {selectedProject?.ProjectName}
-            </Text>
-            <Text variant="bodyMedium" style={{ textAlign: "center", color: "#D32F2F", marginBottom: 12 }}>
-              This action cannot be undone!
-            </Text>
-            <Text variant="bodySmall" style={{ color: "#666" }}>
-              Deleting this project will permanently remove:
-            </Text>
-            <Text variant="bodySmall" style={{ marginTop: 6, color: "#666" }}>
-              {"\u2022"} Project details{"\n"}
-              {"\u2022"} All inspections and inspection data{"\n"}
-              {"\u2022"} All photos captured during inspections{"\n"}
-              {"\u2022"} All camera and switch records{"\n"}
-              {"\u2022"} All field values
-            </Text>
-            <Text variant="bodySmall" style={{ marginTop: 12, fontWeight: "600" }}>
-              Are you sure you want to continue?
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setDeleteDialogVisible(false)}>Cancel</Button>
-            <Button
-              textColor="#D32F2F"
-              onPress={handleDelete}
-            >
-              Delete Permanently
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <DeleteProjectDialog
+        visible={deleteDialogVisible}
+        projectName={selectedProject?.ProjectName}
+        onDismiss={() => setDeleteDialogVisible(false)}
+        onConfirm={handleDelete}
+      />
 
-      <Portal>
-        <Dialog
-          visible={cloneDialogVisible}
-          onDismiss={() => setCloneDialogVisible(false)}
-        >
-          <Dialog.Icon icon="content-copy" size={40} />
-          <Dialog.Title style={{ textAlign: "center" }}>
-            Clone Project
-          </Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodySmall" style={{ textAlign: "center", color: "#666", marginBottom: 12 }}>
-              This will create a new project with its own independent template and inspection form.
-            </Text>
-            <TextInput
-              label="Project Name"
-              value={cloneName}
-              onChangeText={setCloneName}
-              mode="outlined"
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setCloneDialogVisible(false)}>Cancel</Button>
-            <Button
-              mode="contained"
-              onPress={handleClone}
-              disabled={!cloneName.trim()}
-            >
-              Clone
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <CloneProjectDialog
+        visible={cloneDialogVisible}
+        cloneName={cloneName}
+        onDismiss={() => { setCloneDialogVisible(false); setCloneName(""); }}
+        onCloneNameChange={setCloneName}
+        onConfirm={handleClone}
+        confirmDisabled={!cloneName.trim()}
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: "#F5F5F5",
-  },
 
-  title: {
-    textAlign: "center",
-    marginBottom: 25,
-    fontWeight: "bold",
-  },
 
-  button: {
-    marginBottom: 20,
-  },
-
-  search: {
-    marginBottom: 30,
-  },
-
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  subtitle: {
-    marginTop: 10,
-    textAlign: "center",
-    color: "#666",
-  },
-
-  projectCard: {
-    marginBottom: 12,
-    borderRadius: 10,
-  },
-
-  projectName: {
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-
-  projectDetail: {
-    color: "#555",
-    marginBottom: 2,
-  },
-
-  divider: {
-    marginVertical: 10,
-  },
-
-  actionRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-
-  actionBtn: {
-    flex: 1,
-  },
-});
