@@ -14,7 +14,6 @@ import { useRouter, useFocusEffect } from "expo-router";
 
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
-import { exportProjectData } from "@/src/utils/exportData";
 import { DeleteProjectDialog, CloneProjectDialog } from "@/app/components/ProjectDialogs";
 import { styles } from "@/app/index.styles";
 import { useInspection } from "@/src/context/InspectionContext";
@@ -30,7 +29,6 @@ export default function HomeScreen() {
   const [cloneDialogVisible, setCloneDialogVisible] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [cloneName, setCloneName] = useState("");
-  const [exportingId, setExportingId] = useState<number | null>(null);
 
   const [sortBy, setSortBy] = useState<
     | "newest"
@@ -164,21 +162,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleExportProject = async (project: Project) => {
-    setExportingId(project.ProjectID);
-    try {
-      const success = await exportProjectData(project.ProjectID, project.ProjectName);
-      if (!success) {
-        Alert.alert("No Data", "No inspection data to export for this project.");
-      }
-    } catch (error) {
-      console.error("Export error:", error);
-      Alert.alert("Export Failed", "Unable to export data.");
-    } finally {
-      setExportingId(null);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <Text variant="headlineMedium" style={styles.title}>
@@ -299,17 +282,6 @@ export default function HomeScreen() {
                     onPress={() => confirmClone(item)}
                   >
                     Clone
-                  </Button>
-                  <Button
-                    mode="outlined"
-                    icon="microsoft-excel"
-                    compact
-                    style={styles.actionBtn}
-                    loading={exportingId === item.ProjectID}
-                    disabled={exportingId === item.ProjectID}
-                    onPress={() => handleExportProject(item)}
-                  >
-                    Export
                   </Button>
                   <Button
                     mode="outlined"

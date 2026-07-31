@@ -1,6 +1,6 @@
 //frontend\app\projects\dashboard.tsx
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View, ScrollView, Alert } from "react-native";
+import { StyleSheet, View, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -13,7 +13,6 @@ import {
 } from "react-native-paper";
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
-import { exportProjectData } from "@/src/utils/exportData";
 import { useInspection } from "@/src/context/InspectionContext";
 import StatCard from "@/src/components/StatCard";
 import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
@@ -29,7 +28,6 @@ export default function ProjectDashboard() {
   const { project: contextProject } = useInspection();
 
 const [loading, setLoading] = useState(true);
-const [exporting, setExporting] = useState(false);
 
 const [project, setProject] = useState<Project | null>(null);
 const [menuVisible, setMenuVisible] = useState(false);
@@ -73,22 +71,6 @@ async function loadProject() {
 
   setLoading(false);
 }
-
-const handleExport = async () => {
-  if (!project) return;
-  setExporting(true);
-  try {
-    const success = await exportProjectData(project.ProjectID, project.ProjectName);
-    if (!success) {
-      Alert.alert("No Data", "No inspection data found to export for this project.");
-    }
-  } catch (error) {
-    console.error("Export error:", error);
-    Alert.alert("Export Failed", "Unable to export inspection data.");
-  } finally {
-    setExporting(false);
-  }
-};
 
     if (loading) {
   return (
@@ -322,22 +304,16 @@ return (
         subtitle="Generate inspection reports"
         icon="file-chart"
         compact
-        onPress={() => router.push("/reports")}
+        onPress={() =>
+          router.push({
+            pathname: "/reports",
+            params: {
+              projectId: project.ProjectID.toString(),
+              projectName: project.ProjectName,
+            },
+          })
+        }
       />
-    </View>
-  </View>
-  <View style={styles.actionRow}>
-    <View style={styles.actionHalf}>
-      <DashboardActionCard
-        title="Export"
-        subtitle="Export inspection data as CSV"
-        icon="database-export"
-        compact
-        onPress={handleExport}
-      />
-    </View>
-    <View style={styles.actionHalf}>
-      <View />
     </View>
   </View>
 </View>
