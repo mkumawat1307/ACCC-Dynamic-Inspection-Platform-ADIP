@@ -1,6 +1,6 @@
 // frontend/app/inspection/index.tsx
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -14,17 +14,18 @@ import {
   Searchbar,
   Button,
   Checkbox,
-  Dialog,
-  Portal,
+  IconButton,
 } from "react-native-paper";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 
 import {
   InspectionListRepository,
   InspectionListItem,
 } from "@/src/database/repositories/InspectionListRepository";
 
-import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { useInspection } from "@/src/context/InspectionContext";
+
+import DeleteInspectionsDialog from "./components/DeleteInspectionsDialog";
 
 export default function InspectionListScreen() {
 
@@ -33,6 +34,8 @@ export default function InspectionListScreen() {
   const { projectId } = useLocalSearchParams<{
     projectId: string;
   }>();
+
+  const { project } = useInspection();
 
   const [search, setSearch] = useState("");
 
@@ -48,9 +51,11 @@ export default function InspectionListScreen() {
   const [deleteDialogVisible, setDeleteDialogVisible] =
     useState(false);
 
-  useEffect(() => {
-    loadInspections();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadInspections();
+    }, [projectId])
+  );
 
   async function loadInspections() {
 
@@ -62,6 +67,24 @@ export default function InspectionListScreen() {
       );
 
     setInspections(data);
+  }
+
+  function openEdit(item: InspectionListItem) {
+
+    const params: Record<string, string> = {
+      inspectionId: item.InspectionID.toString(),
+      projectId: projectId ?? "",
+    };
+
+    if (project) {
+      params.projectData = JSON.stringify(project);
+    }
+
+    router.push({
+      pathname: "/inspection/edit",
+      params,
+    });
+
   }
 
   function toggleSelection(id: number) {
@@ -107,11 +130,14 @@ export default function InspectionListScreen() {
         i.Status === "Completed"
     ).length;
 
+  const query = search.toLowerCase();
+
   const filtered =
     inspections.filter((item) =>
-      item.PoleID.toLowerCase().includes(
-        search.toLowerCase()
-      )
+      item.PoleID.toLowerCase().includes(query) ||
+      (item.Division ?? "").toLowerCase().includes(query) ||
+      (item.District ?? "").toLowerCase().includes(query) ||
+      (item.Block ?? "").toLowerCase().includes(query)
     );
 
   return (
@@ -184,7 +210,7 @@ export default function InspectionListScreen() {
       )}
 
       <Searchbar
-        placeholder="Search Pole ID"
+        placeholder="Search Pole ID, Division, District, Block"
         value={search}
         onChangeText={setSearch}
         style={styles.search}
@@ -233,13 +259,7 @@ export default function InspectionListScreen() {
                 return;
               }
 
-            router.push({
-            pathname: "/inspection/edit",
-            params: {
-                inspectionId: item.InspectionID.toString(),
-                projectId,
-            },
-            });
+              openEdit(item);
 
             }}
           >
@@ -279,6 +299,18 @@ export default function InspectionListScreen() {
                   </Text>
 
                   <Text>
+                    Division : {item.Division || "N/A"}
+                  </Text>
+
+                  <Text>
+                    District : {item.District || "N/A"}
+                  </Text>
+
+                  <Text>
+                    Block : {item.Block || "N/A"}
+                  </Text>
+
+                  <Text>
                     Status : {item.Status}
                   </Text>
 
@@ -288,6 +320,13 @@ export default function InspectionListScreen() {
 
                 </View>
 
+                {!selectionMode && (
+                  <IconButton
+                    icon="pencil"
+                    size={20}
+                    onPress={() => openEdit(item)}
+                  />
+                )}
               </View>
 
             </Card.Content>
@@ -296,92 +335,14 @@ export default function InspectionListScreen() {
 
         )}
       />
-            <Portal>
-
-        <Dialog
-          visible={deleteDialogVisible}
-          onDismiss={() => setDeleteDialogVisible(false)}
-        >
-
-          <Dialog.Title>
-            Delete Inspections
-          </Dialog.Title>
-
-          <Dialog.Content>
-
-            <Text variant="bodyMedium">
-              You selected {selectedIds.length} inspection(s).
-            </Text>
-
-            <Text variant="bodyMedium">
-              Draft : {selectedDrafts}
-            </Text>
-
-            <Text variant="bodyMedium">
-              Completed : {selectedCompleted}
-            </Text>
-
-            <Text
-              variant="bodyMedium"
-              style={{
-                marginTop: 12,
-              }}
-            >
-              All selected inspections and their associated
-              data will be permanently deleted.
-            </Text>
-
-            <Text
-              variant="bodyMedium"
-              style={{
-                color: "red",
-                marginTop: 10,
-                fontWeight: "bold",
-              }}
-            >
-              This action cannot be undone.
-            </Text>
-
-          </Dialog.Content>
-
-          <Dialog.Actions>
-
-            <Button
-              onPress={() =>
-                setDeleteDialogVisible(false)
-              }
-            >
-              Cancel
-            </Button>
-
-            <Button
-            mode="contained"
-            onPress={async () => {
-                try {
-                await InspectionRepository.deleteMultipleInspections(
-                    selectedIds
-                );
-
-                setDeleteDialogVisible(false);
-
-                clearSelection();
-
-                await loadInspections();
-
-                console.log("Delete completed");
-                } catch (error) {
-                console.error("Delete failed:", error);
-                }
-            }}
-            >
-            Delete
-            </Button>
-
-          </Dialog.Actions>
-
-        </Dialog>
-
-      </Portal>
+      <DeleteInspectionsDialog
+        visible={deleteDialogVisible}
+        selectedIds={selectedIds}
+        selectedDrafts={selectedDrafts}
+        selectedCompleted={selectedCompleted}
+        onDismiss={() => setDeleteDialogVisible(false)}
+        onDeleted={() => { clearSelection(); loadInspections(); }}
+      />
           </SafeAreaView>
   );
 }
