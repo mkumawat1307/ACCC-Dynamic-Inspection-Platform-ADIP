@@ -130,8 +130,18 @@ describe("exportProjectData", () => {
   });
 });
 
-describe("buildInspectionTable", () => {
+describe("buildReportTable", () => {
   let mockDb: ReturnType<typeof createMockDb>;
+
+  const templateRows = [
+    { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID", FieldDisplayOrder: 1 },
+    { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 2, FieldKey: "gps", FieldName: "Lat/Long", FieldDisplayOrder: 2 },
+    { SectionID: 2, SectionKey: "camera_information", SectionName: "Camera Information", IsRepeatable: 1, SectionDisplayOrder: 2, FieldID: 3, FieldKey: "camera_count", FieldName: "Camera Count", FieldDisplayOrder: 1 },
+  ];
+
+  const deviceDefs = [
+    { DeviceType: "Camera", FieldName: "CameraType", Label: "Camera Type", DisplayOrder: 1 },
+  ];
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -139,75 +149,133 @@ describe("buildInspectionTable", () => {
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
   });
 
-  it("builds headers from template columns plus Status and Remarks", async () => {
+  it("builds banded sections and full headers in form order", async () => {
     mockDb.getAllAsync
-      .mockResolvedValueOnce([
-        { FieldID: 1, FieldName: "Pole ID" },
-        { FieldID: 2, FieldName: "Voltage" },
-        { FieldID: 3, FieldName: "Height" },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([])   // inspections
+      .mockResolvedValueOnce([])   // values
+      .mockResolvedValueOnce([])   // device records
+      .mockResolvedValueOnce([]);  // photos
 
-    const { buildInspectionTable } = require("@/src/utils/exportData");
-    const table = await buildInspectionTable(1);
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
 
-    expect(table.headers).toEqual(["Pole ID", "Voltage", "Height", "Status", "Remarks"]);
+    expect(table.sections.map((s: { name: string }) => s.name)).toEqual([
+      "General Information",
+      "Camera Information",
+      "Summary",
+    ]);
+    expect(table.headers).toEqual([
+      "Pole ID", "Lat/Long", "Latitude", "Longitude",
+      "Camera Count", "Device No", "Camera Type",
+      "Status", "Photos",
+    ]);
     expect(table.rows).toEqual([]);
   });
 
-  it("aligns saved values to columns by FieldID, empty where missing", async () => {
+  it("fills one base row per inspection and derives Latitude/Longitude and Status/Photos", async () => {
     mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
       .mockResolvedValueOnce([
-        { FieldID: 1, FieldName: "Pole ID" },
-        { FieldID: 2, FieldName: "Voltage" },
-        { FieldID: 3, FieldName: "Height" },
-      ])
-      .mockResolvedValueOnce([
-        { InspectionID: 1, Status: "Completed", Remarks: "ok" },
-        { InspectionID: 2, Status: "Draft", Remarks: null },
+        { InspectionID: 1, Status: "Completed" },
+        { InspectionID: 2, Status: "Draft" },
       ])
       .mockResolvedValueOnce([
         { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
-        { InspectionID: 1, FieldID: 2, FieldValue: "11kV" },
+        { InspectionID: 1, FieldID: 2, FieldValue: "12.9716, 77.5946" },
         { InspectionID: 2, FieldID: 1, FieldValue: "P002" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FileName: "p1.jpg" },
+        { InspectionID: 1, FileName: "p2.jpg" },
       ]);
 
-    const { buildInspectionTable } = require("@/src/utils/exportData");
-    const table = await buildInspectionTable(1);
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
 
     expect(table.rows).toEqual([
-      ["P001", "11kV", "", "Completed", "ok"],
-      ["P002", "", "", "Draft", ""],
+      { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "", "", "", "Completed", "p1.jpg, p2.jpg"], isDeviceRow: false },
+      { cells: ["P002", "", "", "", "", "", "", "Draft", ""], isDeviceRow: false },
+    ]);
+  });
+
+  it("emits one device row per saved device repeating pole-level columns", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+        { InspectionID: 1, FieldID: 2, FieldValue: "12.9716, 77.5946" },
+        { InspectionID: 1, FieldID: 3, FieldValue: "2" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "IP" }) },
+        { InspectionID: 1, DeviceType: "Camera", DeviceNo: 2, DeviceData: JSON.stringify({ CameraType: "PTZ" }) },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
+
+    expect(table.rows).toEqual([
+      { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "2", "", "", "Completed", ""], isDeviceRow: false },
+      { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "2", "1", "IP", "Completed", ""], isDeviceRow: true },
+      { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "2", "2", "PTZ", "Completed", ""], isDeviceRow: true },
     ]);
   });
 
   it("keeps headers stable regardless of which inspection has data", async () => {
     mockDb.getAllAsync
-      .mockResolvedValueOnce([
-        { FieldID: 1, FieldName: "Pole ID" },
-        { FieldID: 2, FieldName: "Voltage" },
-      ])
-      .mockResolvedValueOnce([{ InspectionID: 2, Status: "Draft", Remarks: null }])
-      .mockResolvedValueOnce([{ InspectionID: 2, FieldID: 1, FieldValue: "P002" }]);
-
-    const { buildInspectionTable } = require("@/src/utils/exportData");
-    const table = await buildInspectionTable(1);
-
-    expect(table.headers).toEqual(["Pole ID", "Voltage", "Status", "Remarks"]);
-    expect(table.rows).toEqual([["P002", "", "Draft", ""]]);
-  });
-
-  it("returns empty table for empty project", async () => {
-    mockDb.getAllAsync
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([{ InspectionID: 2, Status: "Draft" }])
+      .mockResolvedValueOnce([{ InspectionID: 2, FieldID: 1, FieldValue: "P002" }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
-    const { buildInspectionTable } = require("@/src/utils/exportData");
-    const table = await buildInspectionTable(999);
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
 
-    expect(table.headers).toEqual(["Status", "Remarks"]);
-    expect(table.rows).toEqual([]);
+    expect(table.headers).toEqual([
+      "Pole ID", "Lat/Long", "Latitude", "Longitude",
+      "Camera Count", "Device No", "Camera Type",
+      "Status", "Photos",
+    ]);
+    expect(table.rows).toEqual([
+      { cells: ["P002", "", "", "", "", "", "", "Draft", ""], isDeviceRow: false },
+    ]);
+  });
+
+  it("filters to a single inspection when inspectionId is given", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+        { InspectionID: 1, FieldID: 2, FieldValue: "12.9716, 77.5946" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1, 1);
+
+    expect(table.rows).toEqual([
+      { cells: ["P001", "12.9716, 77.5946", "12.9716", "77.5946", "", "", "", "Completed", ""], isDeviceRow: false },
+    ]);
+  });
+});
+
+describe("splitLatLong", () => {
+  it("splits a combined GPS value into latitude and longitude", () => {
+    const { splitLatLong } = require("@/src/utils/exportData");
+    expect(splitLatLong("12.9716, 77.5946")).toEqual(["12.9716", "77.5946"]);
+    expect(splitLatLong("12.9716")).toEqual(["12.9716", ""]);
+    expect(splitLatLong("")).toEqual(["", ""]);
   });
 });
