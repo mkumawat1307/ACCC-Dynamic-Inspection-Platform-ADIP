@@ -436,7 +436,7 @@ export async function loadInspectionFormData(inspectionId: number): Promise<Insp
   return {
     poleId,
     status: insp?.Status ?? "",
-    date: valueMap.get(dateFieldId(rows)) ?? dateFallback,
+    date: valueMap.get(dateFieldId(rows)) || dateFallback,
     sections,
     photos,
   };

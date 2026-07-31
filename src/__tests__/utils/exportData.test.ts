@@ -634,6 +634,50 @@ describe("loadInspectionFormData", () => {
 
     expect(form.photos[0].dataUri).toBeNull();
   });
+
+  it("falls back to getCurrentInspectionDate when the saved date value is blank", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID" },
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, FieldID: 2, FieldKey: "date", FieldName: "Date" },
+      ])
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldValue: "P001" },
+        { FieldID: 2, FieldValue: null },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    mockDb.getFirstAsync.mockResolvedValue({ Status: "Completed" });
+
+    const { loadInspectionFormData } = require("@/src/utils/exportData");
+    const { getCurrentInspectionDate } = require("@/src/utils/date");
+    const fallback = getCurrentInspectionDate();
+    const form = await loadInspectionFormData(1);
+
+    expect(form.date).toBe(fallback);
+  });
+
+  it("uses the saved date value when present", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID" },
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, FieldID: 2, FieldKey: "date", FieldName: "Date" },
+      ])
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldValue: "P001" },
+        { FieldID: 2, FieldValue: "31-Jul-2026" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    mockDb.getFirstAsync.mockResolvedValue({ Status: "Completed" });
+
+    const { loadInspectionFormData } = require("@/src/utils/exportData");
+    const form = await loadInspectionFormData(1);
+
+    expect(form.date).toBe("31-Jul-2026");
+  });
 });
 
 describe("buildInspectionPdfHtml", () => {
