@@ -1,94 +1,118 @@
-# Reports & Export Design
+# Reports & Export Design (v2)
 
 Date: 2026-07-31
 
 ## Goal
 
-Move the "Export Data as CSV" capability off the project dashboard into the Reports screen, and add Excel (`.xlsx`) and PDF export alongside CSV. All three formats export the same table: every field from every inspection-form section as a main column (in form order), one row per pole, empty cells where no value was saved.
+Deliver the Reports screen with project-level export (CSV, Excel `.xlsx`, PDF) plus an on-screen preview of the export table, and single-inspection export (PDF, Excel, CSV) from the Inspection List. All exports match the Inspection Form's section hierarchy, field order, and one-row-per-device layout. Supersedes the v1 flat-layout spec (repeatable sections excluded, no preview, no per-inspection export).
 
 ## Background
 
-- `app/reports/index.tsx` is currently a placeholder ("Reports" text) reached from the dashboard's "Generate inspection reports" card, which passes no route params.
-- `src/utils/exportData.ts` implements `exportProjectData(projectId, projectName)` — queries the active project DB, builds a flat table (static columns + dynamic per-inspection field values), renders CSV, writes to `documentDirectory`, and shares via `expo-sharing`. Triggered by the dashboard's "Export inspection data as CSV" card. Current headers are derived from the first inspection's saved values, so empty/unfilled sections may be missing columns.
-- `expo-print` (~15.0.8) is already installed → PDF generation is available. `expo-sharing` and `expo-file-system/legacy` are in use.
-- No `xlsx` library is installed.
+- `app/reports/index.tsx` is a placeholder; the dashboard's "Generate inspection reports" card passes no route params. The dashboard also has an "Export inspection data as CSV" card (`handleExport`) to be removed.
+- `src/utils/exportData.ts` implements `exportProjectData(projectId, projectName)` — flat CSV, headers derived from the first inspection's saved values (unfilled sections can miss columns).
+- `expo-print` (~15.0.8), `expo-sharing`, `expo-file-system/legacy` are installed. No `xlsx` yet.
+- Inspection form is dynamic: sections (`IsRepeatable=1` for device inventories) → fields → saved `InspectionValues`; device detail columns come from `DeviceFieldDefinitions`; saved devices live in `DeviceRecords` (JSON `DeviceData`). Photos live in `Photos` (`FilePath`, `PhotoType`, `CapturedAt`, `Remarks`). `Inspections.Status` is a real column; `Latitude`/`Longitude` columns on `Inspections` are never written during inspection.
 
 ## Decisions
 
-1. **Full form layout in all formats.** CSV, Excel, and PDF export the same table: **every field from every inspection-form section becomes a main column** (in form order), and **each pole/inspection is one row**. Cells are empty where no value was saved — columns exist regardless of which inspections have data. PDF renders that table as a styled HTML table → PDF.
-2. **Columns = template fields, not saved values.** Headers come from the inspection template (`InspectionFields` joined to `InspectionSections`), not from the first row's data. This guarantees every form field always appears as a column, even if empty.
-3. **Scope: non-repeatable sections only.** The flat per-pole layout only supports single-value fields. Repeatable sections (device / camera / switch inventories) are one-to-many per pole and are excluded from the flat export.
-4. **True `.xlsx` via SheetJS.** Add the `xlsx` package (`corepack yarn add xlsx`). The preinstall guard (`scripts/cmd-guard.js`) permits this; it is not a blocked command. `.npmrc` sets `save-exact=true`.
-5. **Single unified export service.** One query path and three pure per-format formatters, so the query/header/row logic is written once and unit-testable without a live DB.
-6. **Exports live in Reports.** The dashboard "Export inspection data as CSV" card is removed. The dashboard's "Generate inspection reports" card now passes `projectId` and `projectName` to `/reports`.
-7. **ADR-014 compliance.** The Reports screen stays inside the project flow (project DB active). `getDatabase()` continues to serve the project DB. No `getGlobalDatabase()` calls are introduced.
+1. **Banded 2-row headers.** Section name band row spanning its fields, then a field-name row. CSV repeats the band cell on every column it covers; Excel merges band cells (plus autofilter + frozen top rows); PDF renders a `<thead>` with band cells `<th colspan=...>`. Section/field order = form order.
+2. **Columns = template fields, live.** Headers come from the inspection template (active + visible sections/fields), never from saved data, so every form field appears even when empty. New sections/fields automatically appear in exports.
+3. **Repeatable (device) sections are included.** A device section's columns = its `IsRepeatable=1` section's own form fields (e.g. `<type>_count`) + a **Device No** column + the section's `DeviceFieldDefinitions` columns (header = `Label`, ordered by definition `DisplayOrder`). Placement: immediately after the section's own count field.
+4. **One row per device.** Base row per inspection (all single-value form fields + derived Lat/Long + Status + Photos). One **device row** per saved `DeviceRecords` entry (ordered by `DeviceNo`), repeating the pole-level columns: **Pole ID, District, Division, Inspection Date, Latitude, Longitude, Status**. All other cells empty.
+5. **Latitude/Longitude are derived.** The form has one combined GPS field (`Lat/Long`, key `gps`). Split its value (e.g. `"12.9716, 77.5946"`) into two columns — **Latitude**, **Longitude** — placed immediately after the GPS column.
+6. **Status and Photos are appended columns.** `Status` from `Inspections.Status` (repeated on device rows); **Photos** = comma-joined photo file names (flat tables never embed images — SheetJS cannot embed images in `.xlsx`).
+7. **Single-inspection export.** From the Inspection List, a per-card export action → format chooser (PDF / Excel / CSV) → exports only that inspection.
+   - **CSV/Excel:** the same banded flat table filtered to that inspection (1 base row + its device rows).
+   - **PDF:** **form-like layout** — sections as headings with label/value rows in form order; devices rendered as cards under their device section (Device No + detail fields); **photos embedded as base64 images**; Remarks + Status; title = pole ID + inspection date.
+8. **Single unified export service.** `buildReportTable(projectId, inspectionId?)` produces the flat table; pure formatters `buildCsv` / `buildExcelBase64` / `buildProjectPdfHtml` / `buildInspectionPdfHtml`; entry points `exportInspections(projectId, projectName, format)` and `exportInspection(projectId, projectName, inspectionId, poleId, format)`. All return `Promise<boolean>` (false = no data → "No data" alert).
+9. **Exports live in Reports; dashboard cleaned up.** Remove the dashboard CSV card + `handleExport`; the Reports card passes `params: { projectId, projectName }`.
+10. **ADR-014 compliance.** All reads via the project DB `getDatabase()`. No `getGlobalDatabase()` calls. Bulk queries (sections+fields, inspections+values, device records, device field definitions, photos) grouped in JS — no N+1.
 
 ## Architecture
 
-### `src/utils/exportData.ts` (refactor)
-
-Rename the public entry point to:
+### Report table builder (`src/utils/exportData.ts`)
 
 ```
-exportInspections(
-  projectId: number,
-  projectName: string,
-  format: "csv" | "excel" | "pdf"
-): Promise<boolean>
+interface ReportColumn { fieldKey: string; label: string }   // label = form field name, header text
+interface ReportSection { name: string; columns: ReportColumn[] }
+interface ReportRow { cells: string[]; isDeviceRow: boolean }
+interface ReportTable {
+  sections: ReportSection[];   // banded header structure
+  headers: string[];           // flattened column labels (one per cell)
+  rows: ReportRow[];
+}
 ```
 
-Returns `false` when there are no inspections (caller shows "No data" alert); `true` after a successful share.
-
-Internal structure:
-
-- `buildInspectionTable(projectId): Promise<{ headers: string[]; rows: string[][] }>`
-  - Queries the template once for the complete column set:
-    `SELECT f.FieldID, f.FieldName FROM InspectionFields f JOIN InspectionSections s ON f.SectionID = s.SectionID WHERE f.IsActive = 1 AND f.IsVisible = 1 AND s.IsActive = 1 AND s.IsVisible = 1 AND s.IsRepeatable = 0 ORDER BY s.DisplayOrder, f.DisplayOrder`
-  - `headers` = every template `FieldName` in section order, plus `Status` and `Remarks` (the only `Inspections` columns not represented in the form; `Pole ID`, `Date`, `Inspector Name`, `Lat/Long` already exist as general-information template fields, so no duplicated static columns).
-  - `rows` = one row per inspection (from `SELECT ... FROM Inspections WHERE ProjectID = ?`). Per inspection, query saved values (`InspectionValues` joined to `InspectionFields`), build a `FieldID → value` map, and emit cells aligned to the template columns — `""` where no value was saved. Status/Remarks come from the `Inspections` row.
-- `buildCsv(headers, rows): string` — existing CSV escaping (quote/commas/newlines; prefix `= + - @` / tab cells with `'`).
-- `buildExcelBase64(headers, rows): string` — `XLSX.utils.aoa_to_sheet([headers, ...rows])` → workbook → `XLSX.write({ type: "base64", bookType: "xlsx" })`.
-- `buildPdfHtml(headers, rows): string` — minimal inline-styled HTML `<table>` (borders, header background) with a title showing the project name.
-- `writeAndShare(uri, mimeType, dialogTitle, uti)` — shared write + `Sharing.shareAsync` helper.
-
-File naming (all formats): `safeName_inspections_YYYY-MM-DD.<ext>` where `safeName` = project name with non-alphanumeric chars replaced by `_` (existing logic).
+- `buildReportTable(projectId, inspectionId?): Promise<ReportTable>`
+  - Sections/columns from `InspectionSections` + `InspectionFields` (active + visible, form order). Skip the `photos` section (no fields).
+  - Device sections (SectionKey matching `IsRepeatable=1` + `<type>_information`, e.g. `camera_information`) get Device No + `DeviceFieldDefinitions` columns (by normalized `FieldName`, ordered by `DisplayOrder`) after their own fields.
+  - Column metadata tracks a special key for derived/appended columns: `gps_lat`, `gps_lng` (derived), `status`, `photos`.
+  - Rows: per inspection, bulk-load saved `InspectionValues` (FieldID → value) + device records (per `getByInspectionAll`, ordered by `DeviceNo`) + photos (InspectionID → file names). Base row fills all form fields + derived lat/lng + status + photos. Device rows fill the repeat set: `pole_id`, `district`, `division`, `date` (inspection date field), `gps_lat`, `gps_lng`, `status` — plus their device section's own columns (count + Device No + device detail values). `Date` = `getCurrentInspectionDate()` when the saved value is blank (DATE_AUTO).
+  - `inspectionId` filters to one inspection (single-inspection CSV/Excel).
+- `buildCsv(table): string` — existing escaping (quote/commas/newlines; prefix `= + - @` / tab cells with `'`). Band cells repeat per covered column.
+- `buildExcelBase64(table): string` — SheetJS `aoa_to_sheet`, then `XLSX.utils.sheet_add_aoa` for the band row, `worksheet["!merges"]` for band cells, autofilter on the field-name row, freeze at the field-name row. Requires `src/types/xlsx.d.ts` (`declare module "xlsx"`) for the default import.
+- `buildProjectPdfHtml(table, projectName): string` — styled HTML `<table>` with a two-row `<thead>` (band cells with `<th colspan>`), title = project name + date.
+- `buildInspectionPdfHtml(formData, projectName): string` — form-like layout (below).
+- `loadInspectionFormData(inspectionId): Promise<InspectionFormData>`:
+  ```
+  interface InspectionFormData {
+    poleId: string;
+    status: string;
+    date: string;
+    sections: {
+      name: string;
+      fields: { label: string; value: string }[];
+      devices: { title: string; fields: { label: string; value: string }[] }[];
+    }[];
+    photos: { fileName: string; dataUri: string | null }[];
+  }
+  ```
+  Sections in form order; device sections carry device cards (Device No title + detail fields). Photos loaded as base64 data URIs from `FilePath` (`FileSystem.readAsStringAsync(uri, { encoding: "base64" })`, MIME from extension); failures degrade to `null` (render file name as text).
+- `exportInspections(projectId, projectName, format)` / `exportInspection(projectId, projectName, inspectionId, poleId, format)` — build table/formData → format → write file to `documentDirectory` → `writeAndShare` (existing helper). File names: `safeName_inspections_YYYY-MM-DD.<ext>` (project) and `safeName_<poleId>_inspection_YYYY-MM-DD.<ext>` (single). PDF via `Print.printToFileAsync({ html })` → copy to documentDirectory → share.
 
 ### `app/reports/index.tsx`
 
-- Reads `projectId` and `projectName` from `useLocalSearchParams`.
-- Renders three export actions (CSV / Excel / PDF), each triggering `exportInspections(projectId, projectName, format)`.
-- Busy state while exporting (disable buttons, show indicator).
-- Success: share sheet opens (existing `expo-sharing` flow). Failure/empty: `Alert` messages (reuse the dashboard's existing copy: "No inspection data found to export for this project." / "Unable to export inspection data.").
-- Falls back to a readable message if `projectId` is missing (screen reached without params).
+- Reads `projectId` / `projectName` from `useLocalSearchParams`; graceful message when missing.
+- Top actions: Export CSV / Excel / PDF buttons (busy state while exporting; success → share sheet; empty → "No inspection data found to export for this project."; failure → "Unable to export inspection data.").
+- **Preview**: loads `buildReportTable(projectId)` and renders `ReportTablePreview` — spreadsheet-style scrollable grid (fixed-width columns, horizontal scroll), banded section band row + field-name row, base rows normal, **device rows tinted** (light blue), summary line (inspections / base rows / device rows / columns), empty-state message when no data.
+
+### `src/components/reports/ReportTablePreview.tsx` (new)
+
+- Presentational: `ReportTable` → banded grid. Tints `isDeviceRow` rows. No DB access.
+
+### `app/inspection/index.tsx`
+
+- Per inspection card: add an export icon button (next to the pencil). Tap → format chooser (PDF / Excel / CSV, e.g. `Alert.alert` with three buttons) → `exportInspection(projectId, projectName, inspectionId, poleId, format)` → share sheet. Busy state per card; errors → alert.
 
 ### `app/projects/dashboard.tsx`
 
-- Remove the "Export inspection data as CSV" card and its `handleExport` / `exportProjectData` wiring.
+- Remove the "Export inspection data as CSV" card, `handleExport`, `setExporting`, and the `exportProjectData` import.
 - "Generate inspection reports" card: add `params: { projectId: project.ProjectID.toString(), projectName: project.ProjectName }`.
-- Remove the now-unused `exportProjectData` import and `setExporting` state.
 
 ## Dependencies
 
-- Add `xlsx` (SheetJS). Uses `XLSX.utils.aoa_to_sheet`, `XLSX.utils.book_new`, `XLSX.utils.book_append_sheet`, `XLSX.write`.
+- Add `xlsx` (SheetJS): `corepack yarn add xlsx` (`.npmrc` is `save-exact=true`). Uses `aoa_to_sheet`, `sheet_add_aoa`, `book_new`, `book_append_sheet`, `write`. Add `src/types/xlsx.d.ts` (`declare module "xlsx"`).
 
 ## Error Handling
 
-- No inspections → `exportInspections` returns `false`; UI shows "No data" alert.
-- Export/write/share failure → throw; UI catches and shows "Export Failed" alert.
-- `Sharing.isAvailableAsync()` false → return `false` (existing behavior).
+- No inspections → `false` + "No data" alert. Device-less inspections still export (base row only).
+- Export/write/share failure → throw → caller alert ("Unable to export...").
+- `Sharing.isAvailableAsync()` false → `false`.
+- Photo base64 read failure → `dataUri: null`, file name shown instead — export still succeeds.
 
 ## Testing
 
-- Extend `src/__tests__/utils/exportData.test.ts`:
-  - `buildInspectionTable` against the in-memory DB mock (headers include every seeded template field in section order + Status + Remarks; each inspection row aligns values by field, empty `""` where missing; empty project → empty table; headers are identical regardless of which inspection has data).
-  - `buildCsv` — existing escaping cases preserved.
-  - `buildExcelBase64` — base64 decodes to a ZIP (PK) signature; workbook round-trips via `XLSX.read`.
-  - `buildPdfHtml` — contains table markup, header cells, and a row value; title includes project name.
-- No new component tests for the button wiring.
-- Verification commands: `npx tsc --noEmit`, `corepack yarn lint` (0 errors), `corepack yarn test --watch=false`.
+- `src/__tests__/utils/exportData.test.ts`:
+  - `buildReportTable`: every seeded active+visible field appears in section order; band structure matches sections; device sections add Device No + `DeviceFieldDefinitions` columns; Lat/Long derived after the GPS column; Status/Photos appended; one base row per inspection + one device row per saved device with the pole-level repeat set; `inspectionId` filter; empty project → empty table; headers identical regardless of which inspection has data.
+  - `buildCsv`: escaping preserved; band cells repeated per covered column.
+  - `buildExcelBase64`: decodes to ZIP (PK) signature; workbook round-trips via `XLSX.read`; `!merges` present for band cells; autofilter + freeze set.
+  - `buildProjectPdfHtml`: `<table>` with banded `<thead>` (`colspan`), header + row values, project name title.
+  - `buildInspectionPdfHtml`: sections with label/value rows, device cards under device sections, `<img>` for photos with data URIs, status + remarks present.
+  - `loadInspectionFormData` against the DB mock: sections/fields/values/devices/photos shape.
+  - `exportInspection` / `exportInspections`: return contract `Promise<boolean>` (false on empty; true on successful share) using the existing share mocks.
+- Preview component: minimal render test if the existing component test harness allows.
+- Verification: `npx tsc --noEmit`, `corepack yarn lint` (0 errors), `corepack yarn test --watch=false`.
 
 ## Out of Scope
 
-- Photos in PDF, per-inspection exports, per-pole report pages, print layout control beyond the styled HTML table.
-- Repeatable-section data (device / camera / switch inventories) in the flat export — they are one-to-many per pole.
-- Column grouping by section (multi-row/section header bands); sections are reflected by field order only.
+- Per-pole report pages, print layout control beyond the styled HTML/PDF table, photos embedded in flat tables (Excel/CSV/project PDF), multi-section band grouping beyond one level, editing/export via the admin-only custom sections (`IsDefault=0`).
