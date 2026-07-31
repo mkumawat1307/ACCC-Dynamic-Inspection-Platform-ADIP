@@ -36,6 +36,32 @@ export interface ReportTable {
   rows: ReportRow[];
 }
 
+export interface InspectionFormField {
+  label: string;
+  value: string;
+}
+
+export interface InspectionFormDevice {
+  title: string;
+  fields: InspectionFormField[];
+}
+
+export interface InspectionFormSection {
+  name: string;
+  sectionKey: string;
+  deviceType?: string;
+  fields: InspectionFormField[];
+  devices: InspectionFormDevice[];
+}
+
+export interface InspectionFormData {
+  poleId: string;
+  status: string;
+  date: string;
+  sections: InspectionFormSection[];
+  photos: { fileName: string; dataUri: string | null }[];
+}
+
 const REPEAT_ON_DEVICE_ROWS = new Set([
   "pole_id",
   "district",
@@ -301,6 +327,125 @@ export async function buildReportTable(projectId: number, inspectionId?: number)
   return { sections, headers, rows: rowsOut };
 }
 
+async function readPhotoDataUri(filePath: string): Promise<string> {
+  const base64 = await FileSystem.readAsStringAsync(filePath, { encoding: FileSystem.EncodingType.Base64 });
+  const mime = filePath.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+  return `data:${mime};base64,${base64}`;
+}
+
+export async function loadInspectionFormData(inspectionId: number): Promise<InspectionFormData> {
+  const db = await getDatabase();
+
+  const rows = await db.getAllAsync<{
+    SectionID: number;
+    SectionKey: string;
+    SectionName: string;
+    IsRepeatable: number;
+    FieldID: number;
+    FieldKey: string;
+    FieldName: string;
+  }>(
+    `SELECT s.SectionID, s.SectionKey, s.SectionName, s.IsRepeatable,
+            f.FieldID, f.FieldKey, f.FieldName
+     FROM InspectionFields f
+     JOIN InspectionSections s ON f.SectionID = s.SectionID
+     WHERE f.IsActive = 1 AND f.IsVisible = 1
+       AND s.IsActive = 1 AND s.IsVisible = 1
+       AND s.SectionKey != 'photos'
+     ORDER BY s.DisplayOrder, f.DisplayOrder`
+  );
+
+  const valueRows = await db.getAllAsync<{ FieldID: number; FieldValue: string | null }>(
+    `SELECT FieldID, FieldValue FROM InspectionValues WHERE InspectionID = ?`,
+    [inspectionId]
+  );
+  const valueMap = new Map<number, string>();
+  for (const v of valueRows) valueMap.set(v.FieldID, v.FieldValue ?? "");
+
+  const deviceDefs = await db.getAllAsync<{ DeviceType: string; FieldName: string; Label: string }>(
+    `SELECT DeviceType, FieldName, Label FROM DeviceFieldDefinitions WHERE IsActive = 1 ORDER BY DeviceType, DisplayOrder`
+  );
+  const defsByType = new Map<string, { FieldName: string; Label: string }[]>();
+  for (const d of deviceDefs) {
+    if (!defsByType.has(d.DeviceType)) defsByType.set(d.DeviceType, []);
+    defsByType.get(d.DeviceType)!.push({ FieldName: d.FieldName, Label: d.Label });
+  }
+  const deviceTypes = [...defsByType.keys()];
+
+  const recordRows = await db.getAllAsync<{ DeviceType: string; DeviceNo: number; DeviceData: string | null }>(
+    `SELECT DeviceType, DeviceNo, DeviceData FROM DeviceRecords WHERE InspectionID = ? AND IsActive = 1 ORDER BY DeviceType, DeviceNo`,
+    [inspectionId]
+  );
+  const recordsByType = new Map<string, typeof recordRows>();
+  for (const rec of recordRows) {
+    if (!recordsByType.has(rec.DeviceType)) recordsByType.set(rec.DeviceType, []);
+    recordsByType.get(rec.DeviceType)!.push(rec);
+  }
+
+  const insp = await db.getFirstAsync<{ Status: string }>(
+    `SELECT Status FROM Inspections WHERE InspectionID = ?`,
+    [inspectionId]
+  );
+
+  const photoRows = await db.getAllAsync<{ FileName: string; FilePath: string }>(
+    `SELECT FileName, FilePath FROM Photos WHERE InspectionID = ? ORDER BY PhotoID`,
+    [inspectionId]
+  );
+
+  const dateFallback = getCurrentInspectionDate();
+
+  let poleId = "";
+  const sections: InspectionFormSection[] = [];
+  const sectionsByKey = new Map<string, InspectionFormSection>();
+
+  for (const r of rows) {
+    let section = sectionsByKey.get(r.SectionKey);
+    if (!section) {
+      section = { name: r.SectionName, sectionKey: r.SectionKey, fields: [], devices: [] };
+      if (r.IsRepeatable === 1) {
+        section.deviceType = deviceTypes.find((t) => normalizeDeviceType(t) === r.SectionKey);
+      }
+      sectionsByKey.set(r.SectionKey, section);
+      sections.push(section);
+    }
+    let value = valueMap.get(r.FieldID) ?? "";
+    if (r.FieldKey === "date" && !value) value = dateFallback;
+    if (r.FieldKey === "pole_id") poleId = value;
+    section.fields.push({ label: r.FieldName, value });
+  }
+
+  for (const section of sections) {
+    if (!section.deviceType) continue;
+    const records = recordsByType.get(section.deviceType) ?? [];
+    for (const rec of records) {
+      const data = parseDeviceData(rec.DeviceData);
+      const fields: InspectionFormField[] = [{ label: "Device No", value: String(rec.DeviceNo) }];
+      for (const def of defsByType.get(section.deviceType) ?? []) {
+        fields.push({ label: def.Label, value: data[def.FieldName] ?? "" });
+      }
+      section.devices.push({ title: `${section.deviceType} ${rec.DeviceNo}`, fields });
+    }
+  }
+
+  const photos: { fileName: string; dataUri: string | null }[] = [];
+  for (const p of photoRows) {
+    const dataUri = await readPhotoDataUri(p.FilePath).catch(() => null);
+    photos.push({ fileName: p.FileName, dataUri });
+  }
+
+  return {
+    poleId,
+    status: insp?.Status ?? "",
+    date: valueMap.get(dateFieldId(rows)) ?? dateFallback,
+    sections,
+    photos,
+  };
+}
+
+function dateFieldId(rows: { FieldKey: string; FieldID: number }[]): number {
+  return rows.find((r) => r.FieldKey === "date")?.FieldID ?? -1;
+}
+
 function parseDeviceData(data: string | null): Record<string, string> {
   if (!data) return {};
   try {
@@ -352,6 +497,22 @@ export async function exportInspections(projectId: number, projectName: string, 
   return shareTableFile(table, projectName, null, format);
 }
 
+export async function exportInspection(
+  projectId: number,
+  projectName: string,
+  inspectionId: number,
+  poleId: string,
+  format: ExportFormat
+): Promise<boolean> {
+  const table = await buildReportTable(projectId, inspectionId);
+  if (table.rows.length === 0) return false;
+  if (format === "pdf") {
+    const formData = await loadInspectionFormData(inspectionId);
+    return sharePdfFile(buildInspectionPdfHtml(formData, projectName), projectName, poleId);
+  }
+  return shareTableFile(table, projectName, poleId, format);
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -386,6 +547,71 @@ export function buildProjectPdfHtml(table: ReportTable, projectName: string): st
     <thead><tr>${bandRow}</tr><tr>${headerRow}</tr></thead>
     <tbody>${body}</tbody>
   </table>
+</body>
+</html>`;
+}
+
+export function buildInspectionPdfHtml(formData: InspectionFormData, projectName: string): string {
+  const metaRows = [
+    ["Pole ID", formData.poleId],
+    ["Inspection Date", formData.date],
+    ["Status", formData.status],
+  ]
+    .map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`)
+    .join("");
+
+  const sectionsHtml = formData.sections
+    .map((s) => {
+      const fieldRows = s.fields
+        .map((f) => `<tr><th>${escapeHtml(f.label)}</th><td>${escapeHtml(f.value)}</td></tr>`)
+        .join("");
+      const devicesHtml = s.devices
+        .map(
+          (d) =>
+            `<div class="device"><h4>${escapeHtml(d.title)}</h4><table>${d.fields
+              .map((f) => `<tr><th>${escapeHtml(f.label)}</th><td>${escapeHtml(f.value)}</td></tr>`)
+              .join("")}</table></div>`
+        )
+        .join("");
+      return `<div class="section"><h3>${escapeHtml(s.name)}</h3><table>${fieldRows}</table>${devicesHtml}</div>`;
+    })
+    .join("");
+
+  const photosHtml =
+    formData.photos.length === 0
+      ? "<p>No photos captured.</p>"
+      : `<div class="photos">${formData.photos
+          .map((p) =>
+            p.dataUri
+              ? `<img src="${p.dataUri}" alt="${escapeHtml(p.fileName)}" />`
+              : `<p>${escapeHtml(p.fileName)}</p>`
+          )
+          .join("")}</div>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: sans-serif; }
+    h1 { font-size: 18px; }
+    h2 { font-size: 14px; }
+    table { border-collapse: collapse; width: 100%; font-size: 11px; margin-bottom: 12px; }
+    th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
+    th { background: #f0f0f0; width: 40%; }
+    .section { margin-top: 16px; }
+    .section h3 { color: #1976D2; margin-bottom: 8px; }
+    .device { border-left: 4px solid #1976D2; padding-left: 10px; margin-bottom: 12px; }
+    .device h4 { margin: 8px 0; }
+    .photos img { max-width: 120px; margin: 4px; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(projectName)} - Inspection Report</h1>
+  <h2>Inspection: ${escapeHtml(formData.poleId || "—")}</h2>
+  <table class="meta">${metaRows}</table>
+  ${sectionsHtml}
+  <div class="section"><h3>Photos</h3>${photosHtml}</div>
 </body>
 </html>`;
 }

@@ -7,7 +7,7 @@ jest.mock("expo-file-system/legacy", () => ({
   cacheDirectory: "file:///mock/cache/",
   EncodingType: { UTF8: "utf8", Base64: "base64" },
   writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
-  readAsStringAsync: jest.fn().mockRejectedValue(new Error("not found")),
+  readAsStringAsync: jest.fn().mockResolvedValue("QUJD"),
   getInfoAsync: jest.fn().mockResolvedValue({ exists: true, isDirectory: false, size: 100 }),
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
@@ -355,6 +355,20 @@ interface ReportTableLike {
   rows: { cells: string[]; isDeviceRow: boolean }[];
 }
 
+interface InspectionFormDataLike {
+  poleId: string;
+  status: string;
+  date: string;
+  sections: {
+    name: string;
+    sectionKey: string;
+    deviceType?: string;
+    fields: { label: string; value: string }[];
+    devices: { title: string; fields: { label: string; value: string }[] }[];
+  }[];
+  photos: { fileName: string; dataUri: string | null }[];
+}
+
 function sampleTable(): ReportTableLike {
   return {
     sections: [
@@ -549,5 +563,171 @@ describe("exportInspections", () => {
     expect(Print.printToFileAsync).toHaveBeenCalled();
     expect(FileSystem.copyAsync).toHaveBeenCalled();
     expect(Sharing.shareAsync).toHaveBeenCalled();
+  });
+});
+
+describe("loadInspectionFormData", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("loads sections, values, devices, and photos in form order", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID" },
+        { SectionID: 2, SectionKey: "camera_information", SectionName: "Camera Information", IsRepeatable: 1, FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count" },
+      ])
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldValue: "P001" },
+        { FieldID: 2, FieldValue: "2" },
+      ])
+      .mockResolvedValueOnce([
+        { DeviceType: "Camera", FieldName: "CameraType", Label: "Camera Type" },
+      ])
+      .mockResolvedValueOnce([
+        { DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "IP" }) },
+      ])
+      .mockResolvedValueOnce([
+        { FileName: "p1.jpg", FilePath: "file:///photos/p1.jpg" },
+      ]);
+    mockDb.getFirstAsync.mockResolvedValue({ Status: "Completed" });
+
+    const { loadInspectionFormData } = require("@/src/utils/exportData");
+    const form = await loadInspectionFormData(1);
+
+    expect(form.poleId).toBe("P001");
+    expect(form.status).toBe("Completed");
+    expect(form.sections[0].fields).toEqual([{ label: "Pole ID", value: "P001" }]);
+    expect(form.sections[1].deviceType).toBe("Camera");
+    expect(form.sections[1].devices).toEqual([
+      { title: "Camera 1", fields: [
+        { label: "Device No", value: "1" },
+        { label: "Camera Type", value: "IP" },
+      ] },
+    ]);
+    expect(form.photos.length).toBe(1);
+    expect(form.photos[0].fileName).toBe("p1.jpg");
+    expect(form.photos[0].dataUri).toMatch(/^data:image\/jpeg;base64,/);
+  });
+
+  it("degrades to null dataUri when a photo cannot be read", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { FileName: "missing.jpg", FilePath: "file:///photos/missing.jpg" },
+      ]);
+    mockDb.getFirstAsync.mockResolvedValue({ Status: "Completed" });
+
+    (FileSystem.readAsStringAsync as jest.Mock).mockRejectedValueOnce(new Error("not found"));
+
+    const { loadInspectionFormData } = require("@/src/utils/exportData");
+    const form = await loadInspectionFormData(1);
+
+    expect(form.photos[0].dataUri).toBeNull();
+  });
+});
+
+describe("buildInspectionPdfHtml", () => {
+  it("renders meta, sections with device cards, and embedded photos", () => {
+    const { buildInspectionPdfHtml } = require("@/src/utils/exportData");
+    const form: InspectionFormDataLike = {
+      poleId: "P001",
+      status: "Completed",
+      date: "31-Jul-2026",
+      sections: [
+        {
+          name: "General Information",
+          sectionKey: "general_information",
+          fields: [{ label: "Pole ID", value: "P001" }],
+          devices: [],
+        },
+        {
+          name: "Camera Information",
+          sectionKey: "camera_information",
+          deviceType: "Camera",
+          fields: [{ label: "Camera Count", value: "1" }],
+          devices: [{ title: "Camera 1", fields: [{ label: "Camera Type", value: "IP" }] }],
+        },
+      ],
+      photos: [{ fileName: "p1.jpg", dataUri: "data:image/jpeg;base64,QUJD" }],
+    };
+    const html = buildInspectionPdfHtml(form, "North Grid");
+
+    expect(html).toContain("North Grid");
+    expect(html).toContain("P001");
+    expect(html).toContain("Camera Information");
+    expect(html).toContain("Camera 1");
+    expect(html).toContain("data:image/jpeg;base64,QUJD");
+  });
+});
+
+describe("exportInspection", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+    setSharingAvailable(true);
+  });
+
+  it("exports a single inspection as CSV (filtered table) and shares it", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([{ InspectionID: 1, FieldID: 1, FieldValue: "P001" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { exportInspection } = require("@/src/utils/exportData");
+    const result = await exportInspection(1, "TestProject", 1, "P001", "csv");
+
+    expect(result).toBe(true);
+    expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
+    expect(Sharing.shareAsync).toHaveBeenCalled();
+  });
+
+  it("exports a single inspection as PDF using the form-like HTML", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([]); // remaining loadInspectionFormData queries resolve empty
+    mockDb.getFirstAsync.mockResolvedValue({ Status: "Completed" });
+
+    const { exportInspection } = require("@/src/utils/exportData");
+    const result = await exportInspection(1, "TestProject", 1, "P001", "pdf");
+
+    expect(result).toBe(true);
+    expect(Print.printToFileAsync).toHaveBeenCalled();
+    expect(Sharing.shareAsync).toHaveBeenCalled();
+  });
+
+  it("returns false when the inspection has no rows", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { exportInspection } = require("@/src/utils/exportData");
+    const result = await exportInspection(1, "TestProject", 999, "NONE", "csv");
+
+    expect(result).toBe(false);
   });
 });
