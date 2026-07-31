@@ -1,3 +1,4 @@
+import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx";
@@ -351,12 +352,50 @@ export async function exportInspections(projectId: number, projectName: string, 
   return shareTableFile(table, projectName, null, format);
 }
 
-function buildProjectPdfHtml(_table: ReportTable, _projectName: string): string {
-  return "";
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-async function sharePdfFile(_html: string, _projectName: string, _poleId: string | null): Promise<boolean> {
-  return false;
+export function buildProjectPdfHtml(table: ReportTable, projectName: string): string {
+  const bandRow = table.sections
+    .map((s) => `<th colspan="${s.columns.length}">${escapeHtml(s.name)}</th>`)
+    .join("");
+  const headerRow = table.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("");
+  const body = table.rows
+    .map((r) => `<tr>${r.cells.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`)
+    .join("");
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: sans-serif; }
+    h1 { font-size: 18px; }
+    table { border-collapse: collapse; width: 100%; font-size: 10px; }
+    th, td { border: 1px solid #ccc; padding: 4px; text-align: left; }
+    th { background: #eee; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(projectName)} - Inspection Report</h1>
+  <table>
+    <thead><tr>${bandRow}</tr><tr>${headerRow}</tr></thead>
+    <tbody>${body}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+async function sharePdfFile(html: string, projectName: string, poleId: string | null): Promise<boolean> {
+  const fileUri = FileSystem.documentDirectory + buildFileName(projectName, poleId, "pdf");
+  const dialogTitle = poleId ? `Export ${poleId} Inspection` : `Export ${projectName} Inspection Data`;
+  const { uri } = await Print.printToFileAsync({ html });
+  await FileSystem.copyAsync({ from: uri, to: fileUri });
+  return writeAndShare(fileUri, "application/pdf", dialogTitle, "com.adobe.pdf");
 }
 
 export async function exportProjectData(projectId: number, projectName: string): Promise<boolean> {

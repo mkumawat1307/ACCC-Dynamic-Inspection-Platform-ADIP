@@ -432,6 +432,26 @@ describe("buildExcelBase64", () => {
   });
 });
 
+describe("buildProjectPdfHtml", () => {
+  it("renders banded thead, a row value, and the project title", () => {
+    const { buildProjectPdfHtml } = require("@/src/utils/exportData");
+    const html = buildProjectPdfHtml(sampleTable(), "North Grid");
+    expect(html).toContain("<table>");
+    expect(html).toContain('<th colspan="4">General Information</th>');
+    expect(html).toContain("<th>Pole ID</th>");
+    expect(html).toContain("<td>P001</td>");
+    expect(html).toContain("North Grid");
+  });
+
+  it("escapes HTML in headers and cells", () => {
+    const { buildProjectPdfHtml } = require("@/src/utils/exportData");
+    const table = { ...sampleTable(), rows: [{ cells: ["<script>alert(1)</script>", "", "", "", "", "", "", "", ""], isDeviceRow: false }] };
+    const html = buildProjectPdfHtml(table, "North");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
 describe("exportInspections", () => {
   let mockDb: ReturnType<typeof createMockDb>;
 
@@ -511,5 +531,23 @@ describe("exportInspections", () => {
 
     expect(result).toBe(false);
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  it("exports PDF by printing HTML then copying and sharing", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { exportInspections } = require("@/src/utils/exportData");
+    const result = await exportInspections(1, "TestProject", "pdf");
+
+    expect(result).toBe(true);
+    expect(Print.printToFileAsync).toHaveBeenCalled();
+    expect(FileSystem.copyAsync).toHaveBeenCalled();
+    expect(Sharing.shareAsync).toHaveBeenCalled();
   });
 });
