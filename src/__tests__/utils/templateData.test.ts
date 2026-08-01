@@ -514,6 +514,22 @@ describe("applyTemplateImport", () => {
     );
   });
 
+  it("updates an existing template in place rather than inserting a duplicate", async () => {
+    mockDb.getFirstAsync.mockResolvedValueOnce({ TemplateID: 42 });
+    const { applyTemplateImport } = require("@/src/utils/templateData");
+    const result = await applyTemplateImport(makeValidV2());
+
+    expect(result.success).toBe(true);
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE InspectionTemplates SET Description"),
+      expect.arrayContaining(["A test", 1, 42])
+    );
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE InspectionSections SET IsActive = 0 WHERE TemplateID = ?"),
+      [42]
+    );
+  });
+
   it("upserts device field definitions by (TemplateID, DeviceType, FieldName)", async () => {
     const v2 = makeValidV2();
     v2.templates[0].deviceTypes = [
