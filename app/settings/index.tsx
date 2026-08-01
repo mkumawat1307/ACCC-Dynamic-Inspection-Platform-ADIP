@@ -127,6 +127,8 @@ export default function SettingsScreen() {
     }
   };
 
+  const errorFlow = React.useRef<"export" | "import" | null>(null);
+
   const exporting = flow.state.phase === "exporting";
   const parsing = flow.state.phase === "parsing";
   const importing = flow.state.phase === "importing";
@@ -136,6 +138,18 @@ export default function SettingsScreen() {
   const confirming = flow.state.phase === "confirming" ? flow.state.parsed : null;
   const importedMessage = flow.state.phase === "imported" ? flow.state.message : null;
   const errorMessage = flow.state.phase === "error" ? flow.state.message : null;
+  const exportError = errorFlow.current === "export" ? errorMessage : null;
+  const importError = errorFlow.current === "import" ? errorMessage : null;
+
+  const handleBeginExport = () => {
+    errorFlow.current = "export";
+    void flow.beginExport();
+  };
+
+  const handleBeginImport = () => {
+    errorFlow.current = "import";
+    void flow.beginImport();
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
@@ -164,7 +178,7 @@ export default function SettingsScreen() {
             description="Export inspection template with sections, fields and options as JSON file"
             left={(props) => <List.Icon {...props} icon="file-export" />}
             right={(props) => (busy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={() => { void flow.beginExport(); }}
+            onPress={handleBeginExport}
             disabled={busy}
           />
 
@@ -175,7 +189,7 @@ export default function SettingsScreen() {
             description="Import inspection template from a JSON file"
             left={(props) => <List.Icon {...props} icon="file-import" />}
             right={(props) => (busy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={() => { void flow.beginImport(); }}
+            onPress={handleBeginImport}
             disabled={busy}
           />
         </List.Section>
@@ -199,7 +213,7 @@ export default function SettingsScreen() {
       <TemplateExportDialogs
         exporting={exporting}
         result={exportResult}
-        errorMessage={errorMessage}
+        errorMessage={exportError}
         onShare={() => { void flow.shareExported(); }}
         onCloseSuccess={flow.dismissExport}
         onRetry={() => { void flow.retry(); }}
@@ -210,7 +224,7 @@ export default function SettingsScreen() {
         confirming={confirming}
         importing={importing}
         importedMessage={importedMessage}
-        errorMessage={errorMessage}
+        errorMessage={importError}
         onConfirm={() => { void flow.confirmImport(); }}
         onCancel={flow.cancelImport}
         onCloseSuccess={flow.dismissImport}
