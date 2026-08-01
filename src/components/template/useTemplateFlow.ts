@@ -22,18 +22,21 @@ export type TemplateFlowState =
 export function useTemplateFlow() {
   const [state, setState] = useState<TemplateFlowState>({ phase: "idle" });
   const pendingImport = useRef<ParsedTemplateFile | null>(null);
+  const errorSource = useRef<"export" | "import" | null>(null);
 
   const beginExport = useCallback(async () => {
     setState({ phase: "exporting" });
     try {
       const result = await exportTemplates();
       if (!result) {
+        errorSource.current = "export";
         setState({ phase: "error", message: "No template found to export." });
         return;
       }
       setState({ phase: "exported", result });
     } catch (error) {
       logger.error("Export error:", error);
+      errorSource.current = "export";
       setState({ phase: "error", message: "Unable to export template." });
     }
   }, []);
@@ -60,6 +63,7 @@ export function useTemplateFlow() {
         return;
       }
       if (picked.status === "error") {
+        errorSource.current = "import";
         setState({ phase: "error", message: picked.message });
         return;
       }
@@ -67,6 +71,7 @@ export function useTemplateFlow() {
       setState({ phase: "confirming", parsed: picked.parsed });
     } catch (error) {
       logger.error("Import error:", error);
+      errorSource.current = "import";
       setState({ phase: "error", message: "Unable to read the template file." });
     }
   }, []);
@@ -80,10 +85,12 @@ export function useTemplateFlow() {
       if (result.success) {
         setState({ phase: "imported", message: result.message });
       } else {
+        errorSource.current = "import";
         setState({ phase: "error", message: result.message });
       }
     } catch (error) {
       logger.error("Import error:", error);
+      errorSource.current = "import";
       setState({ phase: "error", message: "Failed to import template." });
     }
   }, []);
@@ -103,14 +110,17 @@ export function useTemplateFlow() {
   }, []);
 
   const retry = useCallback(() => {
-    if (state.phase === "error") {
+    if (state.phase !== "error") return;
+    if (errorSource.current === "import") {
       if (pendingImport.current) {
         void confirmImport();
       } else {
-        void beginExport();
+        void beginImport();
       }
+    } else {
+      void beginExport();
     }
-  }, [state, beginExport, confirmImport]);
+  }, [state, confirmImport, beginImport, beginExport]);
 
   const busy = state.phase === "exporting" || state.phase === "parsing" || state.phase === "importing";
 

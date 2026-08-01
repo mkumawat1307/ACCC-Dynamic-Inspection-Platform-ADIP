@@ -154,4 +154,21 @@ describe("useTemplateFlow", () => {
     expect(find(root, "phase")).toBe("error");
     expect(find(root, "message")).toContain("Failed to import");
   });
+
+  it("retries the import flow after a parse error, not the export flow", async () => {
+    (pickAndParseTemplate as jest.Mock).mockResolvedValueOnce({ status: "error", message: "Invalid file." });
+    const { root, flowRef } = renderHost();
+
+    await act(async () => {
+      await flowRef.current!.beginImport();
+    });
+    expect(find(root, "phase")).toBe("error");
+    expect(find(root, "message")).toContain("Invalid file");
+
+    await act(async () => {
+      await flowRef.current!.retry();
+    });
+    expect(find(root, "phase")).toBe("confirming");
+    expect(exportTemplates).not.toHaveBeenCalled();
+  });
 });
