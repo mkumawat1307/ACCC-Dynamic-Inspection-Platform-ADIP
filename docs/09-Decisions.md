@@ -792,4 +792,52 @@ Negative:
 
 ---
 
+# ADR-016
+
+## Title
+
+Template Transfer v2.0 — Export/Import with Replace-in-Place
+
+### Status
+
+Accepted
+
+### Date
+
+August 2026
+
+### Context
+
+Custom inspection forms (sections, fields, options, device types, device options, and project device type mappings) lived only in the local project DB, so they could not be moved between phones or reinstalls. The old `exportDefaultTemplate`/`importTemplate` path was v1.0 (single template, no device data) and import only appended — it could not replace a customized form cleanly, and exported files lacked the device-field definitions that dynamic device sections depend on.
+
+### Decision
+
+1. **v2.0 JSON transfer format** — `{ version: "2.0", exportedAt, templates: [], projectDeviceTypes: [] }` exports ALL active templates, each with sections → fields → options, plus per-template `DeviceFieldDefinitions` and `DeviceOptions`, and the project's active `ProjectDeviceTypes`.
+2. **Replace-in-place import** — `applyTemplateImport` upserts templates by `TemplateName` (update existing + reactivate, or insert), deactivates that template's stale sections, inserts fresh sections/fields/options, upserts device definitions/options by natural keys, bulk-deactivates device rows belonging to templates no longer active, and replaces `ProjectDeviceTypes`. Existing inspection records are untouched.
+3. **v1.0 backward compatibility** — `pickAndParseTemplate` normalizes legacy single-template files to the v2.0 shape (`IsDefault: 1`, empty device data), and `importTemplate` is retained as a pick + parse + apply wrapper.
+4. **`ProjectDeviceTypes` has no `ProjectID` column** — the inline schema in `src/database/schema.ts` defines it without one, so all transfer SQL avoids `ProjectID`: reads use `WHERE IsActive = 1`, upserts key on `DeviceType`.
+5. **Reset-to-Default preserves device records** — the previous reset ran `DELETE FROM DeviceRecords` (per-inspection saved device values, FK to `Inspections`) while its confirmation text claimed "Existing inspection data will NOT be deleted." That destructive step was removed; reset now only touches form configuration.
+6. **Error dialogs scoped to originating flow** — the settings screen tracks whether an export or import flow started the error, so an export failure shows only "Export Failed" and an import failure only "Import Failed".
+
+### Alternatives
+
+- **Keep v1.0 append-only import** — rejected: could not replace a customized form, so stale sections/fields accumulated and device configuration could not transfer.
+- **Export only the default template** — rejected: admin/custom (`IsDefault=0`) templates are part of the configured form and must transfer too.
+- **Support `ProjectID` in `ProjectDeviceTypes`** — rejected: the table's schema has no such column; introducing one would be a cross-cutting schema change with no benefit for single-project files.
+- **Deleting then re-inserting all template rows on import** — rejected: would orphan existing `InspectionFields`/`InspectionSections` references and inspection data; keep rows and deactivate/insert instead.
+
+### Consequences
+
+Positive:
+- A fully customized form (including device configuration) can be shared via JSON and restored on another device.
+- Replace-in-place keeps the form clean without deleting inspection data, matching the product's data-preservation guarantee.
+- `exportDefaultTemplate`/`importTemplate` remain as thin wrappers, so existing callers and tests keep working.
+- Per-project isolation holds: import writes only to the active project DB (no cross-DB references), with a dedicated isolation regression test.
+
+Negative:
+- v1.0 files lose device data on import by design (they never carried it).
+- The two-step pick + parse + confirm + apply flow adds a confirmation dialog before any DB write.
+
+---
+
 # End of Architecture Decision Records
