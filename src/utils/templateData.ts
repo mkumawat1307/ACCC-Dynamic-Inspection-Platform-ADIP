@@ -10,7 +10,7 @@ function normalizeFieldType(type: string): string {
   return VALID_FIELD_TYPES.find((t) => t.toUpperCase() === type.toUpperCase()) ?? type;
 }
 
-export interface TemplateExportData {
+interface LegacyTemplateData {
   version: string;
   exportedAt: string;
   template: {
@@ -46,6 +46,81 @@ export interface TemplateExportData {
   }[];
 }
 
+export interface TemplateExportSummary {
+  templateCount: number;
+  sectionCount: number;
+  fieldCount: number;
+  deviceTypeCount: number;
+  deviceOptionCount: number;
+}
+
+export interface TemplateExportResult {
+  fileUri: string;
+  fileName: string;
+  summary: TemplateExportSummary;
+}
+
+export interface TemplateExportData {
+  version: string;
+  exportedAt: string;
+  templates: TemplateExportTemplate[];
+  projectDeviceTypes: string[];
+}
+
+export interface TemplateExportTemplate {
+  TemplateName: string;
+  Description: string | null;
+  IsDefault: number;
+  sections: TemplateExportSection[];
+  deviceTypes: TemplateExportDeviceType[];
+  deviceOptions: TemplateExportDeviceOption[];
+}
+
+export interface TemplateExportSection {
+  SectionName: string;
+  SectionKey: string;
+  Description: string | null;
+  Icon: string | null;
+  DisplayOrder: number;
+  IsRepeatable: number;
+  IsVisible: number;
+  fields: TemplateExportField[];
+}
+
+export interface TemplateExportField {
+  FieldName: string;
+  FieldKey: string;
+  FieldType: string;
+  Placeholder: string | null;
+  DefaultValue: string | null;
+  HelpText: string | null;
+  ValidationRule: string | null;
+  DisplayOrder: number;
+  IsRequired: number;
+  IsVisible: number;
+  IsReadOnly: number;
+  IsSystemField: number;
+  Width: number;
+  options: { OptionLabel: string; OptionValue: string; DisplayOrder: number; IsDefault: number }[];
+}
+
+export interface TemplateExportDeviceType {
+  DeviceType: string;
+  FieldName: string;
+  Label: string;
+  FieldType: string;
+  IsRequired: number;
+  DisplayOrder: number;
+}
+
+export interface TemplateExportDeviceOption {
+  DeviceType: string;
+  FieldName: string;
+  OptionLabel: string;
+  OptionValue: string;
+  DisplayOrder: number;
+}
+
 export async function exportDefaultTemplate(): Promise<boolean> {
   const db = await getDatabase();
 
@@ -69,7 +144,7 @@ export async function exportDefaultTemplate(): Promise<boolean> {
     [template.TemplateID]
   );
 
-  const exportSections: TemplateExportData["sections"] = [];
+  const exportSections: LegacyTemplateData["sections"] = [];
 
   for (const section of sections) {
     const fields = await db.getAllAsync<{
@@ -92,7 +167,7 @@ export async function exportDefaultTemplate(): Promise<boolean> {
       [section.SectionID]
     );
 
-    const exportFields: TemplateExportData["sections"][0]["fields"] = [];
+    const exportFields: LegacyTemplateData["sections"][0]["fields"] = [];
 
     for (const field of fields) {
       const options = await db.getAllAsync<{
@@ -133,7 +208,7 @@ export async function exportDefaultTemplate(): Promise<boolean> {
     });
   }
 
-  const exportData: TemplateExportData = {
+  const exportData: LegacyTemplateData = {
     version: "1.0",
     exportedAt: new Date().toISOString(),
     template: {
@@ -163,6 +238,189 @@ export async function exportDefaultTemplate(): Promise<boolean> {
   return false;
 }
 
+export async function exportTemplates(): Promise<TemplateExportResult | null> {
+  const db = await getDatabase();
+
+  const templates = await db.getAllAsync<{
+    TemplateID: number;
+    TemplateName: string;
+    Description: string | null;
+    IsDefault: number;
+    IsActive: number;
+  }>(
+    `SELECT TemplateID, TemplateName, Description, IsDefault, IsActive
+     FROM InspectionTemplates ORDER BY TemplateID`
+  );
+
+  const activeTemplates = templates.filter((t) => t.IsActive === 1);
+  if (activeTemplates.length === 0) return null;
+
+  const exportTemplates: TemplateExportTemplate[] = [];
+  let sectionCount = 0;
+  let fieldCount = 0;
+  let deviceTypeCount = 0;
+  let deviceOptionCount = 0;
+
+  for (const template of activeTemplates) {
+    const sections = await db.getAllAsync<{
+      SectionID: number;
+      SectionName: string;
+      SectionKey: string;
+      Description: string | null;
+      Icon: string | null;
+      DisplayOrder: number;
+      IsRepeatable: number;
+      IsVisible: number;
+    }>(
+      `SELECT SectionID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible
+       FROM InspectionSections WHERE TemplateID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
+      [template.TemplateID]
+    );
+
+    const exportSections: TemplateExportSection[] = [];
+
+    for (const section of sections) {
+      const fields = await db.getAllAsync<{
+        FieldID: number;
+        FieldName: string;
+        FieldKey: string;
+        FieldType: string;
+        Placeholder: string | null;
+        DefaultValue: string | null;
+        HelpText: string | null;
+        ValidationRule: string | null;
+        DisplayOrder: number;
+        IsRequired: number;
+        IsVisible: number;
+        IsReadOnly: number;
+        IsSystemField: number;
+        Width: number;
+      }>(
+        `SELECT FieldID, FieldName, FieldKey, FieldType, Placeholder, DefaultValue,
+                HelpText, ValidationRule, DisplayOrder, IsRequired, IsVisible, IsReadOnly,
+                IsSystemField, Width
+         FROM InspectionFields WHERE SectionID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
+        [section.SectionID]
+      );
+
+      const exportFields: TemplateExportSection["fields"] = [];
+
+      for (const field of fields) {
+        const options = await db.getAllAsync<{
+          OptionLabel: string;
+          OptionValue: string;
+          DisplayOrder: number;
+          IsDefault: number;
+        }>(
+          `SELECT OptionLabel, OptionValue, DisplayOrder, IsDefault
+           FROM FieldOptions WHERE FieldID = ? ORDER BY DisplayOrder`,
+          [field.FieldID]
+        );
+
+        exportFields.push({
+          FieldName: field.FieldName,
+          FieldKey: field.FieldKey,
+          FieldType: field.FieldType,
+          Placeholder: field.Placeholder,
+          DefaultValue: field.DefaultValue,
+          HelpText: field.HelpText,
+          ValidationRule: field.ValidationRule,
+          DisplayOrder: field.DisplayOrder,
+          IsRequired: field.IsRequired,
+          IsVisible: field.IsVisible,
+          IsReadOnly: field.IsReadOnly,
+          IsSystemField: field.IsSystemField,
+          Width: field.Width,
+          options,
+        });
+        fieldCount++;
+      }
+
+      exportSections.push({
+        SectionName: section.SectionName,
+        SectionKey: section.SectionKey,
+        Description: section.Description,
+        Icon: section.Icon,
+        DisplayOrder: section.DisplayOrder,
+        IsRepeatable: section.IsRepeatable,
+        IsVisible: section.IsVisible,
+        fields: exportFields,
+      });
+      sectionCount++;
+    }
+
+    const deviceTypes = await db.getAllAsync<{
+      DeviceType: string;
+      FieldName: string;
+      Label: string;
+      FieldType: string;
+      IsRequired: number;
+      DisplayOrder: number;
+    }>(
+      `SELECT DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder
+       FROM DeviceFieldDefinitions WHERE TemplateID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
+      [template.TemplateID]
+    );
+
+    const deviceOptions = await db.getAllAsync<{
+      DeviceType: string;
+      FieldName: string;
+      OptionLabel: string;
+      OptionValue: string;
+      DisplayOrder: number;
+    }>(
+      `SELECT DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder
+       FROM DeviceOptions WHERE TemplateID = ? AND IsActive = 1 ORDER BY FieldName, DisplayOrder`,
+      [template.TemplateID]
+    );
+
+    deviceTypeCount += deviceTypes.length;
+    deviceOptionCount += deviceOptions.length;
+
+    exportTemplates.push({
+      TemplateName: template.TemplateName,
+      Description: template.Description,
+      IsDefault: template.IsDefault,
+      sections: exportSections,
+      deviceTypes,
+      deviceOptions,
+    });
+  }
+
+  const projectDeviceTypes = (
+    await db.getAllAsync<{ DeviceType: string }>(
+      `SELECT DeviceType FROM ProjectDeviceTypes WHERE IsActive = 1`
+    )
+  ).map((r) => r.DeviceType);
+
+  const exportData: TemplateExportData = {
+    version: "2.0",
+    exportedAt: new Date().toISOString(),
+    templates: exportTemplates,
+    projectDeviceTypes,
+  };
+
+  const json = JSON.stringify(exportData, null, 2);
+  const fileName = `template_${new Date().toISOString().slice(0, 10)}.json`;
+  const fileUri = FileSystem.documentDirectory + fileName;
+
+  await FileSystem.writeAsStringAsync(fileUri, json, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+
+  return {
+    fileUri,
+    fileName,
+    summary: {
+      templateCount: activeTemplates.length,
+      sectionCount,
+      fieldCount,
+      deviceTypeCount,
+      deviceOptionCount,
+    },
+  };
+}
+
 export async function importTemplate(): Promise<{ success: boolean; message: string }> {
   const result = await DocumentPicker.getDocumentAsync({
     type: "application/json",
@@ -178,7 +436,7 @@ export async function importTemplate(): Promise<{ success: boolean; message: str
     encoding: FileSystem.EncodingType.UTF8,
   });
 
-  let data: TemplateExportData;
+  let data: LegacyTemplateData;
   try {
     data = JSON.parse(content);
   } catch {

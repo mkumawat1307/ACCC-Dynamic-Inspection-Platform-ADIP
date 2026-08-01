@@ -253,3 +253,85 @@ describe("importTemplate", () => {
     expect(result.message).toContain("Failed to import");
   });
 });
+
+describe("exportTemplates", () => {
+  let mockDb: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = {
+      getFirstAsync: jest.fn(),
+      getAllAsync: jest.fn(),
+      runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 42, changes: 1 }),
+      withTransactionAsync: jest.fn(),
+    };
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("returns null when no templates exist", async () => {
+    mockDb.getAllAsync.mockResolvedValue([]);
+    const { exportTemplates } = require("@/src/utils/templateData");
+    expect(await exportTemplates()).toBeNull();
+  });
+
+  it("exports all templates with sections, fields, options, device data and summary", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { TemplateID: 1, TemplateName: "Default", Description: "d", IsDefault: 1, IsActive: 1 },
+        { TemplateID: 2, TemplateName: "Custom", Description: null, IsDefault: 0, IsActive: 1 },
+      ])
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionName: "General", SectionKey: "general", Description: null, Icon: null, DisplayOrder: 1, IsRepeatable: 0, IsVisible: 1 },
+      ])
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldName: "Voltage", FieldKey: "voltage", FieldType: "text", Placeholder: null, DefaultValue: null, HelpText: null, ValidationRule: null, DisplayOrder: 1, IsRequired: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, Width: 12 },
+      ])
+      .mockResolvedValueOnce([
+        { OptionLabel: "A", OptionValue: "a", DisplayOrder: 1, IsDefault: 0 },
+      ])
+      .mockResolvedValueOnce([]) // sections for template 2
+      .mockResolvedValueOnce([]) // device types for template 1
+      .mockResolvedValueOnce([]) // device options for template 1
+      .mockResolvedValueOnce([]) // device types for template 2
+      .mockResolvedValueOnce([]) // device options for template 2
+      .mockResolvedValueOnce(["Camera", "Switch", "UPS"]); // projectDeviceTypes
+
+    const { exportTemplates } = require("@/src/utils/templateData");
+    const result = await exportTemplates();
+
+    expect(result).not.toBeNull();
+    expect(result!.fileName).toMatch(/^template_.+\.json$/);
+    expect(result!.summary).toEqual({
+      templateCount: 2,
+      sectionCount: 1,
+      fieldCount: 1,
+      deviceTypeCount: 0,
+      deviceOptionCount: 0,
+    });
+    expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
+
+    const { shareAsync } = require("expo-sharing");
+    expect(shareAsync).not.toHaveBeenCalled();
+  });
+
+  it("writes the v2.0 JSON shape", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([{ TemplateID: 1, TemplateName: "Default", Description: null, IsDefault: 1, IsActive: 1 }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ DeviceType: "Camera" }]);
+
+    const { exportTemplates } = require("@/src/utils/templateData");
+    await exportTemplates();
+
+    const [, json] = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0];
+    const data = JSON.parse(json);
+    expect(data.version).toBe("2.0");
+    expect(data.templates).toHaveLength(1);
+    expect(data.templates[0].TemplateName).toBe("Default");
+    expect(data.templates[0].sections).toEqual([]);
+    expect(data.templates[0].deviceTypes).toEqual([]);
+    expect(data.projectDeviceTypes).toEqual(["Camera"]);
+  });
+});
