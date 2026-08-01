@@ -473,7 +473,7 @@ Current repositories:
 - InspectionFieldRepository (Field queries, option loading)
 - InspectionValueRepository (Save/load/delete field values)
 - InspectionSectionRepository (Section CRUD)
-- InspectionListRepository (Inspection list with details)
+- InspectionListRepository (Inspection list with details; filterByQuery — pure, testable case-insensitive search over PoleID/Division/District/Block)
 - CameraRepository (Camera CRUD with transactions)
 - SwitchRepository (Switch CRUD with transactions)
 - PhotoRepository (Photo CRUD, create returns lastInsertRowId)

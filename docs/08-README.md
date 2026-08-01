@@ -69,6 +69,8 @@ The platform aims to:
 - Duplicate Pole Detection
 - Pole ID Lock (waits for DB before locking)
 - Section IsDefault Filtering (only default sections in inspections)
+- Block name shown on each inspection card
+- Search by Pole ID, Division, District, and Block
 
 ---
 
@@ -111,6 +113,7 @@ The platform aims to:
 - Import templates from JSON files
 - Self-contained JSON with all template, section, field, and option data
 - Uses expo-document-picker and expo-sharing
+- v2.0: import replaces the form in-place (deactivate + add) while preserving existing inspection data; includes device types, device options, and project device type mappings
 
 ---
 
