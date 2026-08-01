@@ -60,6 +60,14 @@ export default class PhotoRepository {
 
   }
 
+  static async updateFilePath(photoId: number, filePath: string): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(
+      `UPDATE Photos SET FilePath = ? WHERE PhotoID = ?`,
+      [filePath, photoId]
+    );
+  }
+
   static async delete(
     photoId: number
   ): Promise<void> {

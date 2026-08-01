@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useImperativeHandle, forwardRef } from "react";
+import { logger } from "@/src/utils/logger";
 import { View, Alert } from "react-native";
 import {
   Button,
@@ -8,10 +9,8 @@ import {
 import { useRouter } from "expo-router";
 import FieldRenderer from "./FieldRenderer";
 import { useInspection } from "@/src/context/InspectionContext";
-import {
-  InspectionRepository,
-  InspectionField,
-} from "@/src/database/repositories/InspectionRepository";
+import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { InspectionField } from "@/src/database/repositories/InspectionTypes";
 import { getCurrentLocation } from "@/src/utils/location";
 
 const GeneralInformation = forwardRef((props, ref) => {
@@ -101,7 +100,7 @@ async function init() {
       }
     }
   } catch (error) {
-    console.error("Init Error:", error);
+    logger.error("Init Error:", error);
   }
 }
 
@@ -153,7 +152,7 @@ async function loadFields(templateId?: number) {
     setFields(data);
     return data;
   } catch (error) {
-    console.error("Load Fields Error:", error);
+    logger.error("Load Fields Error:", error);
     return [];
   }
 }
@@ -182,17 +181,12 @@ async function fetchCurrentLocation() {
       );
     }
   } catch (error) {
-    console.error("GPS Save Error:", error);
+    logger.error("GPS Save Error:", error);
   }
 }
 
 function isReadOnly(fieldKey: string) {
-  return (
-    fieldKey === "date" ||
-    fieldKey === "division" ||
-    fieldKey === "district" ||
-    fieldKey === "gps"
-  );
+  return fieldKey === "gps";
 }
 
 useImperativeHandle(ref, () => ({
@@ -291,7 +285,7 @@ return (
                     }
                   } catch (error) {
                     setCheckingPoleId(false);
-                    console.error(error);
+                    logger.error(error);
                   }
                 }, 300);
               }
@@ -358,3 +352,4 @@ return (
 GeneralInformation.displayName = "GeneralInformation";
 
 export default GeneralInformation;
+

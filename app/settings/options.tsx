@@ -10,13 +10,10 @@ import { useFocusEffect } from "@react-navigation/native";
 import {
   FieldOptionRepository, FieldOption,
 } from "../../src/database/repositories/FieldOptionRepository";
-import { getDatabase } from "../../src/database/db";
-
 export default function OptionsScreen() {
-  const { fieldId, fieldName, fieldKey } = useLocalSearchParams<{
+  const { fieldId, fieldName } = useLocalSearchParams<{
     fieldId: string;
     fieldName: string;
-    fieldKey: string;
   }>();
   const fid = Number(fieldId);
 
@@ -146,9 +143,7 @@ export default function OptionsScreen() {
             <Text variant="titleMedium" style={styles.cardTitle}>
               {item.OptionLabel}
             </Text>
-            <Text variant="bodySmall" style={styles.cardSubtitle}>
-              Value: {item.OptionValue}
-            </Text>
+
             {item.IsDefault ? (
               <Text variant="bodySmall" style={styles.defaultText}>
                 Default
@@ -177,7 +172,7 @@ export default function OptionsScreen() {
     <SafeAreaView style={styles.container}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => {}} />
-        <Appbar.Content title={fieldName ?? "Options"} subtitle={fieldKey} />
+        <Appbar.Content title={fieldName ?? "Options"} />
       </Appbar.Header>
 
       <FlatList
@@ -205,19 +200,12 @@ export default function OptionsScreen() {
               value={optionLabel}
               onChangeText={(text) => {
                 setOptionLabel(text);
-                if (!editing && !optionValue) setOptionValue(text);
+                if (!editing) setOptionValue(text);
               }}
               mode="outlined"
               style={styles.input}
             />
-            <TextInput
-              label="Value"
-              value={optionValue}
-              onChangeText={setOptionValue}
-              mode="outlined"
-              style={styles.input}
-              placeholder="Defaults to label if empty"
-            />
+
             <View style={styles.switchRow}>
               <Text variant="bodyMedium">Default Selection</Text>
               <Switch value={isDefault} onValueChange={setIsDefault} />

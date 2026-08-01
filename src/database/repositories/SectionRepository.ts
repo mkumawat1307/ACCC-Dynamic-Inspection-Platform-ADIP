@@ -1,4 +1,4 @@
-import { getDatabase } from "../db";
+import { getDatabase, SqlValue } from "../db";
 
 export interface Section {
   SectionID: number;
@@ -84,7 +84,7 @@ export class SectionRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: SqlValue[] = [];
 
     if (data.SectionName !== undefined) {
       fields.push("SectionName = ?");

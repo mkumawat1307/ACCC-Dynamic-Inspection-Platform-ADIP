@@ -1,5 +1,6 @@
 import { getDatabase } from "../db";
 
+import { logger } from "@/src/utils/logger";
 interface DeviceOptionSeed {
   DeviceType: string;
   FieldName: string;
@@ -77,11 +78,11 @@ export async function seedDeviceOptions() {
   );
 
   if ((existing?.Count ?? 0) > 0) {
-    console.log("✅ Device Options already seeded.");
+    logger.info("✅ Device Options already seeded.");
     return;
   }
 
-  console.log("🌱 Seeding Device Options...");
+  logger.info("🌱 Seeding Device Options...");
 
   await db.withTransactionAsync(async () => {
     for (const opt of deviceOptions) {
@@ -93,5 +94,6 @@ export async function seedDeviceOptions() {
     }
   });
 
-  console.log("✅ Device Options Seeded.");
+  logger.info("✅ Device Options Seeded.");
 }
+

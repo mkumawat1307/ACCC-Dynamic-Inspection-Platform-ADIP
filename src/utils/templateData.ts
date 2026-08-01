@@ -1,7 +1,14 @@
 import * as Sharing from "expo-sharing";
+import { logger } from "@/src/utils/logger";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { getDatabase } from "../database/db";
+
+const VALID_FIELD_TYPES = ["text", "number", "multiline", "dropdown", "date", "date_auto", "time", "GPS", "checkbox", "switch", "device", "camera", "calculation"];
+
+function normalizeFieldType(type: string): string {
+  return VALID_FIELD_TYPES.find((t) => t.toUpperCase() === type.toUpperCase()) ?? type;
+}
 
 export interface TemplateExportData {
   version: string;
@@ -182,6 +189,40 @@ export async function importTemplate(): Promise<{ success: boolean; message: str
     return { success: false, message: "Invalid template format." };
   }
 
+  const validFieldTypes = VALID_FIELD_TYPES.map((t) => t.toUpperCase());
+  const isValidFieldType = (type: string) => validFieldTypes.includes(type.toUpperCase());
+
+  if (!data.template.TemplateName || typeof data.template.TemplateName !== "string") {
+    return { success: false, message: "Template missing valid TemplateName." };
+  }
+
+  for (let si = 0; si < data.sections.length; si++) {
+    const section = data.sections[si];
+    if (!section.SectionName || !section.SectionKey) {
+      return { success: false, message: `Section ${si + 1} missing SectionName or SectionKey.` };
+    }
+    if (!Array.isArray(section.fields)) {
+      return { success: false, message: `Section "${section.SectionName}" missing fields array.` };
+    }
+    for (let fi = 0; fi < section.fields.length; fi++) {
+      const field = section.fields[fi];
+      if (!field.FieldName || !field.FieldKey || !field.FieldType) {
+        return { success: false, message: `Field ${fi + 1} in section "${section.SectionName}" missing required property (FieldName, FieldKey, or FieldType).` };
+      }
+      if (!isValidFieldType(field.FieldType)) {
+        return { success: false, message: `Field "${field.FieldName}" has invalid FieldType "${field.FieldType}". Valid types: ${VALID_FIELD_TYPES.join(", ")}` };
+      }
+      if (Array.isArray(field.options)) {
+        for (let oi = 0; oi < field.options.length; oi++) {
+          const opt = field.options[oi];
+          if (!opt.OptionLabel || opt.OptionValue === undefined) {
+            return { success: false, message: `Option ${oi + 1} in field "${field.FieldName}" missing OptionLabel or OptionValue.` };
+          }
+        }
+      }
+    }
+  }
+
   const db = await getDatabase();
 
   try {
@@ -221,7 +262,7 @@ export async function importTemplate(): Promise<{ success: boolean; message: str
               sectionId,
               field.FieldName,
               field.FieldKey,
-              field.FieldType,
+              normalizeFieldType(field.FieldType),
               field.Placeholder ?? null,
               field.DefaultValue ?? null,
               field.HelpText ?? null,
@@ -247,7 +288,8 @@ export async function importTemplate(): Promise<{ success: boolean; message: str
 
     return { success: true, message: `Template "${data.template.TemplateName}" imported with ${data.sections.length} sections.` };
   } catch (error) {
-    console.error("Import error:", error);
+    logger.error("Import error:", error);
     return { success: false, message: "Failed to import template. " + (error as Error).message };
   }
 }
+

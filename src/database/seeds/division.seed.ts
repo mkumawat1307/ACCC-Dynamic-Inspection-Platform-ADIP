@@ -2,27 +2,29 @@
 
 import { getGlobalDatabase } from "../db";
 
+import { logger } from "@/src/utils/logger";
+
 export async function seedDivisions() {
-    console.log("🌱 [division.seed] seedDivisions() — START");
+    logger.info("ðŸŒ± [division.seed] seedDivisions() â€” START");
 
     const db = await getGlobalDatabase();
-    console.log("[division.seed] Got DB handle");
+    logger.info("[division.seed] Got DB handle");
 
-    console.log("[division.seed] Checking if Divisions already seeded...");
+    logger.info("[division.seed] Checking if Divisions already seeded...");
     const existing = await db.getFirstAsync<{ Count: number }>(`
         SELECT COUNT(*) AS Count
         FROM Divisions;
     `);
 
-    console.log(`[division.seed] Divisions count: ${existing?.Count ?? 0}`);
+    logger.info(`[division.seed] Divisions count: ${existing?.Count ?? 0}`);
 
     if ((existing?.Count ?? 0) > 0) {
-        console.log("✅ [division.seed] Divisions already seeded, skipping.");
-        console.log("[division.seed] seedDivisions() — END (skipped)");
+        logger.info("âœ… [division.seed] Divisions already seeded, skipping.");
+        logger.info("[division.seed] seedDivisions() â€” END (skipped)");
         return;
     }
 
-    console.log("🌱 [division.seed] Seeding Divisions & Districts...");
+    logger.info("ðŸŒ± [division.seed] Seeding Divisions & Districts...");
 
     const divisions = [
         {
@@ -106,7 +108,7 @@ export async function seedDivisions() {
     let totalDistricts = 0;
 
     for (const item of divisions) {
-        console.log(`[division.seed] Inserting division: ${item.division}`);
+        logger.info(`[division.seed] Inserting division: ${item.division}`);
 
         const result = await db.runAsync(
             `
@@ -117,7 +119,7 @@ export async function seedDivisions() {
         );
 
         const divisionId = result.lastInsertRowId;
-        console.log(`[division.seed] Division ${item.division} inserted with ID ${divisionId}`);
+        logger.info(`[division.seed] Division ${item.division} inserted with ID ${divisionId}`);
 
         for (const district of item.districts) {
             await db.runAsync(
@@ -140,9 +142,10 @@ export async function seedDivisions() {
             totalDistricts++;
         }
 
-        console.log(`[division.seed] Inserted ${item.districts.length} districts for ${item.division}`);
+        logger.info(`[division.seed] Inserted ${item.districts.length} districts for ${item.division}`);
     }
 
-    console.log(`[division.seed] Total divisions: ${divisions.length}, Total districts: ${totalDistricts}`);
-    console.log("✅ [division.seed] seedDivisions() — END");
+    logger.info(`[division.seed] Total divisions: ${divisions.length}, Total districts: ${totalDistricts}`);
+    logger.info("âœ… [division.seed] seedDivisions() â€” END");
 }
+

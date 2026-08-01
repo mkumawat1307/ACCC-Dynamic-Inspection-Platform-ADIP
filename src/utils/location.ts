@@ -1,5 +1,6 @@
 import * as Location from "expo-location";
 
+import { logger } from "@/src/utils/logger";
 export interface CurrentLocation {
   latitude: number;
   longitude: number;
@@ -24,7 +25,7 @@ export async function getCurrentLocation(): Promise<CurrentLocation | null> {
       longitude: location.coords.longitude,
     };
   } catch (error) {
-    console.error("Location Error:", error);
+    logger.error("Location Error:", error);
     alert("Unable to get current location.");
     return null;
   }

@@ -11,20 +11,22 @@ import { seedRepeatableGroupFields } from "./seeds/repeatable-group-fields.seed"
 import { seedDeviceOptions } from "./seeds/device-options.seed";
 import { seedDeviceFieldDefinitions } from "./seeds/device-field-definitions.seed";
 
+import { logger } from "@/src/utils/logger";
+
 export async function seedGlobalDatabase() {
-    console.log("🌱 [seed] seedGlobalDatabase() — START");
+    logger.info("ðŸŒ± [seed] seedGlobalDatabase() â€” START");
 
-    console.log("[seed] Calling getGlobalDatabase()...");
-    const dbBefore = await getGlobalDatabase();
-    console.log("[seed] getGlobalDatabase() returned handle");
+    logger.info("[seed] Calling getGlobalDatabase()...");
+    await getGlobalDatabase();
+    logger.info("[seed] getGlobalDatabase() returned handle");
 
-    console.log("[seed] Calling seedDivisions()...");
+    logger.info("[seed] Calling seedDivisions()...");
     await seedDivisions();
-    console.log("✅ [seed] seedGlobalDatabase() — END");
+    logger.info("âœ… [seed] seedGlobalDatabase() â€” END");
 }
 
 export async function seedProjectDatabase() {
-    console.log("🌱 [seed] seedProjectDatabase() — START");
+    logger.info("ðŸŒ± [seed] seedProjectDatabase() â€” START");
     await getDatabase();
     await seedInspectionTemplate();
     await seedInspectionSections();
@@ -34,7 +36,7 @@ export async function seedProjectDatabase() {
     await seedRepeatableGroupFields();
     await seedDeviceOptions();
     await seedDeviceFieldDefinitions();
-    console.log("✅ [seed] seedProjectDatabase() — END");
+    logger.info("âœ… [seed] seedProjectDatabase() â€” END");
 }
 
 export async function seedDatabase() {
@@ -48,3 +50,4 @@ export async function seedDatabase() {
     await seedDeviceOptions();
     await seedDeviceFieldDefinitions();
 }
+

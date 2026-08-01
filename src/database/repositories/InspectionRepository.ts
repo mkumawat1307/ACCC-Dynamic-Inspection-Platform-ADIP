@@ -1,36 +1,8 @@
 // src/database/repositories/InspectionRepository.ts
 
 import { getDatabase } from "../db";
-
-export interface InspectionSection {
-  SectionID: number;
-  SectionName: string;
-  SectionKey: string;
-  DisplayOrder: number;
-}
-
-export interface InspectionField {
-  FieldID: number;
-  SectionID: number;
-
-  FieldName: string;
-  FieldKey: string;
-  FieldType: string;
-
-  Placeholder: string | null;
-  DefaultValue: string | null;
-  HelpText: string | null;
-  ValidationRule: string | null;
-
-  DisplayOrder: number;
-
-  IsRequired: number;
-  IsVisible: number;
-  IsActive: number;
-
-  CreatedAt: string;
-  UpdatedAt: string;
-}
+import { InspectionSection, InspectionField } from "./InspectionTypes";
+import { deleteInspectionData } from "./inspectionDataHelper";
 
 export class InspectionRepository {
 static async getSections(templateId?: number): Promise<InspectionSection[]> {
@@ -395,55 +367,19 @@ static async deleteInspection(
   const db = await getDatabase();
 
   await db.withTransactionAsync(async () => {
-
-    await db.runAsync(
-      `
-      DELETE FROM Photos
-      WHERE InspectionID = ?
-      `,
-      [inspectionId]
-    );
-
-    await db.runAsync(
-      `
-      DELETE FROM Cameras
-      WHERE InspectionID = ?
-      `,
-      [inspectionId]
-    );
-
-    await db.runAsync(
-      `
-      DELETE FROM Switches
-      WHERE InspectionID = ?
-      `,
-      [inspectionId]
-    );
-
-    await db.runAsync(
-      `
-      DELETE FROM InspectionValues
-      WHERE InspectionID = ?
-      `,
-      [inspectionId]
-    );
-
-    await db.runAsync(
-      `
-      DELETE FROM Inspections
-      WHERE InspectionID = ?
-      `,
-      [inspectionId]
-    );
-
+    await deleteInspectionData(db, inspectionId);
   });
 }
 
 static async deleteMultipleInspections(
   inspectionIds: number[]
 ) {
-  for (const id of inspectionIds) {
-    await this.deleteInspection(id);
-  }
+  const db = await getDatabase();
+
+  await db.withTransactionAsync(async () => {
+    for (const id of inspectionIds) {
+      await deleteInspectionData(db, id);
+    }
+  });
 }
 }

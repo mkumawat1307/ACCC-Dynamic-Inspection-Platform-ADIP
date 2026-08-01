@@ -1,4 +1,4 @@
-import { getDatabase } from "../db";
+import { getDatabase, SqlValue } from "../db";
 
 export interface FieldOption {
   OptionID: number;
@@ -72,7 +72,7 @@ export class FieldOptionRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: SqlValue[] = [];
 
     if (data.OptionLabel !== undefined) { fields.push("OptionLabel = ?"); values.push(data.OptionLabel); }
     if (data.OptionValue !== undefined) { fields.push("OptionValue = ?"); values.push(data.OptionValue); }

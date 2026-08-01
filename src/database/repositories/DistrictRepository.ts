@@ -1,15 +1,16 @@
 import { getGlobalDatabase } from "../db";
+import { logger } from "@/src/utils/logger";
 import { District } from "@/src/models/District";
 
 export class DistrictRepository {
   static async getAll(): Promise<District[]> {
-    console.log("[DistrictRepository] getAll() — START");
+    logger.info("[DistrictRepository] getAll() — START");
 
-    console.log("[DistrictRepository] Calling getGlobalDatabase()...");
+    logger.info("[DistrictRepository] Calling getGlobalDatabase()...");
     const db = await getGlobalDatabase();
-    console.log("[DistrictRepository] Got DB handle");
+    logger.info("[DistrictRepository] Got DB handle");
 
-    console.log("[DistrictRepository] Executing SELECT districts...");
+    logger.info("[DistrictRepository] Executing SELECT districts...");
     const results = await db.getAllAsync<District>(
       `
       SELECT
@@ -20,14 +21,15 @@ export class DistrictRepository {
       `
     );
 
-    console.log(`[DistrictRepository] Query returned ${results.length} districts`);
+    logger.info(`[DistrictRepository] Query returned ${results.length} districts`);
     if (results.length > 0) {
-      console.log(`[DistrictRepository] First 3: ${JSON.stringify(results.slice(0, 3))}`);
+      logger.info(`[DistrictRepository] First 3: ${JSON.stringify(results.slice(0, 3))}`);
     } else {
-      console.log("[DistrictRepository] WARNING: No districts found!");
+      logger.info("[DistrictRepository] WARNING: No districts found!");
     }
 
-    console.log("[DistrictRepository] getAll() — END");
+    logger.info("[DistrictRepository] getAll() — END");
     return results;
   }
 }
+

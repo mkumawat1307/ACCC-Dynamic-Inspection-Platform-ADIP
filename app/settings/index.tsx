@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { logger } from "@/src/utils/logger";
 import { ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
@@ -19,7 +20,7 @@ export default function SettingsScreen() {
         Alert.alert("Export Failed", "No template found to export.");
       }
     } catch (error) {
-      console.error("Export error:", error);
+      logger.error("Export error:", error);
       Alert.alert("Export Failed", "Unable to export template.");
     } finally {
       setLoading(false);
@@ -36,7 +37,7 @@ export default function SettingsScreen() {
         Alert.alert("Import Failed", result.message);
       }
     } catch (error) {
-      console.error("Import error:", error);
+      logger.error("Import error:", error);
       Alert.alert("Import Failed", "Unable to import template.");
     } finally {
       setLoading(false);
@@ -153,7 +154,7 @@ export default function SettingsScreen() {
 
       Alert.alert("Done", "Inspection form has been reset to default.");
     } catch (error) {
-      console.error("Reset error:", error);
+      logger.error("Reset error:", error);
       Alert.alert("Error", "Failed to reset. Please try again.");
     } finally {
       setResetting(false);
@@ -177,7 +178,7 @@ export default function SettingsScreen() {
             description="Manage inspection sections (Pole, Earthing, Camera, etc.)"
             left={(props) => <List.Icon {...props} icon="view-list" />}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
-            onPress={() => router.push("/settings/sections" as any)}
+            onPress={() => router.push("/settings/sections")}
           />
 
           <Divider />
@@ -231,3 +232,4 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
 });
+

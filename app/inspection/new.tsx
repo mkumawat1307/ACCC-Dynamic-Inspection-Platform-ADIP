@@ -1,4 +1,4 @@
-//frontend\app\inspection\new.tsx
+﻿//frontend\app\inspection\new.tsx
 import React, {
   useEffect,
   useRef,
@@ -7,11 +7,11 @@ import React, {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ScrollView,
-  StyleSheet,
   Alert,
   BackHandler,
   View,
 } from "react-native";
+import { styles } from "./new.styles";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Card,
@@ -26,12 +26,17 @@ import { useInspection } from "@/src/context/InspectionContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
 import SectionRenderer from "@/src/components/inspection/SectionRenderer";
 import GeneralInformation from "@/src/components/inspection/GeneralInformation";
-import {
-  InspectionRepository,
-  InspectionSection,
-} from "@/src/database/repositories/InspectionRepository";
 
-export default function NewInspectionScreen() {
+import { logger } from "@/src/utils/logger";
+import { getDatabase } from "@/src/database/db";
+import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
+
+export default function NewInspectionScreen({
+  title = "New Inspection",
+}: {
+  title?: string;
+}) {
   const router = useRouter();
   const initDoneRef = useRef(false);
 const { projectId, inspectionId: routeInspectionId, projectData: projectDataJson } =
@@ -49,9 +54,9 @@ const {
   inspectionId,
 } = useInspection();
 
-const [project, setProjectState] = useState<Project | null>(null);
 const [sections, setSections] = useState<InspectionSection[]>([]);
 const [expandedSections, setExpandedSections] = useState<number[]>([1]);
+const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
 
 const validateBeforeExit = async (): Promise<boolean> => {
   if (!inspectionId) return true;
@@ -115,6 +120,12 @@ useEffect(() => {
 async function initialize() {
   await loadProject();
 
+  const db = await getDatabase();
+  const tpl = await db.getFirstAsync<{ TemplateID: number }>(
+    "SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1"
+  );
+  if (tpl) setDefaultTemplateId(tpl.TemplateID);
+
   const data = await InspectionRepository.getSections();
   if (data.length > 0) {
     setSections(data);
@@ -125,10 +136,13 @@ async function loadProject(): Promise<Project | null> {
 
   let data: Project | null = null;
 
-  // 1. Use projectData passed via navigation params (most reliable — no DB call needed)
+  // 1. Use projectData passed via navigation params (most reliable -- no DB call needed)
   if (projectDataJson) {
     try {
-      data = JSON.parse(projectDataJson) as Project;
+      const parsed = JSON.parse(projectDataJson);
+      if (parsed && typeof parsed.ProjectID === "number" && typeof parsed.ProjectName === "string") {
+        data = parsed as Project;
+      }
     } catch {
       // fall through
     }
@@ -139,15 +153,13 @@ async function loadProject(): Promise<Project | null> {
     data = contextProject;
   }
 
-  // 3. NEVER call getProjectById() — it calls getGlobalDatabase() which corrupts
+  // 3. NEVER call getProjectById() -- it calls getGlobalDatabase() which corrupts
   //    the native handle on Android when the project DB is active.
 
   if (!data) {
-    console.error("[new.tsx] No project data available — check navigation params");
+    logger.error("[new.tsx] No project data available -- check navigation params");
     return null;
   }
-
-setProjectState(data);
 
 setProject(data);
 
@@ -170,7 +182,7 @@ if (routeInspectionId) {
       inspectionDate
     );
 
-  console.log(
+  logger.info(
     "NEW INSPECTION CREATED:",
     newInspectionId
   );
@@ -180,10 +192,6 @@ if (routeInspectionId) {
 
 return data;
 }
-  async function loadSections() {
-    const data = await InspectionRepository.getSections();
-    setSections(data);
-  }
 
 const handleBack = async () => {
   const ok = await validateBeforeExit();
@@ -264,7 +272,7 @@ const handleCancel = () => {
                 inspectionId
               );
 
-              console.log(
+              logger.info(
                 "Draft inspection deleted:",
                 inspectionId
               );
@@ -274,7 +282,7 @@ const handleCancel = () => {
 
           } catch (error) {
 
-            console.error(
+            logger.error(
               "Cancel Error:",
               error
             );
@@ -300,14 +308,14 @@ return (
   >
   <Appbar.Header>
     <Appbar.BackAction onPress={handleBack} />
-    <Appbar.Content title="New Inspection" />
+    <Appbar.Content title={title} />
   </Appbar.Header>
     <ScrollView
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
       <Text variant="headlineMedium" style={styles.title}>
-        New Inspection
+        {title}
       </Text>
 
 {sections.map((section) => (
@@ -337,6 +345,7 @@ return (
         sectionId={section.SectionID}
         inspectionId={inspectionId!}
         sectionKey={section.SectionKey}
+        templateId={defaultTemplateId}
       />
     )}
       </Card.Content>
@@ -384,30 +393,4 @@ return (
 
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F5F7FA",
-  },
 
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-
-  title: {
-    marginBottom: 20,
-    fontWeight: "700",
-  },
-
-  card: {
-    marginBottom: 12,
-    borderRadius: 12,
-    overflow: "hidden",
-  },
-
-  sectionTitle: {
-    fontWeight: "700",
-    color: "#1976D2",
-  },
-});

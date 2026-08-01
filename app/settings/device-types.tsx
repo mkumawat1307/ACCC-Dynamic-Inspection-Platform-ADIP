@@ -1,24 +1,14 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { View, FlatList, ScrollView, StyleSheet, Alert } from "react-native";
+import { ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Appbar, Card, Text, IconButton, Chip, Button, Portal,
-  Dialog, TextInput, Divider, Switch as PaperSwitch,
-} from "react-native-paper";
+import { Appbar, Portal } from "react-native-paper";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-import DeviceFieldDefinitionsRepository, {
-  DeviceFieldDefinition,
-} from "../../src/database/repositories/DeviceFieldDefinitionsRepository";
+import DeviceFieldDefinitionsRepository, { DeviceFieldDefinition } from "../../src/database/repositories/DeviceFieldDefinitionsRepository";
 import { getDatabase } from "../../src/database/db";
-
-const FIELD_TYPES = [
-  { label: "Text", value: "text" },
-  { label: "Dropdown", value: "dropdown" },
-  { label: "Number", value: "number" },
-  { label: "Date", value: "date" },
-  { label: "Checkbox", value: "checkbox" },
-];
+import { FieldDialog, AddTypeDialog, DeleteFieldDialog, DeleteTypeDialog } from "./components/DeviceTypeDialogs";
+import { styles } from "./device-types.styles";
+import DeviceTypeBody from "./components/DeviceTypeBody";
 
 export default function DeviceTypesScreen() {
   const router = useRouter();
@@ -43,6 +33,9 @@ export default function DeviceTypesScreen() {
   const [deleteTarget, setDeleteTarget] = useState<DeviceFieldDefinition | null>(null);
   const [deleteTypeDialogVisible, setDeleteTypeDialogVisible] = useState(false);
 
+  const generateFieldName = (label: string) =>
+    label.replace(/[^a-zA-Z0-9]/g, "");
+
   useEffect(() => {
     (async () => {
       const db = await getDatabase();
@@ -57,17 +50,12 @@ export default function DeviceTypesScreen() {
     const types = await DeviceFieldDefinitionsRepository.getDeviceTypes(defaultTemplateId);
     setDeviceTypes(types);
     if (types.length > 0 && !selectedType) {
-      if (initialDeviceType) {
-        const matched = types.find(
-          (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "_") === initialDeviceType
-        );
-        setSelectedType(matched ?? types[0]);
-      } else {
-        setSelectedType(types[0]);
-      }
+      setSelectedType(initialDeviceType
+        ? types.find((t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "_") === initialDeviceType) ?? types[0]
+        : types[0]);
     }
     await loadEnabledTypes(types);
-  }, [initialDeviceType, defaultTemplateId]);
+  }, [initialDeviceType, defaultTemplateId, selectedType]);
 
   const loadEnabledTypes = async (types?: string[]) => {
     const db = await getDatabase();
@@ -102,13 +90,8 @@ export default function DeviceTypesScreen() {
   useFocusEffect(
     useCallback(() => {
       loadDeviceTypes();
-    }, [loadDeviceTypes])
-  );
-
-  useFocusEffect(
-    useCallback(() => {
       loadFields();
-    }, [loadFields])
+    }, [loadDeviceTypes, loadFields])
   );
 
   const handleToggleInspection = async (type: string) => {
@@ -341,54 +324,6 @@ export default function DeviceTypesScreen() {
     loadDeviceTypes();
   };
 
-  const renderField = ({ item, index }: { item: DeviceFieldDefinition; index: number }) => (
-    <Card style={styles.card}>
-      <Card.Content>
-        <View style={styles.cardRow}>
-          <View style={styles.cardInfo}>
-            <Text variant="titleMedium">{item.Label}</Text>
-            <Text variant="bodySmall" style={styles.subtitle}>
-              Key: {item.FieldName} | Type: {item.FieldType}
-              {item.IsRequired ? " | Required" : ""}
-            </Text>
-          </View>
-          <View style={styles.actions}>
-            {item.FieldType === "dropdown" && (
-              <Button
-                mode="outlined"
-                compact
-                icon="format-list-bulleted"
-                style={{ marginRight: 4 }}
-                onPress={() =>
-                  router.push({
-                    pathname: "/settings/device-options" as any,
-                    params: { deviceType: item.DeviceType, fieldName: item.FieldName },
-                  })
-                }
-              >
-                Options
-              </Button>
-            )}
-            <IconButton icon="pencil" size={20} onPress={() => openEditFieldDialog(item)} />
-            <IconButton icon="delete" size={20} iconColor="#D32F2F" onPress={() => confirmDeleteField(item)} />
-            <IconButton
-              icon="chevron-up"
-              size={20}
-              disabled={index === 0}
-              onPress={() => handleMoveUp(item.FieldDefID!)}
-            />
-            <IconButton
-              icon="chevron-down"
-              size={20}
-              disabled={index === fields.length - 1}
-              onPress={() => handleMoveDown(item.FieldDefID!)}
-            />
-          </View>
-        </View>
-      </Card.Content>
-    </Card>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <Appbar.Header>
@@ -397,225 +332,71 @@ export default function DeviceTypesScreen() {
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.headerRow}>
-          <Text variant="titleMedium" style={styles.sectionTitle}>Device Types</Text>
-          <Button mode="contained" onPress={() => setTypeDialogVisible(true)}>
-            Add Device Type
-          </Button>
-        </View>
-        <View style={styles.chipRow}>
-          {deviceTypes.map((dt) => (
-            <Chip
-              key={dt}
-              selected={selectedType === dt}
-              onPress={() => setSelectedType(dt)}
-              style={[styles.typeChip, selectedType === dt && styles.typeChipSelected]}
-            >
-              {dt}
-            </Chip>
-          ))}
-        </View>
-
-        <Divider style={styles.divider} />
-
-        {selectedType ? (
-          <>
-            <View style={styles.enableRow}>
-              <View style={{ flex: 1 }}>
-                <Text variant="titleMedium" style={{ fontWeight: "600" }}>
-                  {selectedType}
-                </Text>
-                <Text variant="bodySmall" style={{ color: "#666" }}>
-                  {enabledTypes.has(selectedType)
-                    ? "Enabled in inspection form"
-                    : "Not in inspection form"}
-                </Text>
-              </View>
-              <PaperSwitch
-                value={enabledTypes.has(selectedType)}
-                onValueChange={() => handleToggleInspection(selectedType)}
-              />
-              <IconButton
-                icon="delete"
-                size={22}
-                iconColor="#D32F2F"
-                onPress={() => setDeleteTypeDialogVisible(true)}
-              />
-            </View>
-
-            <Divider style={styles.divider} />
-
-            <View style={styles.headerRow}>
-              <Text variant="titleMedium" style={styles.sectionTitle}>
-                {selectedType} Fields ({fields.length})
-              </Text>
-              <Button mode="contained" onPress={openAddFieldDialog}>
-                Add Field
-              </Button>
-            </View>
-
-            <FlatList
-              data={fields}
-              keyExtractor={(item) => String(item.FieldDefID)}
-              renderItem={renderField}
-              scrollEnabled={false}
-              ListEmptyComponent={
-                <View style={styles.empty}>
-                  <Text style={styles.emptyText}>No fields defined for this device type</Text>
-                </View>
-              }
-            />
-          </>
-        ) : (
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>
-              {deviceTypes.length === 0
-                ? "No device types defined yet. Add one to get started."
-                : "Select a device type above to manage its fields"
-              }
-            </Text>
-          </View>
-        )}
+        <DeviceTypeBody
+          deviceTypes={deviceTypes}
+          selectedType={selectedType}
+          onSelectType={setSelectedType}
+          enabledTypes={enabledTypes}
+          onToggleInspection={handleToggleInspection}
+          onAddTypePress={() => setTypeDialogVisible(true)}
+          onDeleteTypePress={() => setDeleteTypeDialogVisible(true)}
+          fields={fields}
+          onAddField={openAddFieldDialog}
+          onEditField={openEditFieldDialog}
+          onDeleteField={confirmDeleteField}
+          onMoveUp={handleMoveUp}
+          onMoveDown={handleMoveDown}
+          onNavigateOptions={(deviceType, fieldName) =>
+            router.push({
+              pathname: "/settings/device-options",
+              params: { deviceType, fieldName },
+            })
+          }
+        />
       </ScrollView>
 
       <Portal>
-        <Dialog visible={fieldDialogVisible} onDismiss={() => setFieldDialogVisible(false)}>
-          <Dialog.Title>{editingField ? "Edit Field" : "Add Field"}</Dialog.Title>
-          <Dialog.Content>
-            {!editingField && (
-              <TextInput
-                mode="outlined"
-                label="Field Key (no spaces)"
-                value={fieldName}
-                onChangeText={setFieldName}
-                style={styles.input}
-              />
-            )}
-            <TextInput
-              mode="outlined"
-              label="Display Label"
-              value={fieldLabel}
-              onChangeText={setFieldLabel}
-              style={styles.input}
-            />
-            <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Field Type</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              <View style={styles.chipRow}>
-                {FIELD_TYPES.map((ft) => (
-                  <Chip
-                    key={ft.value}
-                    selected={fieldType === ft.value}
-                    onPress={() => setFieldType(ft.value)}
-                    style={[styles.typeChip, fieldType === ft.value && styles.typeChipSelected]}
-                  >
-                    {ft.label}
-                  </Chip>
-                ))}
-              </View>
-            </ScrollView>
-            <View style={styles.chipRow}>
-              <Chip
-                selected={fieldRequired}
-                onPress={() => setFieldRequired(!fieldRequired)}
-                style={[styles.typeChip, fieldRequired && styles.typeChipSelected]}
-              >
-                Required
-              </Chip>
-            </View>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setFieldDialogVisible(false)}>Cancel</Button>
-            <Button onPress={handleSaveField}>Save</Button>
-          </Dialog.Actions>
-        </Dialog>
-
-        <Dialog visible={typeDialogVisible} onDismiss={() => setTypeDialogVisible(false)}>
-          <Dialog.Title>Add Device Type</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              mode="outlined"
-              label="Device Type Name"
-              value={newTypeName}
-              onChangeText={setNewTypeName}
-              placeholder="e.g., NVR, Router, UPS"
-              style={styles.input}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setTypeDialogVisible(false)}>Cancel</Button>
-            <Button onPress={handleAddDeviceType}>Add</Button>
-          </Dialog.Actions>
-        </Dialog>
-
-        <Dialog visible={deleteDialogVisible} onDismiss={() => setDeleteDialogVisible(false)}>
-          <Dialog.Icon icon="alert" color="#D32F2F" size={40} />
-          <Dialog.Title style={{ textAlign: "center" }}>Delete Field?</Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyMedium" style={{ textAlign: "center" }}>
-              Remove "{deleteTarget?.Label}" from {selectedType}?
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setDeleteDialogVisible(false)}>Cancel</Button>
-            <Button textColor="#D32F2F" onPress={handleDeleteField}>Delete</Button>
-          </Dialog.Actions>
-        </Dialog>
-
-        <Dialog visible={deleteTypeDialogVisible} onDismiss={() => setDeleteTypeDialogVisible(false)}>
-          <Dialog.Icon icon="alert" color="#D32F2F" size={40} />
-          <Dialog.Title style={{ textAlign: "center" }}>Delete Device Type?</Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyMedium" style={{ textAlign: "center", fontWeight: "600", marginBottom: 8 }}>
-              {selectedType}
-            </Text>
-            <Text variant="bodySmall" style={{ textAlign: "center", color: "#666" }}>
-              This will permanently remove:
-            </Text>
-            <Text variant="bodySmall" style={{ marginTop: 6, color: "#666" }}>
-              {"\u2022"} All field definitions{"\n"}
-              {"\u2022"} All dropdown options{"\n"}
-              {"\u2022"} Inspection section and count field{"\n"}
-              {"\u2022"} All device records
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setDeleteTypeDialogVisible(false)}>Cancel</Button>
-            <Button textColor="#D32F2F" onPress={handleDeleteDeviceType}>Delete Permanently</Button>
-          </Dialog.Actions>
-        </Dialog>
+        <FieldDialog
+          visible={fieldDialogVisible}
+          editingField={editingField !== null}
+          fieldName={fieldName}
+          fieldLabel={fieldLabel}
+          fieldType={fieldType}
+          fieldRequired={fieldRequired}
+          onDismiss={() => setFieldDialogVisible(false)}
+          onFieldNameChange={setFieldName}
+          onFieldLabelChange={(text) => { setFieldLabel(text); if (!editingField) setFieldName(generateFieldName(text)); }}
+          onFieldTypeChange={setFieldType}
+          onFieldRequiredToggle={() => setFieldRequired(!fieldRequired)}
+          onSave={handleSaveField}
+          typeChipStyle={styles.typeChip}
+          typeChipSelectedStyle={styles.typeChipSelected}
+          chipRowStyle={styles.chipRow}
+          inputStyle={styles.input}
+        />
+        <AddTypeDialog
+          visible={typeDialogVisible}
+          newTypeName={newTypeName}
+          onDismiss={() => setTypeDialogVisible(false)}
+          onNameChange={setNewTypeName}
+          onAdd={handleAddDeviceType}
+          inputStyle={styles.input}
+        />
+        <DeleteFieldDialog
+          visible={deleteDialogVisible}
+          deleteTargetLabel={deleteTarget?.Label}
+          selectedType={selectedType}
+          onDismiss={() => setDeleteDialogVisible(false)}
+          onConfirm={handleDeleteField}
+        />
+        <DeleteTypeDialog
+          visible={deleteTypeDialogVisible}
+          selectedType={selectedType}
+          onDismiss={() => setDeleteTypeDialogVisible(false)}
+          onConfirm={handleDeleteDeviceType}
+        />
       </Portal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F5F5" },
-  content: { padding: 16 },
-  sectionTitle: { fontWeight: "600", marginBottom: 8 },
-  divider: { marginVertical: 12 },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  enableRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#F0F4FF",
-    padding: 12,
-    borderRadius: 8,
-  },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  typeChip: { marginBottom: 4 },
-  typeChipSelected: { backgroundColor: "#E3F2FD" },
-  card: { marginBottom: 8 },
-  cardRow: { flexDirection: "row", alignItems: "center" },
-  cardInfo: { flex: 1 },
-  subtitle: { color: "#666", marginTop: 2 },
-  actions: { flexDirection: "row" },
-  input: { marginBottom: 12 },
-  empty: { alignItems: "center", marginTop: 40 },
-  emptyText: { color: "#999" },
-});

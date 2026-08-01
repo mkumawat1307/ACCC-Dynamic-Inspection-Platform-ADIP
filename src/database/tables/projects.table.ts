@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS Projects (
 
     InspectorName TEXT,
 
+    SAFPath TEXT,
+
     CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
     UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP,

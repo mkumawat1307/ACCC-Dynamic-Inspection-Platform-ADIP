@@ -12,10 +12,6 @@ export interface FieldOption {
 
 export default class InspectionFieldRepository {
 
-
-
-
-
   static async getInspectionValues(
     inspectionId: number
   ): Promise<Record<string, string>> {
@@ -48,64 +44,17 @@ export default class InspectionFieldRepository {
   ): Promise<InspectionField[]> {
     const db = await getDatabase();
 
-
     return await db.getAllAsync<InspectionField>(
-      `
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      SELECT
-        FieldID,
-        SectionID,
-        FieldName,
-        FieldKey,
-        FieldType,
-        Placeholder,
-        DefaultValue,
-        HelpText,
-        ValidationRule,
-        DisplayOrder,
-        IsRequired,
-        IsVisible,
-        IsActive
-      FROM InspectionFields
-      WHERE SectionID = ?
-        AND IsActive = 1
-        AND IsVisible = 1
-      ORDER BY DisplayOrder;
-      `,
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+      `SELECT FieldID, SectionID, FieldName, FieldKey, FieldType,
+              Placeholder, DefaultValue, HelpText, ValidationRule,
+              DisplayOrder, IsRequired, IsVisible, IsActive
+       FROM InspectionFields
+       WHERE SectionID = ?
+         AND IsActive = 1
+         AND IsVisible = 1
+       ORDER BY DisplayOrder;`,
       [sectionId]
     );
-
   }
 
   static async getFieldById(
@@ -140,4 +89,3 @@ export default class InspectionFieldRepository {
 }
 
 }
-

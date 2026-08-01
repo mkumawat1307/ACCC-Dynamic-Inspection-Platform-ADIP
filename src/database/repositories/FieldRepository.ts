@@ -1,4 +1,4 @@
-import { getDatabase } from "../db";
+import { getDatabase, SqlValue } from "../db";
 
 export interface Field {
   FieldID: number;
@@ -134,7 +134,7 @@ export class FieldRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: SqlValue[] = [];
 
     if (data.FieldName !== undefined) { fields.push("FieldName = ?"); values.push(data.FieldName); }
     if (data.FieldKey !== undefined) { fields.push("FieldKey = ?"); values.push(data.FieldKey); }
@@ -200,7 +200,7 @@ export class FieldRepository {
   static async keyExists(key: string, excludeId?: number): Promise<boolean> {
     const db = await getDatabase();
     let query = `SELECT COUNT(*) as Count FROM InspectionFields WHERE FieldKey = ?`;
-    const params: any[] = [key];
+    const params: SqlValue[] = [key];
     if (excludeId) {
       query += ` AND FieldID != ?`;
       params.push(excludeId);

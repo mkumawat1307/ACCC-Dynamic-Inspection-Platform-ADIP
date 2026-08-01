@@ -3,6 +3,8 @@
 import { getDatabase } from "../db";
 import { poleInspectionFields as inspectionFields } from "./pole-inspection-data";
 
+import { logger } from "@/src/utils/logger";
+
 export async function seedInspectionFields() {
 
     const db = await getDatabase();
@@ -19,7 +21,7 @@ export async function seedInspectionFields() {
     `);
 
     if ((existing?.Count ?? 0) > 0) {
-        console.log("✅ Inspection Fields already seeded.");
+        logger.info("âœ… Inspection Fields already seeded.");
         return;
     }
 
@@ -36,7 +38,7 @@ export async function seedInspectionFields() {
         sections.map(section => [section.SectionKey, section.SectionID])
     );
 
-    console.log("🌱 Seeding Inspection Fields...");
+    logger.info("ðŸŒ± Seeding Inspection Fields...");
 
     await db.withTransactionAsync(async () => {
 
@@ -102,6 +104,6 @@ export async function seedInspectionFields() {
 
     });
 
-    console.log("✅ Inspection Fields Seeded.");
+    logger.info("âœ… Inspection Fields Seeded.");
 
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { Card, Text, TextInput } from "react-native-paper";
 import { Dropdown } from "react-native-element-dropdown";
 import DeviceFieldDefinitionsRepository, {
@@ -15,6 +15,7 @@ interface Props {
   deviceType: string;
   count: number;
   templateId?: number;
+  locked?: boolean;
 }
 
 interface DropdownItem {
@@ -22,7 +23,7 @@ interface DropdownItem {
   value: string;
 }
 
-export default function DeviceSection({ inspectionId, deviceType, count, templateId }: Props) {
+export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false }: Props) {
   const [fields, setFields] = useState<DeviceFieldDefinition[]>([]);
   const [records, setRecords] = useState<DeviceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -155,26 +156,23 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     const data = getData(record);
     const value = data[field.FieldName] ?? null;
 
-    if (field.FieldType === "dropdown") {
-      return (
-        <View key={field.FieldDefID} style={styles.fieldHalf}>
-          <Text style={styles.fieldLabel}>{field.Label}{field.IsRequired ? " *" : ""}</Text>
-          <Dropdown
-            style={styles.dropdown}
-            placeholderStyle={styles.placeholder}
-            selectedTextStyle={styles.selectedText}
-            data={opts[field.FieldName] ?? []}
-            labelField="label"
-            valueField="value"
-            placeholder={`Select ${field.Label}`}
-            value={value}
-            onChange={(item) => updateField(index, field.FieldName, item.value)}
-          />
-        </View>
-      );
-    }
-
-    return (
+    const input = field.FieldType === "dropdown" ? (
+      <View key={field.FieldDefID} style={styles.fieldHalf}>
+        <Text style={styles.fieldLabel}>{field.Label}{field.IsRequired ? " *" : ""}</Text>
+        <Dropdown
+          style={styles.dropdown}
+          placeholderStyle={styles.placeholder}
+          selectedTextStyle={styles.selectedText}
+          data={opts[field.FieldName] ?? []}
+          labelField="label"
+          valueField="value"
+          placeholder={`Select ${field.Label}`}
+          value={value}
+          disable={locked}
+          onChange={(item) => updateField(index, field.FieldName, item.value)}
+        />
+      </View>
+    ) : (
       <View key={field.FieldDefID} style={styles.fieldHalf}>
         <TextInput
           mode="outlined"
@@ -183,8 +181,25 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           onChangeText={(text) => updateField(index, field.FieldName, text || null)}
           style={styles.input}
           dense
+          editable={!locked}
         />
       </View>
+    );
+
+    if (!locked) return input;
+
+    return (
+      <Pressable
+        key={field.FieldDefID}
+        onPress={() =>
+          Alert.alert(
+            "Pole ID Required",
+            "Please enter Pole ID first before filling the inspection details."
+          )
+        }
+      >
+        <View pointerEvents="none">{input}</View>
+      </Pressable>
     );
   };
 

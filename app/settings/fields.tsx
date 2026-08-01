@@ -3,7 +3,7 @@ import { View, FlatList, ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Appbar, FAB, Card, Text, IconButton, Chip, Portal, Dialog,
-  Button, TextInput, Switch, Divider,
+  Button, TextInput, Switch,
 } from "react-native-paper";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -157,7 +157,7 @@ export default function FieldsScreen() {
           <View style={styles.cardInfo}>
             <Text variant="titleMedium" style={styles.cardTitle}>{item.FieldName}</Text>
             <Text variant="bodySmall" style={styles.cardSubtitle}>
-              {item.FieldKey} • {getTypeLabel(item.FieldType)}
+              {getTypeLabel(item.FieldType)}
             </Text>
             <View style={styles.chipRow}>
               <Chip compact style={styles.typeChip}>{getTypeLabel(item.FieldType)}</Chip>
@@ -181,7 +181,7 @@ export default function FieldsScreen() {
             mode="text"
             onPress={() =>
               router.push({
-                pathname: "/settings/options" as any,
+                pathname: "/settings/options",
                 params: {
                   fieldId: item.FieldID,
                   fieldName: item.FieldName,
@@ -223,8 +223,7 @@ export default function FieldsScreen() {
           <Dialog.Title>{editing ? "Edit Field" : "New Field"}</Dialog.Title>
           <Dialog.Content style={{ maxHeight: 400 }}>
             <ScrollView>
-              <TextInput label="Field Name *" value={fieldName} onChangeText={(text) => { setFieldName(text); if (!editing && !keyManuallyEdited) setFieldKey(generateKey(text)); }} mode="outlined" style={styles.input} />
-              <TextInput label="Field Key *" value={fieldKey} onChangeText={(text) => { setFieldKey(text); setKeyManuallyEdited(true); }} mode="outlined" style={styles.input} disabled={!!editing} />
+              <TextInput label="Field Name *" value={fieldName} onChangeText={(text) => { setFieldName(text); setFieldKey(generateKey(text)); }} mode="outlined" style={styles.input} />
 
               <Text variant="bodyMedium" style={styles.sectionLabel}>Field Type</Text>
               <View style={styles.typeGrid}>

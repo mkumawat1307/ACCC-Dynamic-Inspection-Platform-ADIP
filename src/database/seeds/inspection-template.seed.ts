@@ -2,6 +2,8 @@
 
 import { getDatabase } from "../db";
 
+import { logger } from "@/src/utils/logger";
+
 export async function seedInspectionTemplate() {
 
     const db = await getDatabase();
@@ -12,11 +14,11 @@ export async function seedInspectionTemplate() {
     `);
 
     if ((existing?.Count ?? 0) > 0) {
-        console.log("✅ Inspection Template already seeded.");
+        logger.info("âœ… Inspection Template already seeded.");
         return;
     }
 
-    console.log("🌱 Seeding Default Inspection Template...");
+    logger.info("ðŸŒ± Seeding Default Inspection Template...");
 
     await db.runAsync(
         `
@@ -38,5 +40,5 @@ export async function seedInspectionTemplate() {
         ]
     );
 
-    console.log("✅ Inspection Template Seeded.");
+    logger.info("âœ… Inspection Template Seeded.");
 }

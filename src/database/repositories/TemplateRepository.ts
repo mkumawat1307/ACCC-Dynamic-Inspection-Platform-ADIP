@@ -1,4 +1,4 @@
-import { getDatabase } from "../db";
+import { getDatabase, SqlValue } from "../db";
 
 export interface Template {
   TemplateID: number;
@@ -65,7 +65,7 @@ export class TemplateRepository {
   ): Promise<void> {
     const db = await getDatabase();
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: SqlValue[] = [];
 
     if (data.TemplateName !== undefined) {
       fields.push("TemplateName = ?");

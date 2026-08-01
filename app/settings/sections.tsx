@@ -1,9 +1,9 @@
 import React, { useState, useCallback } from "react";
-import { View, FlatList, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, FlatList, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Appbar, Card, Text, IconButton, Chip, Portal, Dialog,
-  Button, TextInput, Switch, Divider,
+  Button, TextInput,
 } from "react-native-paper";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -176,12 +176,12 @@ export default function SectionsScreen() {
       }
       if (isDeviceSection) {
         router.push({
-          pathname: "/settings/device-types" as any,
+          pathname: "/settings/device-types",
           params: { deviceType: deviceTypeSlug },
         });
       } else {
         router.push({
-          pathname: "/settings/fields" as any,
+          pathname: "/settings/fields",
           params: {
             sectionId: item.SectionID,
             sectionName: item.SectionName,
@@ -232,7 +232,7 @@ export default function SectionsScreen() {
                 {!isLocked && <IconButton icon="chevron-right" size={20} />}
               </View>
               <Text variant="bodySmall" style={styles.cardSubtitle}>
-                Key: {item.SectionKey} • {item.FieldCount} fields
+                {item.FieldCount} fields
               </Text>
               <View style={styles.chipRow}>
                 {isLocked ? (
@@ -289,14 +289,6 @@ export default function SectionsScreen() {
               }}
               mode="outlined"
               style={styles.input}
-            />
-            <TextInput
-              label="Section Key *"
-              value={sectionKey}
-              onChangeText={setSectionKey}
-              mode="outlined"
-              style={styles.input}
-              disabled={!!editing}
             />
             <TextInput
               label="Description"

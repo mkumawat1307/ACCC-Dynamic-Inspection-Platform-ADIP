@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { logger } from "@/src/utils/logger";
 import { ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Text, TextInput, Appbar } from "react-native-paper";
+
 import { DistrictRepository } from "@/src/database/repositories/DistrictRepository";
 import { District } from "@/src/models/District";
 import { Dropdown } from "react-native-paper-dropdown";
@@ -20,8 +22,8 @@ export default function NewProjectScreen() {
   const [description, setDescription] = useState("");
   const [inspectorName, setInspectorName] = useState("");
   const [districts, setDistricts] = useState<District[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+const [, setLoading] = useState(true);
+const [saving, setSaving] = useState(false);
 
   const districtOptions = districts.map((item) => ({
     label: item.DistrictName,
@@ -49,7 +51,7 @@ export default function NewProjectScreen() {
         }
       }
     } catch (error) {
-      console.error("Failed to load data:", error);
+      logger.error("Failed to load data:", error);
     } finally {
       setLoading(false);
     }
@@ -87,11 +89,11 @@ export default function NewProjectScreen() {
         // Create the project DB with full schema + seed data
         await createProjectDb(projectName.trim(), dbPath);
 
-        // Store project record in global DB with DBPath
         await ProjectRepository.createProject({
           projectName: projectName.trim(),
           districtId: Number(district),
           dbPath: dbPath,
+          safPath: null as unknown as string,
           block: block.trim(),
           client: client.trim(),
           description: description.trim(),
@@ -101,7 +103,7 @@ export default function NewProjectScreen() {
       }
       router.back();
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       Alert.alert("Error", "Unable to save project.");
     } finally {
       setSaving(false);
@@ -201,3 +203,4 @@ const styles = StyleSheet.create({
     color: "#666",
   },
 });
+

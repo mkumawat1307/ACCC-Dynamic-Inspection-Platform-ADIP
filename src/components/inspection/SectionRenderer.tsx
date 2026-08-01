@@ -13,15 +13,17 @@ import FieldRenderer from "./FieldRenderer";
 
 import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import InspectionValueRepository from "@/src/database/repositories/InspectionValueRepository";
-import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import DeviceFieldDefinitionsRepository from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 
 import {
   InspectionField,
 } from "@/src/models/InspectionField";
 
+import { useInspection } from "@/src/context/InspectionContext";
 import PhotoSection from "./PhotoSection";
 import DeviceSection from "./DeviceSection";
+
+import { logger } from "@/src/utils/logger";
 
 interface Props {
   inspectionId: number;
@@ -36,13 +38,13 @@ export default function SectionRenderer({
   sectionKey,
   templateId,
 }: Props) {
+  const { poleId: contextPoleId } = useInspection();
   const [loading, setLoading] = useState(true);
   const [fields, setFields] = useState<InspectionField[]>([]);
   const [values, setValues] = useState<Record<number, string>>({});
   const [options, setOptions] = useState<Record<number, any[]>>({});
   const [deviceCounts, setDeviceCounts] = useState<Record<string, number>>({});
   const [deviceTypes, setDeviceTypes] = useState<string[]>([]);
-  const [inspectionPoleId, setInspectionPoleId] = useState("");
   const [poleIdLoaded, setPoleIdLoaded] = useState(false);
 
   useEffect(() => {
@@ -83,9 +85,6 @@ export default function SectionRenderer({
       setFields(sectionFields);
       setValues(valueMap);
       setOptions(optionMap);
-
-      const poleId = await InspectionRepository.getInspectionPoleId(inspectionId);
-      setInspectionPoleId(poleId);
       setPoleIdLoaded(true);
 
       // Load all device types from DeviceFieldDefinitions
@@ -110,13 +109,13 @@ export default function SectionRenderer({
       }
       setDeviceCounts(counts);
     } catch (e) {
-      console.error("Error loading section:", e);
+      logger.error("Error loading section:", e);
     } finally {
       setLoading(false);
     }
   }
 
-  const isFormLocked = !inspectionPoleId.trim();
+  const isFormLocked = !contextPoleId.trim();
 
   async function updateValue(
     field: InspectionField,
@@ -156,14 +155,7 @@ export default function SectionRenderer({
     );
   }
 
-  // Check if this section is the one that should render device sections
   const sectionKeyLower = (sectionKey ?? "").toLowerCase();
-  const isFirstDeviceSection =
-    sectionKeyLower.endsWith("_information") &&
-    deviceTypes.some(
-      (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_information" === sectionKeyLower
-    );
-
   // Get the device type that matches this section
   const currentDeviceType = deviceTypes.find(
     (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_information" === sectionKeyLower
@@ -171,13 +163,7 @@ export default function SectionRenderer({
 
   return (
     <View>
-      {fields.map((field) => {
-        // Check if this field is a count field for any device type
-        const isCountField = Object.keys(deviceCounts).some(
-          (dt) => dt.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_count" === field.FieldKey
-        );
-
-        return (
+        {fields.map((field) => (
           <FieldRenderer
             key={field.FieldID}
             fieldId={field.FieldID}
@@ -187,11 +173,7 @@ export default function SectionRenderer({
             required={field.IsRequired === 1}
             editable={
               field.IsActive === 1 &&
-              !(
-                isFormLocked &&
-                field.FieldKey !== "pole_id" &&
-                !isCountField
-              )
+              (!isFormLocked || field.FieldKey === "pole_id")
             }
             placeholder={field.Placeholder ?? ""}
             helpText={field.HelpText ?? ""}
@@ -199,13 +181,11 @@ export default function SectionRenderer({
             options={options[field.FieldID] ?? []}
             showLockedMessage={
               isFormLocked &&
-              field.FieldKey !== "pole_id" &&
-              !isCountField
+              field.FieldKey !== "pole_id"
             }
             onChange={(value) => updateValue(field, value)}
           />
-        );
-      })}
+        ))}
 
       {/* Render DeviceSection for the matching device type */}
       {currentDeviceType && (deviceCounts[currentDeviceType] ?? 0) > 0 && (
@@ -215,6 +195,7 @@ export default function SectionRenderer({
             deviceType={currentDeviceType}
             count={deviceCounts[currentDeviceType]}
             templateId={templateId}
+            locked={isFormLocked}
           />
         </View>
       )}
@@ -223,6 +204,7 @@ export default function SectionRenderer({
         <View style={styles.dynamicContainer}>
           <PhotoSection
             inspectionId={inspectionId}
+            locked={isFormLocked}
           />
         </View>
       )}
@@ -241,3 +223,4 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
 });
+

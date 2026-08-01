@@ -7,6 +7,8 @@ export interface Project {
 
   DBPath?: string | null;
 
+  SAFPath?: string | null;
+
   DistrictName?: string;
   DivisionName?: string;
 

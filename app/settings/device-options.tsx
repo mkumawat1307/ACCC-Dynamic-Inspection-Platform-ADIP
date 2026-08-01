@@ -22,7 +22,7 @@ export default function DeviceOptionsScreen() {
     fieldName?: string;
   }>();
   const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
-  const [selectedType, setSelectedType] = useState<string>(initialType ?? "");
+  const [selectedType] = useState<string>(initialType ?? "");
   const [selectedField, setSelectedField] = useState<string>(initialFieldName ?? "");
   const [options, setOptions] = useState<DeviceOption[]>([]);
   const [fields, setFields] = useState<DeviceFieldDefinition[]>([]);
@@ -88,7 +88,7 @@ export default function DeviceOptionsScreen() {
   };
 
   const handleSave = async () => {
-    if (!label.trim() || !value.trim()) return;
+    if (!label.trim()) return;
 
     if (editingOption) {
       await DeviceOptionsRepository.update({
@@ -135,9 +135,7 @@ export default function DeviceOptionsScreen() {
         <View style={styles.cardRow}>
           <View style={styles.cardInfo}>
             <Text variant="titleMedium">{item.OptionLabel}</Text>
-            <Text variant="bodySmall" style={styles.subtitle}>
-              Value: {item.OptionValue}
-            </Text>
+
           </View>
           <View style={styles.actions}>
             <IconButton icon="pencil" size={20} onPress={() => openEditDialog(item)} />
@@ -241,14 +239,10 @@ export default function DeviceOptionsScreen() {
               mode="outlined"
               label="Display Label"
               value={label}
-              onChangeText={setLabel}
-              style={styles.input}
-            />
-            <TextInput
-              mode="outlined"
-              label="Stored Value"
-              value={value}
-              onChangeText={setValue}
+              onChangeText={(text) => {
+                setLabel(text);
+                if (!editingOption) setValue(text);
+              }}
               style={styles.input}
             />
           </Dialog.Content>

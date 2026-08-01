@@ -1,5 +1,5 @@
 // frontend\app\_layout.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
@@ -11,9 +11,12 @@ import { InspectionProvider } from "@/src/context/InspectionContext";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { initializeDatabase, getInitError } from "@/src/database";
 
+import { logger } from "@/src/utils/logger";
+
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const START = useRef(Date.now()).current;
   const [loaded, error] = useIconFonts();
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -27,17 +30,19 @@ async function init() {
     setDbReady(true);
   } catch (e) {
     const msg = getInitError() || (e instanceof Error ? e.message : String(e));
-    console.error("❌ [RootLayout] DB init failed:", msg);
+    logger.error("[RootLayout] DB init failed:", msg);
     setDbError(msg);
     setDbReady(true);
   }
 }
 
+logger.info(`[perf] RootLayout mount: ${Date.now() - START}ms`);
     init();
   }, []);
 
   useEffect(() => {
     if (loaded || error) {
+      logger.info(`[perf] SplashScreen hidden: ${Date.now() - START}ms`);
       SplashScreen.hideAsync();
     }
   }, [loaded, error]);
@@ -68,6 +73,7 @@ if (dbError) {
   );
 }
 
+logger.info(`[perf] UI first render: ${Date.now() - START}ms`);
 return (
   <PaperProvider>
     <InspectionProvider>
