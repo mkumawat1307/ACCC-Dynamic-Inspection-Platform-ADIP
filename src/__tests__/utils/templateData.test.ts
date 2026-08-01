@@ -361,3 +361,182 @@ describe("shareTemplateFile", () => {
     expect(await shareTemplateFile(result)).toBe(false);
   });
 });
+
+function makeValidV2(): any {
+  return {
+    version: "2.0",
+    exportedAt: "2024-01-01T00:00:00.000Z",
+    templates: [
+      {
+        TemplateName: "Test Template",
+        Description: "A test",
+        IsDefault: 1,
+        sections: [
+          {
+            SectionName: "General",
+            SectionKey: "general",
+            Description: null,
+            Icon: null,
+            DisplayOrder: 1,
+            IsRepeatable: 0,
+            IsVisible: 1,
+            fields: [
+              {
+                FieldName: "Voltage",
+                FieldKey: "voltage",
+                FieldType: "text",
+                Placeholder: null,
+                DefaultValue: null,
+                HelpText: null,
+                ValidationRule: null,
+                DisplayOrder: 1,
+                IsRequired: 1,
+                IsVisible: 1,
+                IsReadOnly: 0,
+                IsSystemField: 0,
+                Width: 12,
+                options: [],
+              },
+            ],
+          },
+        ],
+        deviceTypes: [],
+        deviceOptions: [],
+      },
+    ],
+    projectDeviceTypes: ["Camera"],
+  };
+}
+
+describe("pickAndParseTemplate", () => {
+  let mockDb: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = {
+      getFirstAsync: jest.fn(),
+      getAllAsync: jest.fn().mockResolvedValue([]),
+      runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 1, changes: 1 }),
+      withTransactionAsync: jest.fn(),
+    };
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+    __resetPickerState();
+  });
+
+  it("returns canceled when no file selected", async () => {
+    __setMockResult({ canceled: true });
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    expect(await pickAndParseTemplate()).toEqual({ status: "canceled" });
+  });
+
+  it("parses a v2.0 file and returns a summary", async () => {
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(makeValidV2()));
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    const result = await pickAndParseTemplate();
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.parsed.data.version).toBe("2.0");
+      expect(result.parsed.summary).toEqual({ templateCount: 1, sectionCount: 1, fieldCount: 1, deviceTypeCount: 0, deviceOptionCount: 0 });
+    }
+  });
+
+  it("normalizes a v1.0 file to v2.0 shape", async () => {
+    const legacy = {
+      version: "1.0",
+      exportedAt: "2024-01-01T00:00:00.000Z",
+      template: { TemplateName: "Old", Description: null },
+      sections: makeValidV2().templates[0].sections,
+    };
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(legacy));
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    const result = await pickAndParseTemplate();
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.parsed.data.templates).toHaveLength(1);
+      expect(result.parsed.data.templates[0].TemplateName).toBe("Old");
+      expect(result.parsed.data.templates[0].deviceTypes).toEqual([]);
+      expect(result.parsed.data.projectDeviceTypes).toEqual([]);
+    }
+  });
+
+  it("rejects invalid JSON and missing templates", async () => {
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce("not json");
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    expect(await pickAndParseTemplate()).toEqual({ status: "error", message: "Invalid JSON file." });
+
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify({}));
+    expect(await pickAndParseTemplate()).toEqual({ status: "error", message: "Invalid template format." });
+  });
+});
+
+describe("applyTemplateImport", () => {
+  let mockDb: any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = {
+      getFirstAsync: jest.fn().mockResolvedValue(null),
+      getAllAsync: jest.fn().mockResolvedValue([]),
+      runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 1, changes: 1 }),
+      withTransactionAsync: jest.fn(async (fn: () => Promise<void>) => fn()),
+    };
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("deactivates existing non-default template rows and inserts imported data", async () => {
+    const { applyTemplateImport } = require("@/src/utils/templateData");
+    const result = await applyTemplateImport(makeValidV2());
+
+    expect(result.success).toBe(true);
+    const deactivateCalls = (mockDb.runAsync as jest.Mock).mock.calls.filter(
+      (c: unknown[]) => typeof c[0] === "string" && c[0].includes("IsActive = 0")
+    );
+    expect(deactivateCalls.length).toBeGreaterThanOrEqual(1);
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO InspectionTemplates"),
+      expect.arrayContaining(["Test Template", 1])
+    );
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO InspectionSections"),
+      expect.anything()
+    );
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO InspectionFields"),
+      expect.anything()
+    );
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO InspectionTemplates"),
+      expect.anything()
+    );
+  });
+
+  it("upserts device field definitions by (TemplateID, DeviceType, FieldName)", async () => {
+    const v2 = makeValidV2();
+    v2.templates[0].deviceTypes = [
+      { DeviceType: "UPS", FieldName: "UPSMake", Label: "UPS Make", FieldType: "dropdown", IsRequired: 0, DisplayOrder: 1 },
+    ];
+    const { applyTemplateImport } = require("@/src/utils/templateData");
+    await applyTemplateImport(v2);
+
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO DeviceFieldDefinitions"),
+      expect.arrayContaining(["UPS", "UPSMake", "UPS Make"])
+    );
+  });
+
+  it("replaces ProjectDeviceTypes without referencing ProjectID", async () => {
+    const v2 = makeValidV2();
+    v2.projectDeviceTypes = ["Camera", "UPS"];
+    const { applyTemplateImport } = require("@/src/utils/templateData");
+    const result = await applyTemplateImport(v2);
+
+    expect(result.success).toBe(true);
+    const calls = (mockDb.runAsync as jest.Mock).mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(calls.some((sql) => sql.includes("ProjectDeviceTypes"))).toBe(true);
+    expect(calls.some((sql) => sql.includes("ProjectID"))).toBe(false);
+  });
+});
