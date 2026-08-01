@@ -4,45 +4,15 @@ import { ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
 import { useRouter } from "expo-router";
-import { exportDefaultTemplate, importTemplate } from "@/src/utils/templateData";
+import { useTemplateFlow } from "@/src/components/template/useTemplateFlow";
 import { getDatabase } from "@/src/database/db";
+import TemplateExportDialogs from "./components/TemplateExportDialogs";
+import TemplateImportDialogs from "./components/TemplateImportDialogs";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
-
-  const handleExportTemplate = async () => {
-    setLoading(true);
-    try {
-      const success = await exportDefaultTemplate();
-      if (!success) {
-        Alert.alert("Export Failed", "No template found to export.");
-      }
-    } catch (error) {
-      logger.error("Export error:", error);
-      Alert.alert("Export Failed", "Unable to export template.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleImportTemplate = async () => {
-    setLoading(true);
-    try {
-      const result = await importTemplate();
-      if (result.success) {
-        Alert.alert("Import Success", result.message);
-      } else if (result.message !== "No file selected.") {
-        Alert.alert("Import Failed", result.message);
-      }
-    } catch (error) {
-      logger.error("Import error:", error);
-      Alert.alert("Import Failed", "Unable to import template.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const flow = useTemplateFlow();
 
   const handleResetToDefault = () => {
     Alert.alert(
@@ -51,8 +21,7 @@ export default function SettingsScreen() {
       "• Remove all custom sections\n" +
       "• Remove all custom fields\n" +
       "• Remove custom device types (NVR, Router, etc.)\n" +
-      "• Restore original Camera/Switch fields\n" +
-      "• Remove all device records\n\n" +
+      "• Restore original Camera/Switch fields\n\n" +
       "Existing inspection data will NOT be deleted.",
       [
         { text: "Cancel", style: "cancel" },
@@ -134,17 +103,14 @@ export default function SettingsScreen() {
           WHERE DeviceType NOT IN ('Camera', 'Switch')
         `);
 
-        // 8. Delete all device records
-        await db.runAsync(`DELETE FROM DeviceRecords`);
-
-        // 9. Deactivate custom sections from device types (e.g., nvr_information)
+        // 8. Deactivate custom sections from device types (e.g., nvr_information)
         await db.runAsync(`
           UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
           WHERE SectionKey LIKE '%_information'
           AND SectionKey NOT IN ('general_information', 'camera_information', 'switch_information')
         `);
 
-        // 10. Deactivate custom count fields
+        // 9. Deactivate custom count fields
         await db.runAsync(`
           UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
           WHERE FieldKey LIKE '%_count'
@@ -161,8 +127,18 @@ export default function SettingsScreen() {
     }
   };
 
+  const exporting = flow.state.phase === "exporting";
+  const parsing = flow.state.phase === "parsing";
+  const importing = flow.state.phase === "importing";
+  const busy = flow.busy;
+
+  const exportResult = flow.state.phase === "exported" ? flow.state.result : null;
+  const confirming = flow.state.phase === "confirming" ? flow.state.parsed : null;
+  const importedMessage = flow.state.phase === "imported" ? flow.state.message : null;
+  const errorMessage = flow.state.phase === "error" ? flow.state.message : null;
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Inspection Settings" />
@@ -187,9 +163,9 @@ export default function SettingsScreen() {
             title="Export Template"
             description="Export inspection template with sections, fields and options as JSON file"
             left={(props) => <List.Icon {...props} icon="file-export" />}
-            right={(props) => loading ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />}
-            onPress={handleExportTemplate}
-            disabled={loading}
+            right={(props) => (busy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
+            onPress={() => { void flow.beginExport(); }}
+            disabled={busy}
           />
 
           <Divider />
@@ -198,9 +174,9 @@ export default function SettingsScreen() {
             title="Import Template"
             description="Import inspection template from a JSON file"
             left={(props) => <List.Icon {...props} icon="file-import" />}
-            right={(props) => loading ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />}
-            onPress={handleImportTemplate}
-            disabled={loading}
+            right={(props) => (busy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
+            onPress={() => { void flow.beginImport(); }}
+            disabled={busy}
           />
         </List.Section>
 
@@ -219,6 +195,28 @@ export default function SettingsScreen() {
         </List.Section>
 
       </ScrollView>
+
+      <TemplateExportDialogs
+        exporting={exporting}
+        result={exportResult}
+        errorMessage={errorMessage}
+        onShare={() => { void flow.shareExported(); }}
+        onCloseSuccess={flow.dismissExport}
+        onRetry={() => { void flow.retry(); }}
+        onCloseError={flow.dismissError}
+      />
+      <TemplateImportDialogs
+        parsing={parsing}
+        confirming={confirming}
+        importing={importing}
+        importedMessage={importedMessage}
+        errorMessage={errorMessage}
+        onConfirm={() => { void flow.confirmImport(); }}
+        onCancel={flow.cancelImport}
+        onCloseSuccess={flow.dismissImport}
+        onRetry={() => { void flow.retry(); }}
+        onCloseError={flow.dismissError}
+      />
     </SafeAreaView>
   );
 }
