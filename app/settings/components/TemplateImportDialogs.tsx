@@ -48,7 +48,7 @@ export default function TemplateImportDialogs({
           {confirming && (
             <>
               <Text variant="bodyMedium">
-                Import template "{confirming.data.templates[0]?.TemplateName ?? "Untitled"}"?
+                Import template {'\u201C'}{confirming.data.templates[0]?.TemplateName ?? "Untitled"}{'\u201D'}?
               </Text>
               <Text variant="bodyMedium" style={styles.body}>
                 This will replace the current form:
