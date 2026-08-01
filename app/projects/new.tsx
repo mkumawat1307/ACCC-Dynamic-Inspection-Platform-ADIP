@@ -17,7 +17,6 @@ export default function NewProjectScreen() {
 
   const [projectName, setProjectName] = useState("");
   const [district, setDistrict] = useState<string>();
-  const [block, setBlock] = useState("");
   const [client, setClient] = useState("");
   const [description, setDescription] = useState("");
   const [inspectorName, setInspectorName] = useState("");
@@ -44,7 +43,6 @@ const [saving, setSaving] = useState(false);
         if (project) {
           setProjectName(project.ProjectName);
           setDistrict(project.DistrictID.toString());
-          setBlock(project.Block ?? "");
           setClient(project.Client ?? "");
           setDescription(project.Description ?? "");
           setInspectorName(project.InspectorName ?? "");
@@ -77,7 +75,6 @@ const [saving, setSaving] = useState(false);
         await ProjectRepository.updateProject(Number(editProjectId), {
           projectName: projectName.trim(),
           districtId: Number(district),
-          block: block.trim(),
           client: client.trim(),
           description: description.trim(),
           inspectorName: inspectorName.trim(),
@@ -94,7 +91,6 @@ const [saving, setSaving] = useState(false);
           districtId: Number(district),
           dbPath: dbPath,
           safPath: null as unknown as string,
-          block: block.trim(),
           client: client.trim(),
           description: description.trim(),
           inspectorName: inspectorName.trim(),
@@ -111,7 +107,7 @@ const [saving, setSaving] = useState(false);
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title={isEdit ? "Edit Project" : "Create Project"} />
@@ -139,14 +135,6 @@ const [saving, setSaving] = useState(false);
           options={districtOptions}
           value={district}
           onSelect={setDistrict}
-        />
-
-        <TextInput
-          label="Block (Optional)"
-          value={block}
-          onChangeText={setBlock}
-          mode="outlined"
-          style={styles.input}
         />
 
         <TextInput

@@ -13,9 +13,8 @@ import ReportTablePreview from "@/src/components/reports/ReportTablePreview";
 import { logger } from "@/src/utils/logger";
 
 const EXPORT_ACTIONS: { format: ExportFormat; label: string; icon: string }[] = [
-  { format: "csv", label: "Export as CSV", icon: "file-delimited" },
   { format: "excel", label: "Export as Excel", icon: "microsoft-excel" },
-  { format: "pdf", label: "Export as PDF", icon: "file-pdf-box" },
+  { format: "csv", label: "Export as CSV", icon: "file-delimited" },
 ];
 
 export default function ReportsScreen() {

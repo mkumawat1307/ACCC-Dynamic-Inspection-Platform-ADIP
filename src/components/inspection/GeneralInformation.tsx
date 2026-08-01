@@ -78,8 +78,8 @@ async function init() {
 
     if ((savedValues.pole_id ?? "").trim() !== "") {
       setFormUnlocked(true);
-      setPoleId(savedValues.pole_id);
     }
+    setPoleId(savedValues.pole_id ?? "");
 
     for (const field of loadedFields) {
       const key = field.FieldKey;

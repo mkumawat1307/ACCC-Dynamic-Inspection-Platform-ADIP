@@ -61,19 +61,19 @@ export class FieldRepository {
     FieldName: string;
     FieldKey: string;
     FieldType: string;
-    Placeholder?: string;
-    DefaultValue?: string;
-    HelpText?: string;
-    ValidationRule?: string;
+    Placeholder?: string | null;
+    DefaultValue?: string | null;
+    HelpText?: string | null;
+    ValidationRule?: string | null;
     DisplayOrder?: number;
     IsRequired?: number;
     IsVisible?: number;
     IsReadOnly?: number;
     IsSystemField?: number;
-    DataSourceType?: string;
-    DataSource?: string;
+    DataSourceType?: string | null;
+    DataSource?: string | null;
     Width?: number;
-    Icon?: string;
+    Icon?: string | null;
   }): Promise<number> {
     const db = await getDatabase();
 
@@ -118,18 +118,18 @@ export class FieldRepository {
       FieldName?: string;
       FieldKey?: string;
       FieldType?: string;
-      Placeholder?: string;
-      DefaultValue?: string;
-      HelpText?: string;
-      ValidationRule?: string;
+      Placeholder?: string | null;
+      DefaultValue?: string | null;
+      HelpText?: string | null;
+      ValidationRule?: string | null;
       DisplayOrder?: number;
       IsRequired?: number;
       IsVisible?: number;
       IsReadOnly?: number;
-      DataSourceType?: string;
-      DataSource?: string;
+      DataSourceType?: string | null;
+      DataSource?: string | null;
       Width?: number;
-      Icon?: string;
+      Icon?: string | null;
     }
   ): Promise<void> {
     const db = await getDatabase();

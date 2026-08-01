@@ -169,7 +169,7 @@ export default function OptionsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => {}} />
         <Appbar.Content title={fieldName ?? "Options"} />

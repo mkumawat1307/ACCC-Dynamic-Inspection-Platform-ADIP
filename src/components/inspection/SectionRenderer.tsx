@@ -68,10 +68,8 @@ export default function SectionRenderer({
             field.FieldID
           );
 
-        valueMap[field.FieldID] =
-          saved?.FieldValue ?? field.DefaultValue ?? "";
-
         const type = field.FieldType.toUpperCase();
+        let defaultOptionValue: string | undefined;
         if (type === "DROPDOWN" || type === "PROJECT_DROPDOWN") {
           const raw =
             await InspectionFieldRepository.getFieldOptions(field.FieldID);
@@ -79,7 +77,16 @@ export default function SectionRenderer({
             label: o.OptionLabel,
             value: o.OptionValue,
           }));
+          defaultOptionValue = raw.find(
+            (o) => o.IsDefault === 1
+          )?.OptionValue;
         }
+
+        valueMap[field.FieldID] =
+          saved?.FieldValue ??
+          defaultOptionValue ??
+          field.DefaultValue ??
+          "";
       }
 
       setFields(sectionFields);

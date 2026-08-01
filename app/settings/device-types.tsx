@@ -119,14 +119,28 @@ export default function DeviceTypesScreen() {
       );
 
       if (!existingSection) {
-        const maxSectionOrder = await db.getFirstAsync<{ max: number }>(
-          `SELECT COALESCE(MAX(DisplayOrder), 0) as max FROM InspectionSections WHERE TemplateID = ?`,
+        const remarks = await db.getFirstAsync<{ DisplayOrder: number }>(
+          `SELECT DisplayOrder FROM InspectionSections WHERE SectionKey = 'remarks' AND TemplateID = ? AND IsActive = 1 LIMIT 1`,
           [defaultTemplateId]
         );
+        let insertOrder: number;
+        if (remarks) {
+          insertOrder = remarks.DisplayOrder;
+          await db.runAsync(
+            `UPDATE InspectionSections SET DisplayOrder = DisplayOrder + 1 WHERE DisplayOrder >= ? AND TemplateID = ?`,
+            [insertOrder, defaultTemplateId]
+          );
+        } else {
+          const maxSectionOrder = await db.getFirstAsync<{ max: number }>(
+            `SELECT COALESCE(MAX(DisplayOrder), 0) as max FROM InspectionSections WHERE TemplateID = ?`,
+            [defaultTemplateId]
+          );
+          insertOrder = (maxSectionOrder?.max ?? 0) + 1;
+        }
         await db.runAsync(
           `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, Description, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
            VALUES (?, ?, ?, ?, ?, 0, 1, 0, 1)`,
-          [defaultTemplateId, type + " Information", sectionKey, type + " device details", (maxSectionOrder?.max ?? 0) + 1]
+          [defaultTemplateId, type + " Information", sectionKey, type + " device details", insertOrder]
         );
       } else {
         await db.runAsync(
@@ -325,7 +339,7 @@ export default function DeviceTypesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Device Types" />

@@ -48,6 +48,10 @@ export async function deleteAsync(
 ): Promise<void> {
 }
 
+export async function getContentUriAsync(fileUri: string): Promise<string> {
+  return "content://mock/" + fileUri.replace(/^file:\/\//, "");
+}
+
 export function __resetFsState() {
   files.clear();
 }

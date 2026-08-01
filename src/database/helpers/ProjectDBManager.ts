@@ -7,7 +7,7 @@ import {
   getDatabase,
 } from "../db";
 import { logger } from "@/src/utils/logger";
-import { createProjectSchema } from "../schema";
+import { createProjectSchema, migrateProjectSchema } from "../schema";
 import { seedInspectionTemplate } from "../seeds/inspection-template.seed";
 import { seedInspectionSections } from "../seeds/inspection-sections.seed";
 import { seedInspectionFields } from "../seeds/inspection-fields.seed";
@@ -18,6 +18,40 @@ import { seedDeviceOptions } from "../seeds/device-options.seed";
 import { seedDeviceFieldDefinitions } from "../seeds/device-field-definitions.seed";
 
 const PROJECTS_FOLDER = "Projects";
+
+const SETTINGS_TABLES = [
+  "InspectionTemplates",
+  "InspectionSections",
+  "InspectionFields",
+  "FieldOptions",
+  "RepeatableGroups",
+  "RepeatableGroupFields",
+  "DeviceOptions",
+  "DeviceFieldDefinitions",
+  "ProjectDeviceTypes",
+] as const;
+
+const INSPECTION_DATA_TABLES = [
+  "InspectionValues",
+  "RepeatableRecords",
+  "RepeatableValues",
+  "Cameras",
+  "Switches",
+  "Photos",
+  "DeviceRecords",
+] as const;
+
+const DATA_TABLE_ID_COLUMNS: Record<string, string> = {
+  InspectionValues: "ValueID",
+  RepeatableRecords: "RecordID",
+  RepeatableValues: "ValueID",
+  Cameras: "CameraID",
+  Switches: "SwitchID",
+  Photos: "PhotoID",
+  DeviceRecords: "RecordID",
+};
+
+type SettingsRow = Record<string, unknown>;
 
 function getProjectsBasePath(): string {
   return `${FileSystem.documentDirectory}${PROJECTS_FOLDER}/`;
@@ -60,6 +94,114 @@ export async function createProjectDb(
   logger.info(`✅ [ProjectDBManager] Project created: ${projectName}`);
 }
 
+export async function cloneProjectDb(
+  sourceDbPath: string,
+  projectName: string,
+  projectDbPath: string,
+  newProjectId: number
+): Promise<void> {
+  logger.info("[ProjectDBManager] cloneProjectDb — START");
+
+  const settings: Partial<
+    Record<(typeof SETTINGS_TABLES)[number], SettingsRow[]>
+  > = {};
+  const inspectionData: Partial<
+    Record<(typeof INSPECTION_DATA_TABLES)[number], SettingsRow[]>
+  > = {};
+
+  await setActiveProject(sourceDbPath);
+  const sourceDb = await getDatabase();
+  for (const table of SETTINGS_TABLES) {
+    const rows = await sourceDb.getAllAsync<SettingsRow>(
+      `SELECT * FROM ${table}`
+    );
+    settings[table] = rows;
+  }
+
+  const sourceInspections = await sourceDb.getAllAsync<SettingsRow>(
+    `SELECT * FROM Inspections`
+  );
+  for (const table of INSPECTION_DATA_TABLES) {
+    const rows = await sourceDb.getAllAsync<SettingsRow>(
+      `SELECT * FROM ${table}`
+    );
+    inspectionData[table] = rows;
+  }
+  await clearActiveProject();
+
+  const folderPath = projectDbPath.replace(/inspection\.db$/, "");
+  await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
+
+  await setActiveProject(projectDbPath);
+  await createProjectSchema();
+
+  const newDb = await getDatabase();
+  for (const table of SETTINGS_TABLES) {
+    const rows = settings[table];
+    if (!rows || rows.length === 0) continue;
+    for (const row of rows) {
+      const cols = Object.keys(row);
+      const placeholders = cols.map(() => "?").join(", ");
+      const values = cols.map((c) => row[c] as string | number | null);
+      await newDb.runAsync(
+        `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`,
+        values
+      );
+    }
+  }
+
+  const inspectionIdMap = new Map<number, number>();
+  for (const row of sourceInspections) {
+    const cols = Object.keys(row).filter(
+      (c) => c !== "InspectionID" && c !== "ProjectID"
+    );
+    const placeholders = cols.map(() => "?").join(", ");
+    const values = cols.map((c) => row[c] as string | number | null);
+    const result = await newDb.runAsync(
+      `INSERT INTO Inspections (${cols.join(", ")}, ProjectID) VALUES (${placeholders}, ?)`,
+      [...values, newProjectId]
+    );
+    const oldId = row.InspectionID;
+    if (typeof oldId === "number") {
+      inspectionIdMap.set(oldId, result.lastInsertRowId as number);
+    }
+  }
+
+  const recordIdMap = new Map<number, number>();
+  for (const table of INSPECTION_DATA_TABLES) {
+    const rows = inspectionData[table];
+    if (!rows || rows.length === 0) continue;
+    const idColumn = DATA_TABLE_ID_COLUMNS[table];
+    const remap: Record<string, Map<number, number>> = table === "RepeatableValues"
+      ? { RecordID: recordIdMap }
+      : { InspectionID: inspectionIdMap };
+    for (const row of rows) {
+      const cols = Object.keys(row).filter((c) => c !== idColumn);
+      const placeholders = cols.map(() => "?").join(", ");
+      const values = cols.map((c) => {
+        const value = row[c];
+        const map = remap[c];
+        if (map && typeof value === "number") {
+          return map.get(value) ?? value;
+        }
+        return value as string | number | null;
+      });
+      const result = await newDb.runAsync(
+        `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`,
+        values
+      );
+      const oldId = row[idColumn];
+      if (table === "RepeatableRecords" && typeof oldId === "number") {
+        recordIdMap.set(oldId, result.lastInsertRowId as number);
+      }
+    }
+  }
+
+  await clearActiveProject();
+
+  logger.info(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
+}
+
 export async function openProjectDb(dbPath: string): Promise<void> {
   logger.info("[ProjectDBManager] openProjectDb — START");
   await setActiveProject(dbPath);
@@ -74,6 +216,10 @@ export async function openProjectDb(dbPath: string): Promise<void> {
   }
 
   logger.info("[ProjectDBManager] openProjectDb — valid");
+
+  await migrateProjectSchema();
+
+  logger.info("[ProjectDBManager] openProjectDb — migrations applied");
 }
 
 export async function deleteProjectDb(dbPath: string): Promise<void> {

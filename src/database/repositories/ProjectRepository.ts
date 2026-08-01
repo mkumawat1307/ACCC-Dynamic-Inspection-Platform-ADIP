@@ -1,6 +1,7 @@
 import { getGlobalDatabase } from "../db";
 import { logger } from "@/src/utils/logger";
 import { Project } from "@/src/models/Project";
+import { getProjectDbPath } from "../helpers/ProjectDBManager";
 
 
 export class ProjectRepository {
@@ -136,27 +137,38 @@ static async updateProject(
   const db = await getGlobalDatabase();
   logger.info(`[ProjectRepository] Got global DB handle`);
 
+  const fields: string[] = [
+    `ProjectName = ?`,
+    `DistrictID = ?`,
+  ];
+  const values: (string | number | null)[] = [
+    data.projectName,
+    data.districtId,
+  ];
+
+  if (data.block !== undefined) {
+    fields.push(`Block = ?`);
+    values.push(data.block);
+  }
+  if (data.client !== undefined) {
+    fields.push(`Client = ?`);
+    values.push(data.client);
+  }
+  if (data.description !== undefined) {
+    fields.push(`Description = ?`);
+    values.push(data.description);
+  }
+  if (data.inspectorName !== undefined) {
+    fields.push(`InspectorName = ?`);
+    values.push(data.inspectorName);
+  }
+
+  fields.push(`UpdatedAt = CURRENT_TIMESTAMP`);
+  values.push(projectId);
+
   await db.runAsync(
-    `
-    UPDATE Projects SET
-      ProjectName = ?,
-      DistrictID = ?,
-      Block = ?,
-      Client = ?,
-      Description = ?,
-      InspectorName = ?,
-      UpdatedAt = CURRENT_TIMESTAMP
-    WHERE ProjectID = ?
-    `,
-    [
-      data.projectName,
-      data.districtId,
-      data.block ?? null,
-      data.client ?? null,
-      data.description ?? null,
-      data.inspectorName ?? null,
-      projectId,
-    ]
+    `UPDATE Projects SET ${fields.join(", ")} WHERE ProjectID = ?`,
+    values
   );
   logger.info(`[ProjectRepository] updateProject() — END`);
 }
@@ -175,14 +187,16 @@ static async cloneProject(
     return 0;
   }
 
+  const dbPath = getProjectDbPath(newName);
+
   const result = await db.runAsync(
-    `INSERT INTO Projects (ProjectName, DistrictID, Block, Client, Description, InspectorName)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [newName, source.DistrictID, source.Block ?? null, source.Client ?? null, source.Description ?? null, source.InspectorName ?? null]
+    `INSERT INTO Projects (ProjectName, DistrictID, Block, Client, Description, InspectorName, DBPath, SAFPath)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [newName, source.DistrictID, source.Block ?? null, source.Client ?? null, source.Description ?? null, source.InspectorName ?? null, dbPath, source.SAFPath ?? null]
   );
 
   const newId = result.lastInsertRowId as number;
-  logger.info(`[ProjectRepository] cloneProject() — cloned with ID ${newId}`);
+  logger.info(`[ProjectRepository] cloneProject() — cloned with ID ${newId}, DBPath ${dbPath}`);
   logger.info(`[ProjectRepository] cloneProject() — END`);
   return newId;
 }

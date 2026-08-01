@@ -90,9 +90,16 @@ export async function seedInspectionSections() {
         },
         {
             key: "categorization",
-            name: "Categorization and Remarks",
-            description: "Remarks",
+            name: "Categorization",
+            description: "Pole categorization",
             icon: "document-text",
+            repeatable: 0,
+        },
+        {
+            key: "remarks",
+            name: "Remarks",
+            description: "Remarks",
+            icon: "note-text",
             repeatable: 0,
         },
         {

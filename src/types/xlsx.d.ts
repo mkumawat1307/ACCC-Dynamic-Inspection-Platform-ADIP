@@ -20,6 +20,7 @@ declare module "xlsx" {
     book_append_sheet(wb: WorkBook, ws: WorkSheet, name: string): void;
     sheet_to_json<T = Record<string, unknown>>(ws: WorkSheet, opts?: unknown): T[];
     encode_range(range: Range): string;
+    encode_cell(cell: CellAddress): string;
   };
   export function write(wb: WorkBook, opts: { type: "base64"; bookType: "xlsx" }): string;
   export function read(data: unknown, opts: { type: "buffer" }): WorkBook;

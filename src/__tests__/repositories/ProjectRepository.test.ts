@@ -113,6 +113,26 @@ describe("ProjectRepository", () => {
 
       expect(mockRunAsync).toHaveBeenCalled();
     });
+
+    it("updates optional fields when provided", async () => {
+      mockRunAsync.mockResolvedValue({ lastInsertRowId: 0, changes: 1 });
+
+      const { ProjectRepository } = require("@/src/database/repositories/ProjectRepository");
+      await ProjectRepository.updateProject(1, {
+        projectName: "Updated Name",
+        districtId: 1,
+        block: "B9",
+        client: "Client Z",
+        description: "Updated description",
+        inspectorName: "Carol",
+      });
+
+      const sql = mockRunAsync.mock.calls[0][0] as string;
+      expect(sql).toContain("Block = ?");
+      expect(sql).toContain("Client = ?");
+      expect(sql).toContain("Description = ?");
+      expect(sql).toContain("InspectorName = ?");
+    });
   });
 
   describe("cloneProject", () => {

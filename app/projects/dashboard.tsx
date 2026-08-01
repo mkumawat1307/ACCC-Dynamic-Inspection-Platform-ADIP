@@ -17,7 +17,6 @@ import { useInspection } from "@/src/context/InspectionContext";
 import StatCard from "@/src/components/StatCard";
 import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
 
-import { logger } from "@/src/utils/logger";
 import DeleteProjectDialog from "./components/DeleteProjectDialog";
 export default function ProjectDashboard() {
   const { projectId, projectData: projectDataJson } = useLocalSearchParams<{
@@ -61,14 +60,9 @@ async function loadProject() {
     return;
   }
 
-  // 3. Last resort: query global DB (will corrupt handle on Android if project DB is active)
-  logger.warn("[dashboard] Falling back to getProjectById -- may corrupt DB handle on Android");
-  const data = await ProjectRepository.getProjectById(
-    Number(projectId)
-  );
-
-  setProject(data);
-
+  // 3. No global-DB fallback: switching to the global DB mid-project-session
+  //    corrupts the Android handle (ADR-014). Show not-found instead.
+  setProject(null);
   setLoading(false);
 }
 
@@ -148,27 +142,29 @@ return (
         showsVerticalScrollIndicator={false}
     >
     <Card style={styles.card}>
-    <Card.Title title="Project Information" />
-
         <Card.Content>
-            <Text variant="headlineSmall">
-            {project.ProjectName}
+            <Text variant="headlineSmall" style={styles.cardTitle}>
+            Project Information
+            </Text>
+
+            <Text variant="titleLarge" style={styles.projectHeading}>
+            Division: {project.DivisionName || "-"}  District: {project.DistrictName || "-"}
+            </Text>
+
+            <Text variant="titleMedium" style={styles.projectName}>
+            Project: {project.ProjectName}
             </Text>
 
             <Text>
-            Division : {project.DivisionName}
-            </Text>
-
-            <Text>
-            District : {project.DistrictName}
-            </Text>
-
-            <Text>
-            Block : {project.Block || "-"}
+            Inspector : {project.InspectorName || "-"}
             </Text>
 
             <Text>
             Client : {project.Client || "-"}
+            </Text>
+
+            <Text>
+            Description : {project.Description || "-"}
             </Text>
         </Card.Content>
         </Card>
@@ -349,6 +345,22 @@ const styles = StyleSheet.create({
 
   card: {
     marginBottom: 25,
+  },
+
+  projectHeading: {
+    fontWeight: "700",
+    color: "#0B5ED7",
+  },
+
+  cardTitle: {
+    fontWeight: "bold",
+    marginBottom: 6,
+  },
+
+  projectName: {
+    fontWeight: "700",
+    marginBottom: 8,
+    marginTop: 8,
   },
 
   button: {

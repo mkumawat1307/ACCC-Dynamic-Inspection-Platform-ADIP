@@ -62,17 +62,21 @@ jest.mock("@/src/database/tables/project-device-types.table", () => ({
 
 const mockExecAsync = jest.fn().mockResolvedValue(undefined);
 const mockGetAllAsync = jest.fn().mockResolvedValue([]);
+const mockGetFirstAsync = jest.fn().mockResolvedValue(null);
+const mockRunAsync = jest.fn().mockResolvedValue({ lastInsertRowId: 5, changes: 1 });
 
 jest.mock("@/src/database/db", () => ({
   getGlobalDatabase: jest.fn().mockResolvedValue({
     execAsync: mockExecAsync,
     getAllAsync: mockGetAllAsync,
-    getFirstAsync: jest.fn().mockResolvedValue(null),
+    getFirstAsync: mockGetFirstAsync,
+    runAsync: mockRunAsync,
   }),
   getDatabase: jest.fn().mockResolvedValue({
     execAsync: mockExecAsync,
     getAllAsync: mockGetAllAsync,
-    getFirstAsync: jest.fn().mockResolvedValue(null),
+    getFirstAsync: mockGetFirstAsync,
+    runAsync: mockRunAsync,
   }),
 }));
 
@@ -114,6 +118,48 @@ describe("schema.ts createSchema", () => {
 
     expect(mockGetAllAsync).toHaveBeenCalledWith(
       "SELECT name FROM sqlite_master WHERE type='table'"
+    );
+  });
+
+  it("migrateProjectSchema returns early when remarks section exists", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema();
+
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it("migrateProjectSchema returns early when categorization section is missing", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema();
+
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it("migrateProjectSchema splits remarks into its own section", async () => {
+    mockGetFirstAsync
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ SectionID: 9, TemplateID: 1, DisplayOrder: 8 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema();
+
+    expect(mockRunAsync).toHaveBeenCalledTimes(3);
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO InspectionSections"),
+      [1, "Remarks", "remarks", "Remarks", "note-text", 9]
+    );
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE InspectionFields SET SectionID = ?"),
+      [5, 9]
+    );
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE InspectionSections SET SectionName = 'Categorization'"),
+      [9]
     );
   });
 });

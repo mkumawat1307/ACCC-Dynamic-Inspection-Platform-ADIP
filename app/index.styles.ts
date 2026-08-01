@@ -31,6 +31,11 @@ export const styles = StyleSheet.create({
     marginBottom: 12,
     borderRadius: 10,
   },
+  projectHeading: {
+    fontWeight: "700",
+    marginBottom: 2,
+    color: "#0B5ED7",
+  },
   projectName: {
     fontWeight: "700",
     marginBottom: 4,

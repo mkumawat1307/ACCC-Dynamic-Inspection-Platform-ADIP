@@ -41,7 +41,7 @@ export default function SectionsScreen() {
        FROM InspectionSections s
        INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
        WHERE s.IsActive = 1 AND t.IsDefault = 1
-       ORDER BY CASE WHEN s.SectionKey = 'photos' THEN 1 ELSE 0 END, s.DisplayOrder`
+       ORDER BY CASE WHEN s.SectionKey = 'general_information' THEN 0 WHEN s.SectionKey = 'remarks' THEN 2 WHEN s.SectionKey = 'photos' THEN 3 ELSE 1 END, s.DisplayOrder`
     );
     setSections(data);
   }, []);
@@ -85,16 +85,27 @@ export default function SectionsScreen() {
         [sectionName.trim(), key, description.trim() || null, editing.SectionID]
       );
     } else {
-      const maxOrder = sections.length > 0
-        ? Math.max(...sections.map((s) => s.DisplayOrder))
-        : 0;
       const template = await db.getFirstAsync<{ TemplateID: number }>(
         `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
+      );
+      const templateId = template?.TemplateID ?? 1;
+      const remarks = await db.getFirstAsync<{ DisplayOrder: number }>(
+        `SELECT DisplayOrder FROM InspectionSections WHERE SectionKey = 'remarks' AND TemplateID = ? AND IsActive = 1 LIMIT 1`,
+        [templateId]
+      );
+      const insertOrder = remarks
+        ? remarks.DisplayOrder
+        : (sections.length > 0
+            ? Math.max(...sections.map((s) => s.DisplayOrder))
+            : 0) + 1;
+      await db.runAsync(
+        `UPDATE InspectionSections SET DisplayOrder = DisplayOrder + 1 WHERE DisplayOrder >= ? AND TemplateID = ?`,
+        [insertOrder, templateId]
       );
       await db.runAsync(
         `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, Description, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
          VALUES (?, ?, ?, ?, ?, 0, 1, 0, 1)`,
-        [template?.TemplateID ?? 1, sectionName.trim(), key, description.trim() || null, maxOrder + 1]
+        [templateId, sectionName.trim(), key, description.trim() || null, insertOrder]
       );
     }
 
@@ -130,6 +141,11 @@ export default function SectionsScreen() {
 
   const handleMoveUp = async (index: number) => {
     if (index === 0) return;
+    const isPinned = (s: Section) =>
+      s.SectionKey === "general_information" ||
+      s.SectionKey === "photos" ||
+      s.SectionKey === "remarks";
+    if (isPinned(sections[index - 1])) return;
     const updated = [...sections];
     [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
     const db = await getDatabase();
@@ -146,6 +162,11 @@ export default function SectionsScreen() {
 
   const handleMoveDown = async (index: number) => {
     if (index === sections.length - 1) return;
+    const isPinned = (s: Section) =>
+      s.SectionKey === "general_information" ||
+      s.SectionKey === "photos" ||
+      s.SectionKey === "remarks";
+    if (isPinned(sections[index + 1])) return;
     const updated = [...sections];
     [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
     const db = await getDatabase();
@@ -161,7 +182,10 @@ export default function SectionsScreen() {
   };
 
   const renderSection = ({ item, index }: { item: Section; index: number }) => {
-    const isLocked = item.SectionKey === "photos";
+    const isLocked =
+      item.SectionKey === "general_information" ||
+      item.SectionKey === "photos" ||
+      item.SectionKey === "remarks";
     const isDeviceSection =
       item.SectionKey.endsWith("_information") &&
       item.SectionKey !== "general_information";
@@ -256,7 +280,7 @@ export default function SectionsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Sections" />

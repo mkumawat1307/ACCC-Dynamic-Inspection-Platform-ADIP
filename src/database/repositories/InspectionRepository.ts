@@ -24,7 +24,7 @@ static async getSections(templateId?: number): Promise<InspectionSection[]> {
           DisplayOrder
         FROM InspectionSections
         WHERE IsActive = 1 AND TemplateID = ?
-        ORDER BY CASE WHEN SectionKey = 'photos' THEN 1 ELSE 0 END, DisplayOrder;
+        ORDER BY CASE WHEN SectionKey = 'photos' THEN 2 WHEN SectionKey = 'remarks' THEN 1 ELSE 0 END, DisplayOrder;
       `, [templateId]);
     }
     return [];
@@ -49,7 +49,7 @@ static async getSections(templateId?: number): Promise<InspectionSection[]> {
           DisplayOrder
         FROM InspectionSections
         WHERE IsActive = 1 AND TemplateID = ?
-        ORDER BY CASE WHEN SectionKey = 'photos' THEN 1 ELSE 0 END, DisplayOrder;
+        ORDER BY CASE WHEN SectionKey = 'photos' THEN 2 WHEN SectionKey = 'remarks' THEN 1 ELSE 0 END, DisplayOrder;
       `, [templateId]);
     }
     return [];

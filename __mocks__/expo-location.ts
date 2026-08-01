@@ -7,6 +7,7 @@ const Accuracy = {
 
 let permissionStatus: PermissionResponse["status"] = "granted";
 let mockCoords: { latitude: number; longitude: number } | null = null;
+let mockLastKnown: { latitude: number; longitude: number } | null = null;
 
 type PermissionResponse = {
   status: "granted" | "denied" | "undetermined";
@@ -35,6 +36,12 @@ export async function getCurrentPositionAsync(
   return { coords: mockCoords };
 }
 
+export async function getLastKnownPositionAsync(): Promise<{
+  coords: { latitude: number; longitude: number };
+} | null> {
+  return mockLastKnown ? { coords: mockLastKnown } : null;
+}
+
 export function __setPermissionStatus(status: PermissionResponse["status"]) {
   permissionStatus = status;
 }
@@ -43,7 +50,12 @@ export function __setMockLocation(latitude: number, longitude: number) {
   mockCoords = { latitude, longitude };
 }
 
+export function __setMockLastKnown(latitude: number, longitude: number) {
+  mockLastKnown = { latitude, longitude };
+}
+
 export function __resetLocationState() {
   permissionStatus = "granted";
   mockCoords = null;
+  mockLastKnown = null;
 }

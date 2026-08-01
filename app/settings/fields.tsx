@@ -84,9 +84,9 @@ export default function FieldsScreen() {
         FieldName: fieldName.trim(),
         FieldKey: key,
         FieldType: fieldType,
-        Placeholder: placeholder.trim() || undefined,
-        DefaultValue: defaultValue.trim() || undefined,
-        HelpText: helpText.trim() || undefined,
+        Placeholder: placeholder.trim() || null,
+        DefaultValue: defaultValue.trim() || null,
+        HelpText: helpText.trim() || null,
         IsRequired: isRequired ? 1 : 0,
         IsVisible: isVisible ? 1 : 0,
       });
@@ -96,9 +96,9 @@ export default function FieldsScreen() {
         FieldName: fieldName.trim(),
         FieldKey: key,
         FieldType: fieldType,
-        Placeholder: placeholder.trim() || undefined,
-        DefaultValue: defaultValue.trim() || undefined,
-        HelpText: helpText.trim() || undefined,
+        Placeholder: placeholder.trim() || null,
+        DefaultValue: defaultValue.trim() || null,
+        HelpText: helpText.trim() || null,
         IsRequired: isRequired ? 1 : 0,
         IsVisible: isVisible ? 1 : 0,
       });
@@ -198,7 +198,7 @@ export default function FieldsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title={sectionName ?? "Fields"} />
@@ -222,8 +222,8 @@ export default function FieldsScreen() {
         <Dialog visible={showDialog} onDismiss={() => setShowDialog(false)}>
           <Dialog.Title>{editing ? "Edit Field" : "New Field"}</Dialog.Title>
           <Dialog.Content style={{ maxHeight: 400 }}>
-            <ScrollView>
-              <TextInput label="Field Name *" value={fieldName} onChangeText={(text) => { setFieldName(text); setFieldKey(generateKey(text)); }} mode="outlined" style={styles.input} />
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <TextInput label="Field Name *" defaultValue={fieldName} onChangeText={(text) => { setFieldName(text); setFieldKey(generateKey(text)); }} mode="outlined" style={styles.input} />
 
               <Text variant="bodyMedium" style={styles.sectionLabel}>Field Type</Text>
               <View style={styles.typeGrid}>
@@ -240,9 +240,9 @@ export default function FieldsScreen() {
                 ))}
               </View>
 
-              <TextInput label="Placeholder" value={placeholder} onChangeText={setPlaceholder} mode="outlined" style={styles.input} />
-              <TextInput label="Default Value" value={defaultValue} onChangeText={setDefaultValue} mode="outlined" style={styles.input} />
-              <TextInput label="Help Text" value={helpText} onChangeText={setHelpText} mode="outlined" style={styles.input} />
+              <TextInput label="Placeholder" defaultValue={placeholder} onChangeText={setPlaceholder} mode="outlined" style={styles.input} />
+              <TextInput label="Default Value" defaultValue={defaultValue} onChangeText={setDefaultValue} mode="outlined" style={styles.input} />
+              <TextInput label="Help Text" defaultValue={helpText} onChangeText={setHelpText} mode="outlined" style={styles.input} />
 
               <View style={styles.switchRow}>
                 <Text variant="bodyMedium">Required</Text>

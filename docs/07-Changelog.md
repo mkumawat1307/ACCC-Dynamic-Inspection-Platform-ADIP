@@ -24,6 +24,18 @@ Patch → Bug fixes
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Template Export/Import (v2.0): export all templates, sections, fields, options, custom device types, device options, and project device type mappings to a JSON file; import replaces the current form in-place (deactivate + add) while preserving existing inspection data.
+- Full modal UI for export (progress, success, share) and import (picker, parse, confirmation, progress, success, error with retry).
+- Isolation regression test for template import across projects.
+- Reset-to-Default no longer deletes saved device records: per-inspection `DeviceRecords` (FK to `Inspections`) are preserved on template reset, matching the "Existing inspection data will NOT be deleted" message (previously the reset wiped them).
+- Error dialogs are scoped to the originating flow: an export failure shows only "Export Failed", an import failure only "Import Failed".
+
+---
+
 # [1.9.0] - 01-Aug-2026
 
 ## Added

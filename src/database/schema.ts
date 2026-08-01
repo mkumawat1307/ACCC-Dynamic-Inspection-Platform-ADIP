@@ -190,6 +190,48 @@ export async function createProjectSchema() {
     logger.info("âœ… [schema] createProjectSchema() â€” END");
 }
 
+export async function migrateProjectSchema() {
+    logger.info("[schema] migrateProjectSchema() — START");
+
+    const db = await getDatabase();
+
+    const remarksSection = await db.getFirstAsync<{ SectionID: number }>(
+        `SELECT SectionID FROM InspectionSections WHERE SectionKey = 'remarks' LIMIT 1`
+    );
+    if (remarksSection) {
+        logger.info("[schema] migrateProjectSchema() — remarks section already exists (ok)");
+        return;
+    }
+
+    const categorization = await db.getFirstAsync<{ SectionID: number; TemplateID: number; DisplayOrder: number }>(
+        `SELECT SectionID, TemplateID, DisplayOrder FROM InspectionSections WHERE SectionKey = 'categorization' LIMIT 1`
+    );
+    if (!categorization) {
+        logger.info("[schema] migrateProjectSchema() — categorization section not found, skipping");
+        return;
+    }
+
+    const result = await db.runAsync(
+        `INSERT INTO InspectionSections
+         (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 1, 1, 1)`,
+        [categorization.TemplateID, "Remarks", "remarks", "Remarks", "note-text", categorization.DisplayOrder + 1]
+    );
+    const remarksId = result.lastInsertRowId;
+
+    await db.runAsync(
+        `UPDATE InspectionFields SET SectionID = ? WHERE FieldKey = 'remarks' AND SectionID = ?`,
+        [remarksId, categorization.SectionID]
+    );
+
+    await db.runAsync(
+        `UPDATE InspectionSections SET SectionName = 'Categorization' WHERE SectionID = ?`,
+        [categorization.SectionID]
+    );
+
+    logger.info("✅ [schema] migrateProjectSchema() — END");
+}
+
 export async function createSchema() {
     logger.info("[schema] createSchema() â€” START");
 

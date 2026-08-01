@@ -17,7 +17,7 @@ import { Project } from "@/src/models/Project";
 import { DeleteProjectDialog, CloneProjectDialog } from "@/app/components/ProjectDialogs";
 import { styles } from "@/app/index.styles";
 import { useInspection } from "@/src/context/InspectionContext";
-import { deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
+import { createProjectDb, cloneProjectDb, deleteProjectDb, getProjectDbPath } from "@/src/database/helpers/ProjectDBManager";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -66,8 +66,9 @@ export default function HomeScreen() {
       return (
         (item.ProjectName ?? "").toLowerCase().includes(searchText) ||
         (item.DistrictName ?? "").toLowerCase().includes(searchText) ||
-        (item.Block ?? "").toLowerCase().includes(searchText) ||
-        (item.Client ?? "").toLowerCase().includes(searchText)
+        (item.DivisionName ?? "").toLowerCase().includes(searchText) ||
+        (item.Client ?? "").toLowerCase().includes(searchText) ||
+        (item.InspectorName ?? "").toLowerCase().includes(searchText)
       );
     });
 
@@ -146,6 +147,18 @@ export default function HomeScreen() {
         selectedProject.ProjectID,
         cloneName.trim()
       );
+      if (newId) {
+        if (selectedProject.DBPath) {
+          await cloneProjectDb(
+            selectedProject.DBPath,
+            cloneName.trim(),
+            getProjectDbPath(cloneName.trim()),
+            newId
+          );
+        } else {
+          await createProjectDb(cloneName.trim(), getProjectDbPath(cloneName.trim()));
+        }
+      }
       setCloneDialogVisible(false);
       setSelectedProject(null);
       setCloneName("");
@@ -178,7 +191,7 @@ export default function HomeScreen() {
       </Button>
 
       <Searchbar
-        placeholder="Search Project, District, Block or Client..."
+        placeholder="Search Project, District, Division, Inspector or Client..."
         value={search}
         onChangeText={setSearch}
         style={styles.search}
@@ -222,17 +235,20 @@ export default function HomeScreen() {
           renderItem={({ item }) => (
             <Card style={styles.projectCard}>
               <Card.Content>
+                <Text variant="titleLarge" style={styles.projectHeading}>
+                  {item.DistrictName || "-"}
+                </Text>
                 <Text variant="titleMedium" style={styles.projectName}>
-                  {item.ProjectName}
+                  Project: {item.ProjectName}
                 </Text>
                 <Text variant="bodySmall" style={styles.projectDetail}>
-                  District: {item.DistrictName}
-                </Text>
-                <Text variant="bodySmall" style={styles.projectDetail}>
-                  Block: {item.Block || "-"}
+                  Inspector: {item.InspectorName || "-"}
                 </Text>
                 <Text variant="bodySmall" style={styles.projectDetail}>
                   Client: {item.Client || "-"}
+                </Text>
+                <Text variant="bodySmall" style={styles.projectDetail}>
+                  Description: {item.Description || "-"}
                 </Text>
 
                 <Divider style={styles.divider} />

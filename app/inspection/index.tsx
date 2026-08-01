@@ -26,10 +26,10 @@ import {
 
 import { useInspection } from "@/src/context/InspectionContext";
 
-import { exportInspection, ExportFormat } from "@/src/utils/exportData";
-import { logger } from "@/src/utils/logger";
+import { useExportFlow } from "@/src/components/export/useExportFlow";
 
 import DeleteInspectionsDialog from "./components/DeleteInspectionsDialog";
+import InspectionExportDialogs from "./components/ExportDialogs";
 
 export default function InspectionListScreen() {
 
@@ -55,8 +55,18 @@ export default function InspectionListScreen() {
   const [deleteDialogVisible, setDeleteDialogVisible] =
     useState(false);
 
-  const [exportingId, setExportingId] =
-    useState<number | null>(null);
+  const exportFlow = useExportFlow(
+    Number(projectId ?? 0),
+    project?.ProjectName ?? "Project"
+  );
+
+  const exportState = exportFlow.state;
+  const formatDialogTarget =
+    exportState.phase === "choosing" ? exportState.target : null;
+  const exportingFormat =
+    exportState.phase === "exporting" ? exportState.format : null;
+  const exportResult = exportState.phase === "success" ? exportState.result : null;
+  const exportErrorMessage = exportState.phase === "error" ? exportState.message : null;
 
   useFocusEffect(
     useCallback(() => {
@@ -94,35 +104,16 @@ export default function InspectionListScreen() {
 
   }
 
-  function handleExport(item: InspectionListItem, format: ExportFormat) {
-    if (!projectId || exportingId !== null) return;
-    setExportingId(item.InspectionID);
-    exportInspection(
-      Number(projectId),
-      project?.ProjectName ?? "Project",
-      item.InspectionID,
-      item.PoleID,
-      format
-    )
-      .then((success) => {
-        if (!success) {
-          Alert.alert("No Data", "No inspection data found to export.");
-        }
-      })
-      .catch((error) => {
-        logger.error("Export error:", error);
-        Alert.alert("Export Failed", "Unable to export inspection data.");
-      })
-      .finally(() => setExportingId(null));
+  function handleSingleExport(item: InspectionListItem) {
+    exportFlow.beginExport({ ids: [item.InspectionID], poleId: item.PoleID || null });
   }
 
-  function promptExport(item: InspectionListItem) {
-    Alert.alert(`Export ${item.PoleID || "Inspection"}`, "Choose a format", [
-      { text: "PDF", onPress: () => handleExport(item, "pdf") },
-      { text: "Excel", onPress: () => handleExport(item, "excel") },
-      { text: "CSV", onPress: () => handleExport(item, "csv") },
-      { text: "Cancel", style: "cancel" },
-    ]);
+  function handleBulkExport() {
+    if (selectedIds.length === 0) {
+      Alert.alert("No Selection", "Please select at least one inspection.");
+      return;
+    }
+    exportFlow.beginExport({ ids: selectedIds, poleId: null });
   }
 
   function toggleSelection(id: number) {
@@ -174,8 +165,7 @@ export default function InspectionListScreen() {
     inspections.filter((item) =>
       item.PoleID.toLowerCase().includes(query) ||
       (item.Division ?? "").toLowerCase().includes(query) ||
-      (item.District ?? "").toLowerCase().includes(query) ||
-      (item.Block ?? "").toLowerCase().includes(query)
+      (item.District ?? "").toLowerCase().includes(query)
     );
 
   return (
@@ -197,6 +187,13 @@ export default function InspectionListScreen() {
               : "Inspection List"
           }
         />
+
+        {selectionMode && (
+          <Appbar.Action
+            icon="close"
+            onPress={clearSelection}
+          />
+        )}
 
       </Appbar.Header>
 
@@ -220,6 +217,15 @@ export default function InspectionListScreen() {
               onPress={clearSelection}
             >
               Clear Selection
+            </Button>
+
+            <Button
+              mode="contained"
+              icon="export-variant"
+              disabled={selectedIds.length === 0 || exportFlow.busy}
+              onPress={handleBulkExport}
+            >
+              Export Selected
             </Button>
 
             <Button
@@ -248,7 +254,7 @@ export default function InspectionListScreen() {
       )}
 
       <Searchbar
-        placeholder="Search Pole ID, Division, District, Block"
+        placeholder="Search Pole ID, Division, District"
         value={search}
         onChangeText={setSearch}
         style={styles.search}
@@ -345,10 +351,6 @@ export default function InspectionListScreen() {
                   </Text>
 
                   <Text>
-                    Block : {item.Block || "N/A"}
-                  </Text>
-
-                  <Text>
                     Status : {item.Status}
                   </Text>
 
@@ -363,8 +365,8 @@ export default function InspectionListScreen() {
                     <IconButton
                       icon="export-variant"
                       size={20}
-                      disabled={exportingId === item.InspectionID}
-                      onPress={() => promptExport(item)}
+                      disabled={exportFlow.busy}
+                      onPress={() => handleSingleExport(item)}
                     />
                     <IconButton
                       icon="pencil"
@@ -389,6 +391,20 @@ export default function InspectionListScreen() {
         selectedCompleted={selectedCompleted}
         onDismiss={() => setDeleteDialogVisible(false)}
         onDeleted={() => { clearSelection(); loadInspections(); }}
+      />
+      <InspectionExportDialogs
+        formatDialog={formatDialogTarget}
+        exporting={exportFlow.busy}
+        format={exportingFormat}
+        result={exportResult}
+        errorMessage={exportErrorMessage}
+        onChooseFormat={(f) => { void exportFlow.runExport(f); }}
+        onCancelFormat={exportFlow.dismiss}
+        onRetry={exportFlow.retry}
+        onCloseError={exportFlow.dismiss}
+        onCloseSuccess={exportFlow.dismiss}
+        onOpen={() => { void exportFlow.open(); }}
+        onShare={() => { void exportFlow.share(); }}
       />
           </SafeAreaView>
   );

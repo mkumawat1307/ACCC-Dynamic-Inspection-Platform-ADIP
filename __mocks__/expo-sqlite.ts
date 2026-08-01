@@ -1,14 +1,34 @@
 type Row = Record<string, unknown>;
 type TableData = Row[];
 
-const tables = new Map<string, TableData>();
-let rowIdCounter = 1;
-let dbHandle: MockDatabase | null = null;
+const databases = new Map<string, MockDatabase>();
+
+const PRIMARY_KEYS: Record<string, string> = {
+  Inspections: "InspectionID",
+  InspectionValues: "ValueID",
+  RepeatableRecords: "RecordID",
+  RepeatableValues: "ValueID",
+  Cameras: "CameraID",
+  Switches: "SwitchID",
+  Photos: "PhotoID",
+  DeviceRecords: "RecordID",
+  DeviceOptions: "OptionID",
+  DeviceFieldDefinitions: "FieldDefID",
+  ProjectDeviceTypes: "ID",
+  InspectionTemplates: "TemplateID",
+  InspectionSections: "SectionID",
+  InspectionFields: "FieldID",
+  FieldOptions: "OptionID",
+  RepeatableGroups: "GroupID",
+  RepeatableGroupFields: "GroupFieldID",
+  Projects: "ProjectID",
+  Divisions: "DivisionID",
+  Districts: "DistrictID",
+  Blocks: "BlockID",
+};
 
 function resetState() {
-  tables.clear();
-  rowIdCounter = 1;
-  dbHandle = null;
+  databases.clear();
 }
 
 const SQL_COMMANDS = {
@@ -50,6 +70,12 @@ function parseColumnList(cols: string): string[] {
 }
 
 class MockDatabase {
+  private tables = new Map<string, TableData>();
+  private rowIdCounter = 1;
+
+  constructor(readonly name: string) {
+  }
+
   async execAsync(_sql: string): Promise<void> {
   }
 
@@ -58,18 +84,21 @@ class MockDatabase {
     if (insertMatch) {
       const tableName = insertMatch[1];
       const cols = insertMatch[2].split(",").map((c) => c.trim());
-      const vals = insertMatch[3].split(",").map(() => params[params.indexOf(undefined) >= 0 ? params.indexOf(undefined) : 0]);
       const row: Row = {};
       cols.forEach((col, i) => {
         row[col] = params[i] ?? null;
       });
-      const id = rowIdCounter++;
+      const id = this.rowIdCounter++;
       if (cols.includes("ID") || cols.includes("id")) {
         row.ID = id;
       }
-      const table = tables.get(tableName) ?? [];
+      const pk = PRIMARY_KEYS[tableName];
+      if (pk && !cols.includes(pk)) {
+        row[pk] = id;
+      }
+      const table = this.tables.get(tableName) ?? [];
       table.push(row);
-      tables.set(tableName, table);
+      this.tables.set(tableName, table);
       return { lastInsertRowId: id, changes: 1 };
     }
 
@@ -78,7 +107,7 @@ class MockDatabase {
       const tableName = updateMatch[1];
       const setClause = updateMatch[2];
       const whereClause = updateMatch[3];
-      const table = tables.get(tableName) ?? [];
+      const table = this.tables.get(tableName) ?? [];
       const setParts = setClause.split(",").map((s) => s.trim());
       let paramIdx = 0;
       const filter = whereClause ? parseWhere(whereClause, params) : () => true;
@@ -104,17 +133,17 @@ class MockDatabase {
 
     const deleteMatch = sql.match(SQL_COMMANDS.DELETE);
     if (deleteMatch) {
-      let tableName = deleteMatch[1];
+      const tableName = deleteMatch[1];
       const whereClause = deleteMatch[2];
-      const table = tables.get(tableName) ?? [];
+      const table = this.tables.get(tableName) ?? [];
       if (!whereClause) {
-        tables.set(tableName, []);
+        this.tables.set(tableName, []);
         return { lastInsertRowId: 0, changes: table.length };
       }
       const filter = parseWhere(whereClause, params);
       const remaining = table.filter((r) => !filter(r));
       const changes = table.length - remaining.length;
-      tables.set(tableName, remaining);
+      this.tables.set(tableName, remaining);
       return { lastInsertRowId: 0, changes };
     }
 
@@ -124,7 +153,7 @@ class MockDatabase {
   async getAllAsync<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
     const sqliteMasterMatch = sql.match(SQL_COMMANDS.SELECT_SQLITE_MASTER);
     if (sqliteMasterMatch) {
-      return Array.from(tables.keys()).map((name) => ({ name })) as T[];
+      return Array.from(this.tables.keys()).map((name) => ({ name })) as T[];
     }
 
     const selectMatch = sql.match(SQL_COMMANDS.SELECT);
@@ -135,7 +164,7 @@ class MockDatabase {
       const orderByClause = selectMatch[4];
       const limitClause = selectMatch[5] ? parseInt(selectMatch[5], 10) : null;
 
-      const table = tables.get(tableName) ?? [];
+      const table = this.tables.get(tableName) ?? [];
       const filter = whereClause ? parseWhere(whereClause, params) : () => true;
       let results = table.filter(filter);
 
@@ -189,11 +218,15 @@ class MockDatabase {
   }
 }
 
-export function openDatabaseAsync(_dbName: string): Promise<MockDatabase> {
-  if (!dbHandle) {
-    dbHandle = new MockDatabase();
+export const defaultDatabaseDirectory = "/mock/sqlite";
+
+export function openDatabaseAsync(dbName: string): Promise<MockDatabase> {
+  let handle = databases.get(dbName);
+  if (!handle) {
+    handle = new MockDatabase(dbName);
+    databases.set(dbName, handle);
   }
-  return Promise.resolve(dbHandle);
+  return Promise.resolve(handle);
 }
 
 export type { MockDatabase as SQLiteDatabase };

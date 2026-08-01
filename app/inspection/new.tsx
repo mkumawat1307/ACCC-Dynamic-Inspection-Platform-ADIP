@@ -52,6 +52,7 @@ const {
   setInspectionDate,
   setInspectionId,
   inspectionId,
+  setPoleId,
 } = useInspection();
 
 const [sections, setSections] = useState<InspectionSection[]>([]);
@@ -131,6 +132,7 @@ async function initialize() {
     setSections(data);
   }
 }
+
 async function loadProject(): Promise<Project | null> {
   if (!projectId) return null;
 
@@ -175,6 +177,7 @@ if (routeInspectionId) {
 } else {
 
   // Creating new inspection
+  setPoleId("");
   const newInspectionId =
     await InspectionRepository.createInspection(
       data.ProjectID,
@@ -233,7 +236,7 @@ const handleSave = async () => {
 
   await InspectionRepository.updateInspectionStatus(
     inspectionId,
-    "Incomplete"
+    "Completed"
   );
 
   Alert.alert(
@@ -304,7 +307,7 @@ const handleCancel = () => {
 return (
   <SafeAreaView
     style={styles.safeArea}
-    edges={["top", "bottom"]}
+    edges={["left", "right", "bottom"]}
   >
   <Appbar.Header>
     <Appbar.BackAction onPress={handleBack} />

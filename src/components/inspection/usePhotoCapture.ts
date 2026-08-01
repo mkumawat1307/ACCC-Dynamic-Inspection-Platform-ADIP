@@ -41,14 +41,28 @@ export function usePhotoCapture({
       if (status !== "granted") {
         return { latitude: null, longitude: null };
       }
+
+      const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
+      const hasCached =
+        lastKnown?.coords?.latitude != null && lastKnown?.coords?.longitude != null;
+
       const location = await Promise.race([
         Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error("GPS timeout")), 8000)),
-      ]) as Location.LocationObject | null;
-      if (!location) return { latitude: null, longitude: null };
-      return { latitude: location.coords.latitude, longitude: location.coords.longitude };
+        new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error("GPS timeout")), hasCached ? 8000 : 20000)
+        ),
+      ]).catch(() => null);
+
+      if (location?.coords?.latitude != null && location?.coords?.longitude != null) {
+        return { latitude: location.coords.latitude, longitude: location.coords.longitude };
+      }
+
+      if (hasCached && lastKnown) {
+        return { latitude: lastKnown.coords.latitude, longitude: lastKnown.coords.longitude };
+      }
+      return { latitude: null, longitude: null };
     } catch (err) {
-      logger.warn("[GPS] Location timeout or error:", err);
+      logger.warn("[GPS] Location error:", err);
       return { latitude: null, longitude: null };
     }
   }

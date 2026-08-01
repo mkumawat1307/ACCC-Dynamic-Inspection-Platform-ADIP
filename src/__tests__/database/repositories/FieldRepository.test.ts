@@ -149,6 +149,22 @@ describe("FieldRepository", () => {
       expect(mockDb.runAsync).toHaveBeenCalled();
     });
 
+    it("clears nullable string fields to null", async () => {
+      const { FieldRepository } = require("@/src/database/repositories/FieldRepository");
+      await FieldRepository.update(1, {
+        Placeholder: null,
+        DefaultValue: null,
+        HelpText: null,
+      });
+      expect(mockDb.runAsync).toHaveBeenCalled();
+      const query = (mockDb.runAsync as jest.Mock).mock.calls[0][0];
+      const values = (mockDb.runAsync as jest.Mock).mock.calls[0][1];
+      expect(query).toContain("Placeholder = ?");
+      expect(query).toContain("DefaultValue = ?");
+      expect(query).toContain("HelpText = ?");
+      expect(values).toContain(null);
+    });
+
     it("skips update when no fields provided", async () => {
       const { FieldRepository } = require("@/src/database/repositories/FieldRepository");
       await FieldRepository.update(1, {});

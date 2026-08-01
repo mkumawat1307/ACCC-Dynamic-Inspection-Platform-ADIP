@@ -8,6 +8,7 @@ export interface FieldOption {
   OptionLabel: string;
   OptionValue: string;
   DisplayOrder: number;
+  IsDefault: number;
 }
 
 export default class InspectionFieldRepository {
@@ -79,7 +80,7 @@ export default class InspectionFieldRepository {
     const db = await getDatabase();
     return await db.getAllAsync<FieldOption>(
       `
-      SELECT OptionID, FieldID, OptionLabel, OptionValue, DisplayOrder
+      SELECT OptionID, FieldID, OptionLabel, OptionValue, DisplayOrder, IsDefault
       FROM FieldOptions
       WHERE FieldID = ?
       ORDER BY DisplayOrder;

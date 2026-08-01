@@ -6,7 +6,20 @@ import { ReportTable } from "@/src/utils/exportData";
 const COLUMN_WIDTH = 150;
 
 export default function ReportTablePreview({ table }: { table: ReportTable }) {
-  const bandRow = table.sections.flatMap((s) => s.columns.map(() => s.name));
+  const renderBandRow = () => (
+    <View style={styles.row}>
+      {table.sections.map((s) => (
+        <View
+          key={s.index}
+          style={[styles.cell, styles.headerCell, { width: COLUMN_WIDTH * s.columns.length }]}
+        >
+          <Text style={styles.headerText} numberOfLines={2}>
+            {s.name}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
 
   const renderRow = (cells: string[], isHeader: boolean, tinted: boolean, index: number) => (
     <View
@@ -26,7 +39,7 @@ export default function ReportTablePreview({ table }: { table: ReportTable }) {
   return (
     <ScrollView horizontal style={styles.scroll}>
       <View>
-        {renderRow(bandRow, true, false, 0)}
+        {renderBandRow()}
         {renderRow(table.headers, true, false, 1)}
         {table.rows.map((row, i) => renderRow(row.cells, false, row.isDeviceRow, i))}
       </View>
