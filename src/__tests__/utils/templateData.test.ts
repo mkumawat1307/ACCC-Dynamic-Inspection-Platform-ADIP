@@ -88,21 +88,20 @@ describe("exportDefaultTemplate", () => {
   });
 
   it("returns false when no default template exists", async () => {
-    mockDb.getFirstAsync.mockResolvedValue(null);
+    mockDb.getAllAsync.mockResolvedValue([]);
     const { exportDefaultTemplate } = require("@/src/utils/templateData");
     const result = await exportDefaultTemplate();
     expect(result).toBe(false);
   });
 
   it("exports template and shares it", async () => {
-    mockDb.getFirstAsync.mockResolvedValue({ TemplateID: 1, TemplateName: "Default", Description: "Default template" });
     mockDb.getAllAsync
       .mockResolvedValueOnce([
-        { SectionID: 1, SectionName: "General", SectionKey: "general", Description: null, Icon: null, DisplayOrder: 1, IsRepeatable: 0 },
+        { TemplateID: 1, TemplateName: "Default", Description: "d", IsDefault: 1, IsActive: 1 },
       ])
-      .mockResolvedValueOnce([
-        { FieldID: 1, FieldName: "Voltage", FieldKey: "voltage", FieldType: "text", Placeholder: null, DefaultValue: null, HelpText: null, ValidationRule: null, DisplayOrder: 1, IsRequired: 1, IsVisible: 1, IsReadOnly: 0 },
-      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
     const { exportDefaultTemplate } = require("@/src/utils/templateData");
@@ -333,5 +332,32 @@ describe("exportTemplates", () => {
     expect(data.templates[0].sections).toEqual([]);
     expect(data.templates[0].deviceTypes).toEqual([]);
     expect(data.projectDeviceTypes).toEqual(["Camera"]);
+  });
+});
+
+describe("shareTemplateFile", () => {
+  it("shares the exported file", async () => {
+    __setSharingAvailable(true);
+    const { shareTemplateFile } = require("@/src/utils/templateData");
+    const result = {
+      fileUri: "file:///mock/documents/template_2026-08-01.json",
+      fileName: "template_2026-08-01.json",
+      summary: { templateCount: 1, sectionCount: 0, fieldCount: 0, deviceTypeCount: 0, deviceOptionCount: 0 },
+    };
+    const ok = await shareTemplateFile(result);
+    expect(ok).toBe(true);
+    const { shareAsync } = require("expo-sharing");
+    expect(shareAsync).toHaveBeenCalledWith(result.fileUri, expect.any(Object));
+  });
+
+  it("returns false when sharing is unavailable", async () => {
+    __setSharingAvailable(false);
+    const { shareTemplateFile } = require("@/src/utils/templateData");
+    const result = {
+      fileUri: "file:///mock/documents/template.json",
+      fileName: "template.json",
+      summary: { templateCount: 1, sectionCount: 0, fieldCount: 0, deviceTypeCount: 0, deviceOptionCount: 0 },
+    };
+    expect(await shareTemplateFile(result)).toBe(false);
   });
 });

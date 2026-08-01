@@ -122,120 +122,9 @@ export interface TemplateExportDeviceOption {
 }
 
 export async function exportDefaultTemplate(): Promise<boolean> {
-  const db = await getDatabase();
-
-  const template = await db.getFirstAsync<{ TemplateID: number; TemplateName: string; Description: string | null }>(
-    `SELECT TemplateID, TemplateName, Description FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
-  );
-
-  if (!template) return false;
-
-  const sections = await db.getAllAsync<{
-    SectionID: number;
-    SectionName: string;
-    SectionKey: string;
-    Description: string | null;
-    Icon: string | null;
-    DisplayOrder: number;
-    IsRepeatable: number;
-  }>(
-    `SELECT SectionID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable
-     FROM InspectionSections WHERE TemplateID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
-    [template.TemplateID]
-  );
-
-  const exportSections: LegacyTemplateData["sections"] = [];
-
-  for (const section of sections) {
-    const fields = await db.getAllAsync<{
-      FieldID: number;
-      FieldName: string;
-      FieldKey: string;
-      FieldType: string;
-      Placeholder: string | null;
-      DefaultValue: string | null;
-      HelpText: string | null;
-      ValidationRule: string | null;
-      DisplayOrder: number;
-      IsRequired: number;
-      IsVisible: number;
-      IsReadOnly: number;
-    }>(
-      `SELECT FieldID, FieldName, FieldKey, FieldType, Placeholder, DefaultValue,
-              HelpText, ValidationRule, DisplayOrder, IsRequired, IsVisible, IsReadOnly
-       FROM InspectionFields WHERE SectionID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
-      [section.SectionID]
-    );
-
-    const exportFields: LegacyTemplateData["sections"][0]["fields"] = [];
-
-    for (const field of fields) {
-      const options = await db.getAllAsync<{
-        OptionLabel: string;
-        OptionValue: string;
-        DisplayOrder: number;
-        IsDefault: number;
-      }>(
-        `SELECT OptionLabel, OptionValue, DisplayOrder, IsDefault
-         FROM FieldOptions WHERE FieldID = ? ORDER BY DisplayOrder`,
-        [field.FieldID]
-      );
-
-      exportFields.push({
-        FieldName: field.FieldName,
-        FieldKey: field.FieldKey,
-        FieldType: field.FieldType,
-        Placeholder: field.Placeholder,
-        DefaultValue: field.DefaultValue,
-        HelpText: field.HelpText,
-        ValidationRule: field.ValidationRule,
-        DisplayOrder: field.DisplayOrder,
-        IsRequired: field.IsRequired,
-        IsVisible: field.IsVisible,
-        IsReadOnly: field.IsReadOnly,
-        options,
-      });
-    }
-
-    exportSections.push({
-      SectionName: section.SectionName,
-      SectionKey: section.SectionKey,
-      Description: section.Description,
-      Icon: section.Icon,
-      DisplayOrder: section.DisplayOrder,
-      IsRepeatable: section.IsRepeatable,
-      fields: exportFields,
-    });
-  }
-
-  const exportData: LegacyTemplateData = {
-    version: "1.0",
-    exportedAt: new Date().toISOString(),
-    template: {
-      TemplateName: template.TemplateName,
-      Description: template.Description,
-    },
-    sections: exportSections,
-  };
-
-  const json = JSON.stringify(exportData, null, 2);
-  const fileName = `template_${template.TemplateName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.json`;
-  const fileUri = FileSystem.documentDirectory + fileName;
-
-  await FileSystem.writeAsStringAsync(fileUri, json, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(fileUri, {
-      mimeType: "application/json",
-      dialogTitle: "Export Inspection Template",
-      UTI: "public.json",
-    });
-    return true;
-  }
-
-  return false;
+  const result = await exportTemplates();
+  if (!result) return false;
+  return shareTemplateFile(result);
 }
 
 export async function exportTemplates(): Promise<TemplateExportResult | null> {
@@ -419,6 +308,18 @@ export async function exportTemplates(): Promise<TemplateExportResult | null> {
       deviceOptionCount,
     },
   };
+}
+
+export async function shareTemplateFile(result: TemplateExportResult): Promise<boolean> {
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(result.fileUri, {
+      mimeType: "application/json",
+      dialogTitle: "Export Inspection Template",
+      UTI: "public.json",
+    });
+    return true;
+  }
+  return false;
 }
 
 export async function importTemplate(): Promise<{ success: boolean; message: string }> {
