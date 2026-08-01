@@ -58,4 +58,16 @@ export class InspectionListRepository {
     });
   }
 
+  static filterByQuery(items: InspectionListItem[], query: string): InspectionListItem[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (item) =>
+        item.PoleID.toLowerCase().includes(q) ||
+        (item.Division ?? "").toLowerCase().includes(q) ||
+        (item.District ?? "").toLowerCase().includes(q) ||
+        (item.Block ?? "").toLowerCase().includes(q)
+    );
+  }
+
 }
