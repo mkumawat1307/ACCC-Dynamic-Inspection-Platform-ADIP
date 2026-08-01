@@ -500,7 +500,7 @@ Current files
 
 - date.ts (getCurrentInspectionDate)
 - location.ts (getCurrentLocation with permissions)
-- exportData.ts (Project-wise CSV export with shareable output)
+- exportData.ts (unified export service: banded CSV/Excel/PDF for projects and single inspections)
 - templateData.ts (Template JSON export and import)
 
 ---

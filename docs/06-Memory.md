@@ -2,7 +2,7 @@
 
 # Project Memory
 
-Version: 1.8.1
+Version: 1.9.0
 
 Status: Living Document
 
@@ -64,14 +64,15 @@ Approximately 93%
 
 Current Version
 
-1.8.1
+1.9.0
 
 Current Sprint
 
-Per-Project DB Isolation + Bug Fixes + App Rename
+Reports & Export v2 (Phase 5 — PDF/Excel/CSV)
 
 Previous Sprints
 
+- v1.8.1 — App Rename + Bug Fixes
 - v1.8 — Per-Project Database Isolation
 - v1.7 — Per-Project Template Cloning
 - v1.6 — Device Types Admin
@@ -102,9 +103,21 @@ Active Development
 - Dashboard Screen
 - Search
 - Recent Inspections
-- Project-wise CSV Export
+- Project-wise CSV Export (moved to Reports screen in v1.9.0)
 
 ---
+
+## Reports & Export (v1.9.0)
+
+- Reports screen with live banded table preview (ReportTablePreview)
+- Project-wide export: CSV, Excel (xlsx), PDF — via `exportInspections`
+- Banded headers: CSV repeats band per column; Excel merges bands + autofilter + frozen rows; PDF `<th colspan>` band rows
+- Live template columns (sections/fields read at export time)
+- Device rows: one per device, filled with device section's own columns
+- Derived columns: Latitude/Longitude (splitLatLong), Status (PoleID + InspectionRecords), Photos count
+- Single-inspection export from Inspection List (PDF/Excel/CSV) via `exportInspection`
+- Single unified export service (`buildReportTable`, `buildCsv`, `buildExcelBase64`, `buildProjectPdfHtml`, `buildInspectionPdfHtml`, `loadInspectionFormData`)
+- Legacy `exportProjectData` + Home Export button removed; exports live in Reports
 
 ## Inspection Engine
 
@@ -244,7 +257,7 @@ Active Development
 
 - Project Edit with modal form
 - Project Delete with warning dialog (cascading inspection deletion)
-- Project-wise CSV Export from project dashboard
+- Project export moved to Reports screen (v1.9.0)
 
 ---
 
@@ -443,8 +456,7 @@ These decisions should not be changed without Product Owner approval.
 Current known work items
 
 - Dashboard (Basic 30%)
-- PDF Reports
-- Excel Reports
+- Photo Reports
 - Cloud Synchronization
 
 No issue should be removed until resolved.
@@ -455,19 +467,19 @@ No issue should be removed until resolved.
 
 Highest Priority
 
-Reporting (PDF + Excel)
+Cloud Platform
 
 Second Priority
 
-Cloud Platform
+AI Features
 
 Third Priority
 
-AI Features
+Dashboard Analytics and Advanced Reporting
 
 Fourth Priority
 
-Dashboard Analytics and Advanced Reporting
+Photo Reports
 
 ---
 
@@ -575,17 +587,20 @@ Per-Project Database Isolation Architecture — each project gets its own inspec
 
 App renamed to "ACCC Dynamic Inspection Platform", bundle ID changed to com.accc.dynamicinspection, android/ folder deleted (regenerate with npx expo prebuild), fixed "no such table: Projects" bug in project creation (removed leaked double-open handle in ProjectDBManager), DistrictRepository now uses getGlobalDatabase() directly
 
+1.9.0
+
+Reports & Export v2 — Reports screen with live banded preview, project-wide CSV/Excel/PDF export (unified exportData.ts service), single-inspection export from Inspection List, derived Latitude/Longitude + Status columns, device rows per inspection, legacy exportProjectData + Home Export button + dashboard CSV card removed
+
 Future versions shall be added after every release.
 
 ---
 
 # 15. Next Sprint
 
-Reporting (Phase 5)
+Cloud Platform (Phase 6)
 
-- PDF Reports
-- Excel Reports
-- Dashboard Analytics
+- Cloud Synchronization
+- Authentication
 - Photo Reports
 
 This section should always contain the next planned milestone.

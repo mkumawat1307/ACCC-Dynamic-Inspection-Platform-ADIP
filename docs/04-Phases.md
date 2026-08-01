@@ -2,7 +2,7 @@
 
 # Development Phases
 
-Version: 1.8.1
+Version: 1.9.0
 
 Status: Active Development
 
@@ -271,13 +271,23 @@ Project Statistics
 
 District Statistics
 
+### Progress (v1.9.0)
+
+- ✅ Reports screen with live banded table preview
+- ✅ Project-wide export: CSV, Excel (xlsx), PDF
+- ✅ Single-inspection export from Inspection List (PDF/Excel/CSV)
+- ✅ Derived Latitude/Longitude + Status columns, Photos count
+- ✅ Unified export service (`src/utils/exportData.ts`)
+- ⏳ Photo Report
+- ⏳ Analytics Dashboard / Project / District Statistics
+
 ### Deliverables
 
 Automated reporting system
 
 ### Status
 
-🔵 Planned
+🟢 In Progress (CSV/Excel/PDF core done; Photo Report + analytics pending)
 
 ---
 
@@ -451,6 +461,16 @@ Status
 
 ---
 
+## Version 1.9.0
+
+Reports & Export v2 — Reports screen, project-wide CSV/Excel/PDF export, single-inspection export, legacy export removal
+
+Status
+
+✅ Released
+
+---
+
 ## Version 1.8.1
 
 App Rename + Bug Fixes
@@ -507,7 +527,7 @@ Reporting
 
 Status
 
-🔵 Planned
+🟢 In Progress (CSV/Excel/PDF core in v1.9.0; Photo Report + analytics pending)
 
 ---
 

@@ -9,7 +9,7 @@
 ![Database](https://img.shields.io/badge/Database-SQLite-orange)
 ![Architecture](https://img.shields.io/badge/Architecture-Offline%20First-success)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
-![Version](https://img.shields.io/badge/Version-1.8.1-blue)
+![Version](https://img.shields.io/badge/Version-1.9.0-blue)
 
 ---
 
@@ -118,7 +118,18 @@ The platform aims to:
 
 - Create, Edit, Delete projects
 - Delete confirmation dialog with warning
-- Project-wise CSV Export from project dashboard
+- Project export from the Reports screen (CSV/Excel/PDF)
+
+---
+
+## Reports & Export
+
+- Reports screen with live banded table preview
+- Project-wide export: CSV, Excel (xlsx), PDF
+- Banded headers (section groups) across all three formats
+- Single-inspection export (PDF/Excel/CSV) from the Inspection List
+- Derived Latitude/Longitude, Status, and Photos-count columns
+- Legacy dashboard/Home export removed — exports live in Reports
 
 ---
 
@@ -169,6 +180,7 @@ Future synchronization will upload inspection data to the cloud.
 | Watermark | react-native-view-shot |
 | Document Picker | expo-document-picker |
 | Sharing | expo-sharing |
+| Spreadsheet (xlsx) | SheetJS (xlsx) |
 
 ---
 
@@ -249,13 +261,18 @@ Core tables (18):
 
 ---
 
+# New Files (v1.9.0)
+
+- app/reports/index.tsx — Reports screen (project export + live preview)
+- src/components/reports/ReportTablePreview.tsx — banded table preview
+- src/utils/exportData.ts — unified export service (CSV/Excel/PDF, project + single-inspection)
+
 # New Files (v1.5)
 
 - app/settings/device-options.tsx — Device Options admin screen
 - src/database/repositories/DeviceOptionsRepository.ts — DeviceOptions CRUD
 - src/database/tables/device-options.table.ts — DeviceOptions table definition
 - src/database/seeds/device-options.seed.ts — DeviceOptions seed data
-- src/utils/exportData.ts — CSV export utilities
 - src/utils/templateData.ts — Template JSON import/export utilities
 
 ---
@@ -409,12 +426,13 @@ Administration Panel Complete (v1.4)
 Device Options DB-Driven + Template Import/Export + Project Management (v1.5)
 Per-Project Database Isolation (v1.8)
 App Rename + Bug Fixes (v1.8.1)
+Reports & Export v2 (v1.9.0)
 
 Upcoming
 
-- Reporting (PDF + Excel)
 - Cloud Synchronization
 - AI Features
+- Dashboard Analytics
 
 ---
 
@@ -422,7 +440,7 @@ Upcoming
 
 Current Version
 
-1.8.1
+1.9.0
 
 Status
 

@@ -10,7 +10,7 @@
 |------|-------|
 | Project Name | ACCC Dynamic Inspection Platform (ADIP) |
 | Current Module | ACCC Pole Inspection |
-| Version | 1.8.1 |
+| Version | 1.9.0 |
 | Status | Active Development |
 | Product Owner | Manish Kumawat |
 | Technical Architect | Project Documentation |

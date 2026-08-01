@@ -743,4 +743,53 @@ Negative:
 
 ---
 
+
+# ADR-015
+
+## Title
+
+Reports & Export v2 — Unified Banded Export Service
+
+### Status
+
+Accepted
+
+### Date
+
+August 2026
+
+### Context
+
+Reporting was fragmented: the dashboard and Home screen each had their own `exportProjectData` CSV path, there was no Excel/PDF support, and report tables were flat (single header row, no band grouping). Exports ran from multiple screens, making the surface area hard to maintain and the output inconsistent with the dynamic form structure (templates → sections → fields).
+
+### Decision
+
+1. **Single unified service** in `src/utils/exportData.ts` — one query layer (`buildReportTable`) and one shared `ExportFormat`; screen code only calls `exportInspections` / `exportInspection` and passes a format.
+2. **Banded headers** — report columns are grouped by section band. CSV repeats the band name per column; Excel merges band cells across the band's columns with autofilter and frozen top rows; PDF uses `<thead>` with `<th colspan>` band rows.
+3. **Live template/device columns** — columns come from the active template's sections and fields at export time, not a stored snapshot; device sections (`IsRepeatable=1 AND <type>_information`) contribute one row per device, filled with the device section's own columns.
+4. **Derived columns** — `Latitude`/`Longitude` split from the combined GPS field (`splitLatLong`), `Status` (PoleID + `InspectionRecords`), and Photos count appended after the template columns.
+5. **Exports live in Reports** — the Reports screen (`app/reports/index.tsx`) is the single entry point for project-wide export; the dashboard passes `{ projectId, projectName }` params. Single-inspection export is available per row in the Inspection List.
+6. **Legacy removal** — `exportProjectData`, the Home screen Export button, and the dashboard CSV card are deleted. `getDatabase()` only (ADR-014) — no `getGlobalDatabase` in the report/export flow; bulk queries run in JS.
+
+### Alternatives
+
+- **Keep per-screen export helpers** (dashboard + Home + list) — rejected: duplicated query logic, inconsistent output, three places to maintain.
+- **Single flat header row** — rejected: lost section grouping made large forms unreadable in CSV/Excel/PDF.
+- **Snapshot columns** (stored at save time) — rejected: stale reports when templates evolve; live template reads are cheap offline.
+- **Store exports in a new table / background worker** — rejected: unnecessary complexity for an offline single-user flow; files are generated on demand and shared via expo-sharing.
+
+### Consequences
+
+Positive:
+- One query layer and one output model → consistent, testable reports (98.9% line coverage on `exportData.ts`).
+- Banded headers work uniformly across CSV, Excel, and PDF.
+- Reports reflect the current template and device data at export time.
+- Single export entry point simplifies navigation and removes dead code paths.
+
+Negative:
+- Live template queries mean export depends on the project DB being open (satisfied via navigation params + context per ADR-014).
+- PDF path reads inspection data twice for single-inspection export (guard + form re-read) — negligible offline.
+
+---
+
 # End of Architecture Decision Records

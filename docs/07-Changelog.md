@@ -24,14 +24,29 @@ Patch → Bug fixes
 
 ---
 
-# [Unreleased]
+# [1.9.0] - 01-Aug-2026
 
 ## Added
 
-- PDF Reports
-- Excel Reports
-- Dashboard Analytics
-- Cloud Synchronization
+### Reports & Export v2
+
+- Reports screen (`app/reports/index.tsx`) with live banded table preview (`ReportTablePreview`) — reachable from the Project Dashboard.
+- Project-wide export from Reports in three formats:
+  - **CSV** — banded two-row headers (band name repeated per column), built in JS with `getDatabase()` (no cross-DB joins, ADR-014 compliant).
+  - **Excel (xlsx)** — SheetJS-generated workbook with merged band headers, autofilter, and frozen top rows.
+  - **PDF** — banded `<thead>` table with `<th colspan>` band rows, shared via expo-sharing.
+- Single-inspection export from the Inspection List (export icon per row → format chooser → `exportInspection`): PDF (form-like layout with saved date fallback), Excel, CSV.
+- Derived columns in reports: `Latitude`/`Longitude` (from combined GPS field via `splitLatLong`) and `Status` (PoleID + `InspectionRecords`), plus Photos count appended.
+- Device sections included in reports: one row per device (`IsRepeatable=1 AND <type>_information`), device rows filled with the device section's own columns.
+
+## Removed
+
+- Legacy `exportProjectData` function and its 5 tests — export now lives in the Reports screen.
+- Home screen "Export" button and the dashboard CSV export card — the dashboard "Generate inspection reports" card now passes `{ projectId, projectName }` to `/reports`.
+
+## Changed
+
+- `src/utils/exportData.ts` is now a single unified service: `buildReportTable`, `buildCsv`, `buildExcelBase64`, `buildProjectPdfHtml`, `buildInspectionPdfHtml`, `loadInspectionFormData`, `exportInspections`, `exportInspection`, `splitLatLong`.
 
 ## Fixed
 
