@@ -468,7 +468,7 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
               section.Icon ?? null,
               section.DisplayOrder,
               section.IsRepeatable,
-              section.IsVisible,
+              section.IsVisible ?? 1,
             ]
           );
           const sectionId = sectionResult.lastInsertRowId;
