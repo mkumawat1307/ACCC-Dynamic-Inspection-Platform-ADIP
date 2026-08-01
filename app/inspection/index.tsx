@@ -159,14 +159,8 @@ export default function InspectionListScreen() {
         i.Status === "Completed"
     ).length;
 
-  const query = search.toLowerCase();
-
   const filtered =
-    inspections.filter((item) =>
-      item.PoleID.toLowerCase().includes(query) ||
-      (item.Division ?? "").toLowerCase().includes(query) ||
-      (item.District ?? "").toLowerCase().includes(query)
-    );
+    InspectionListRepository.filterByQuery(inspections, search);
 
   return (
         <SafeAreaView
@@ -201,51 +195,67 @@ export default function InspectionListScreen() {
 
         <Card style={styles.card}>
 
-          <Card.Content>
+          <Card.Content style={styles.selectionContent}>
 
-            <Button
-              mode="text"
-              icon="checkbox-multiple-marked"
-              onPress={selectAll}
-            >
-              Select All
-            </Button>
+            <View style={styles.selectionRow}>
 
-            <Button
-              mode="text"
-              icon="checkbox-blank-outline"
-              onPress={clearSelection}
-            >
-              Clear Selection
-            </Button>
+              <Button
+                mode="text"
+                icon="checkbox-multiple-marked"
+                compact
+                onPress={selectAll}
+              >
+                Select All
+              </Button>
 
-            <Button
-              mode="contained"
-              icon="export-variant"
-              disabled={selectedIds.length === 0 || exportFlow.busy}
-              onPress={handleBulkExport}
-            >
-              Export Selected
-            </Button>
+              <Button
+                mode="text"
+                icon="checkbox-blank-outline"
+                compact
+                onPress={clearSelection}
+              >
+                Clear Selection
+              </Button>
 
-            <Button
-              mode="contained"
-              icon="delete"
-              disabled={selectedIds.length === 0}
-              onPress={() =>
-                setDeleteDialogVisible(true)
-              }
-            >
-              Delete Selected
-            </Button>
+              <View style={styles.selectionCounts}>
 
-            <Text>
-              Draft : {selectedDrafts}
-            </Text>
+                <Text variant="labelMedium" style={styles.draftCount}>
+                  Draft : {selectedDrafts}
+                </Text>
 
-            <Text>
-              Completed : {selectedCompleted}
-            </Text>
+                <Text variant="labelMedium">
+                  Completed : {selectedCompleted}
+                </Text>
+
+              </View>
+
+            </View>
+
+            <View style={styles.selectionRow}>
+
+              <Button
+                mode="contained"
+                icon="export-variant"
+                compact
+                disabled={selectedIds.length === 0 || exportFlow.busy}
+                onPress={handleBulkExport}
+              >
+                Export Selected
+              </Button>
+
+              <Button
+                mode="contained"
+                icon="delete"
+                compact
+                disabled={selectedIds.length === 0}
+                onPress={() =>
+                  setDeleteDialogVisible(true)
+                }
+              >
+                Delete Selected
+              </Button>
+
+            </View>
 
           </Card.Content>
 
@@ -254,7 +264,7 @@ export default function InspectionListScreen() {
       )}
 
       <Searchbar
-        placeholder="Search Pole ID, Division, District"
+        placeholder="Search Pole ID, Division, District, Block"
         value={search}
         onChangeText={setSearch}
         style={styles.search}
@@ -351,6 +361,10 @@ export default function InspectionListScreen() {
                   </Text>
 
                   <Text>
+                    Block : {item.Block || "N/A"}
+                  </Text>
+
+                  <Text>
                     Status : {item.Status}
                   </Text>
 
@@ -429,6 +443,27 @@ const styles = StyleSheet.create({
   card: {
     marginHorizontal: 20,
     marginBottom: 12,
+  },
+
+  selectionContent: {
+    paddingVertical: 8,
+  },
+
+  selectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+
+  selectionCounts: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+
+  draftCount: {
+    marginRight: 12,
   },
 
 });
