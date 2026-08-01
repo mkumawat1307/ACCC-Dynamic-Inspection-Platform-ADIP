@@ -840,4 +840,46 @@ Negative:
 
 ---
 
+# ADR-017
+
+## Title
+
+Inspection List Block Search — Testable Filter Helper
+
+### Status
+
+Accepted
+
+### Date
+
+August 2026
+
+### Context
+
+The Inspection List screen (`app/inspection/index.tsx`) displayed each inspection's Pole ID, Division, District, Status, and Date but not the Block, and its search box matched only Pole ID, Division, and District. The `Block` value was already selected and typed by `InspectionListRepository.getByProject` (`InspectionListItem.Block: string | null`, subquery on `FieldKey = 'block'`), so the data existed — it just wasn't surfaced or searched. The existing filter was an inline `Array.prototype.filter` inside the screen, which could not be unit-tested without a screen-render harness (none exists for this screen).
+
+### Decision
+
+1. **Surface the Block** — add a card line `Block : {item.Block || "N/A"}` following the existing `Division :` / `District :` pattern.
+2. **Testable search helper** — extract the filter into a pure static method `InspectionListRepository.filterByQuery(items: InspectionListItem[], query: string): InspectionListItem[]` that case-insensitively matches PoleID, Division, District, or Block. It trims the query, treats `null` fields as empty (never throws), and returns all items unchanged for an empty/whitespace query (matching prior `includes("")` behavior). The screen replaces its inline filter with a single call to the helper and drops the now-unused local `query` variable.
+3. **Searchbox copy** — placeholder updated to "Search Pole ID, Division, District, Block".
+
+### Alternatives
+
+- **Keep the inline filter and just add a Block clause** — rejected: the search predicate stays untested UI code; extending it inline repeats the null-guard pattern for every future searchable field.
+- **Add a screen-render test harness** — rejected: no test infrastructure exists for this screen, and a pure helper is cheaper to test at the repository layer with the existing Jest setup.
+- **Change the repository SQL** — rejected: no data-model or query change was needed; `Block` was already fetched.
+
+### Consequences
+
+Positive:
+- Search behavior is unit-tested (6 tests: each field, case-insensitivity, null-safety, empty-query passthrough) and reusable for future searchable fields.
+- Behavior parity with the previous inline filter; null fields render as "N/A".
+- No schema, SQL, or repository-query changes; per-project isolation untouched.
+
+Negative:
+- The helper lives on the list repository even though it is pure — acceptable given the screen already imports that repository for `getByProject`.
+
+---
+
 # End of Architecture Decision Records

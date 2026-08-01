@@ -33,6 +33,7 @@ Patch → Bug fixes
 - Isolation regression test for template import across projects.
 - Reset-to-Default no longer deletes saved device records: per-inspection `DeviceRecords` (FK to `Inspections`) are preserved on template reset, matching the "Existing inspection data will NOT be deleted" message (previously the reset wiped them).
 - Error dialogs are scoped to the originating flow: an export failure shows only "Export Failed", an import failure only "Import Failed".
+- Inspection List shows the Block name on each card (falls back to "N/A") and the search box now matches Block in addition to Pole ID, Division, and District — via a new testable static `InspectionListRepository.filterByQuery` helper (case-insensitive, trim, null-safe; 6 unit tests).
 
 ---
 

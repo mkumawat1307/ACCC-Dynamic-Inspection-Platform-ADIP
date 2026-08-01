@@ -6,7 +6,7 @@ Version: 1.9.0
 
 Status: Living Document
 
-Last Updated: July 2026
+Last Updated: August 2026
 
 ---
 
@@ -132,6 +132,8 @@ Active Development
 - Reset to Default preserves general_information section
 - Settings Sections screen shows only default template sections (no duplicates from cloned templates)
 - Deduplication migration for InspectionSections and InspectionFields (removes duplicate rows from backup table artifacts)
+- Inspection List shows Block name on each card (with "N/A" fallback)
+- Inspection List search matches Block in addition to Pole ID, Division, District (via `InspectionListRepository.filterByQuery` helper, case-insensitive and null-safe)
 
 ---
 
@@ -230,12 +232,13 @@ Active Development
 
 ---
 
-## Template Import/Export (v1.5)
+## Template Import/Export (v1.5 → v2.0)
 
 - Export templates to JSON format
 - Import templates from JSON files
 - Uses expo-document-picker and expo-sharing
 - Accessible from Settings screen
+- v2.0 (August 2026): export all templates, sections, fields, options, custom device types, device options, and project device type mappings; import replaces the form in-place (deactivate + add) while preserving existing inspection data; v1.0 files still import via normalization; Reset-to-Default preserves per-inspection `DeviceRecords`; error dialogs scoped to the originating flow (ADR-016)
 
 ---
 
@@ -590,6 +593,10 @@ App renamed to "ACCC Dynamic Inspection Platform", bundle ID changed to com.accc
 1.9.0
 
 Reports & Export v2 — Reports screen with live banded preview, project-wide CSV/Excel/PDF export (unified exportData.ts service), single-inspection export from Inspection List, derived Latitude/Longitude + Status columns, device rows per inspection, legacy exportProjectData + Home Export button + dashboard CSV card removed
+
+1.9.1 (Unreleased)
+
+Template Transfer v2.0 (export/import replace-in-place, error-scoped dialogs, reset preserves DeviceRecords), Inspection List shows Block name and searches by it (testable filterByQuery helper)
 
 Future versions shall be added after every release.
 
