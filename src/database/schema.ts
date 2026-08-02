@@ -253,6 +253,20 @@ export async function migrateProjectSchema() {
     }
 
     try {
+        await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN SectionLabel TEXT;`);
+        logger.info("[schema] Migration: SectionLabel column added to DashboardCards");
+    } catch {
+        logger.info("[schema] Migration: SectionLabel column already exists in DashboardCards (ok)");
+    }
+
+    try {
+        await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN AggregateField TEXT;`);
+        logger.info("[schema] Migration: AggregateField column added to DashboardCards");
+    } catch {
+        logger.info("[schema] Migration: AggregateField column already exists in DashboardCards (ok)");
+    }
+
+    try {
         await DashboardCardRepository.migrateDefaultCards(1);
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — migrateDefaultCards failed (non-fatal):", e);

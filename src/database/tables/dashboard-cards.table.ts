@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS DashboardCards (
     CountMode TEXT NOT NULL DEFAULT 'count',
     DistinctColumn TEXT,
     BreakdownField TEXT,
+    SectionLabel TEXT,
+    AggregateField TEXT,
     SortOrder INTEGER NOT NULL DEFAULT 0,
     Enabled INTEGER NOT NULL DEFAULT 1,
     IsDefault INTEGER NOT NULL DEFAULT 0,

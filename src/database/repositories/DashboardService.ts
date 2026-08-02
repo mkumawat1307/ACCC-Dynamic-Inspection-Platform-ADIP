@@ -17,7 +17,10 @@ export class DashboardService {
     const cards = await DashboardCardRepository.getEnabledCards(projectId);
     const result: CardWithCount[] = [];
     for (const card of cards) {
-      if (card.BreakdownField) {
+      if (card.AggregateField) {
+        const count = await StatisticCountService.fieldCard(projectId, card);
+        result.push({ ...card, count, breakdown: undefined });
+      } else if (card.BreakdownField) {
         const breakdown = await StatisticCountService.breakdownCard(projectId, card);
         result.push({ ...card, count: undefined, breakdown });
       } else {

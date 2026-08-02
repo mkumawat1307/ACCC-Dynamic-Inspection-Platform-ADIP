@@ -44,8 +44,21 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0 }: Props) {
   }
 
   const rows = [];
+  let currentSection: string | null = null;
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i];
+    const section = card.SectionLabel ?? null;
+
+    if (section !== currentSection) {
+      currentSection = section;
+      if (section) {
+        rows.push(
+          <Text key={`section-${section}-${i}`} style={styles.sectionHeader}>
+            {section}
+          </Text>
+        );
+      }
+    }
 
     if (card.BreakdownField) {
       rows.push(
@@ -61,7 +74,7 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0 }: Props) {
     }
 
     const next = cards[i + 1];
-    if (next && !next.BreakdownField) {
+    if (next && !next.BreakdownField && (next.SectionLabel ?? null) === section) {
       rows.push(
         <View key={`${card.CardID}-${next.CardID}`} style={styles.statRow}>
           <StatCard
@@ -100,6 +113,14 @@ const styles = StyleSheet.create({
   statRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+
+  sectionHeader: {
+    fontWeight: "700",
+    fontSize: 15,
+    marginTop: 12,
+    marginBottom: 6,
+    color: "#333",
   },
 
   centered: {

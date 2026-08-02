@@ -310,4 +310,68 @@ describe("StatisticCountService", () => {
       expect(result).toEqual([]);
     });
   });
+
+  describe("fieldCard", () => {
+    const fieldCard = (overrides: Partial<DashboardCard> = {}): DashboardCard =>
+      cardOf({ EntityType: "inspections", AggregateField: "camera_count", ...overrides });
+
+    it("sums the numeric field values for a total card", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ total: 7 });
+      const result = await StatisticCountService.fieldCard(1, fieldCard());
+      expect(result).toBe(7);
+      const [sql, params] = (mockDb.getFirstAsync as jest.Mock).mock.calls[0];
+      expect(normalizeSql(sql)).toContain("SUM(CAST(iv.FieldValue AS REAL))");
+      expect(normalizeSql(sql)).toContain("FROM Inspections i");
+      expect(normalizeSql(sql)).toContain("JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID");
+      expect(normalizeSql(sql)).toContain("JOIN InspectionFields f ON f.FieldID = iv.FieldID");
+      expect(normalizeSql(sql)).toContain("AND f.FieldKey = ?");
+      expect(normalizeSql(sql)).toContain("AND f.IsActive = 1");
+      expect(params).toEqual([1, "camera_count"]);
+    });
+
+    it("adds the today date clause and param", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ total: 3 });
+      const result = await StatisticCountService.fieldCard(1, fieldCard({ CounterType: "today" }));
+      expect(result).toBe(3);
+      const [sql, params] = (mockDb.getFirstAsync as jest.Mock).mock.calls[0];
+      expect(normalizeSql(sql)).toContain("AND i.InspectionDate = ?");
+      expect(params).toEqual([1, getTodayDateString(), "camera_count"]);
+    });
+
+    it("returns 0 when the sum is null", async () => {
+      mockDb.getFirstAsync.mockResolvedValue(null);
+      const result = await StatisticCountService.fieldCard(1, fieldCard());
+      expect(result).toBe(0);
+    });
+
+    it("returns 0 for a non-inspections entity without touching the db", async () => {
+      const result = await StatisticCountService.fieldCard(1, fieldCard({ EntityType: "cameras" }));
+      expect(result).toBe(0);
+      expect(mockDb.getFirstAsync).not.toHaveBeenCalled();
+    });
+
+    it("returns 0 when AggregateField is missing", async () => {
+      const result = await StatisticCountService.fieldCard(1, cardOf());
+      expect(result).toBe(0);
+      expect(mockDb.getFirstAsync).not.toHaveBeenCalled();
+    });
+
+    it("returns 0 for an unknown counter type", async () => {
+      const result = await StatisticCountService.fieldCard(1, fieldCard({ CounterType: "weekly" }));
+      expect(result).toBe(0);
+      expect(mockDb.getFirstAsync).not.toHaveBeenCalled();
+    });
+
+    it("returns 0 when the query rejects", async () => {
+      mockDb.getFirstAsync.mockRejectedValue(new Error("no such table"));
+      const result = await StatisticCountService.fieldCard(1, fieldCard());
+      expect(result).toBe(0);
+    });
+
+    it("returns 0 when getDatabase throws", async () => {
+      (getDatabase as jest.Mock).mockRejectedValue(new Error("db closed"));
+      const result = await StatisticCountService.fieldCard(1, fieldCard());
+      expect(result).toBe(0);
+    });
+  });
 });

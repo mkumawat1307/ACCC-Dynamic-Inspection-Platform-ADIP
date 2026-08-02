@@ -248,4 +248,19 @@ describe("schema.ts createSchema", () => {
     const { migrateProjectSchema } = require("@/src/database/schema");
     await expect(migrateProjectSchema()).resolves.toBeUndefined();
   });
+
+  it("migrateProjectSchema adds the SectionLabel and AggregateField columns idempotently", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+
+    await migrateProjectSchema();
+
+    expect(mockExecAsync).toHaveBeenCalledWith(
+      expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN SectionLabel TEXT")
+    );
+    expect(mockExecAsync).toHaveBeenCalledWith(
+      expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN AggregateField TEXT")
+    );
+  });
 });

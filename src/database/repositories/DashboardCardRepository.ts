@@ -1,11 +1,11 @@
 import { getDatabase } from "../db";
 import { DashboardCard } from "@/src/models/DashboardCard";
-import { DEFAULT_DASHBOARD_CARDS } from "../seeds/dashboard-cards.seed";
+import { DEFAULT_DASHBOARD_CARDS, DEFAULT_SECTIONED_CARDS, DashboardCardSeed } from "../seeds/dashboard-cards.seed";
 
 const CARD_COLUMNS = `
   CardID, ProjectID, CardKey, Title, Icon, Color,
   EntityType, CounterType, FilterJson, CountMode, DistinctColumn,
-  BreakdownField, SortOrder, Enabled, IsDefault, CreatedAt, UpdatedAt
+  BreakdownField, SectionLabel, AggregateField, SortOrder, Enabled, IsDefault, CreatedAt, UpdatedAt
 `;
 
 function mapRow(row: Record<string, unknown>): DashboardCard {
@@ -22,12 +22,21 @@ function mapRow(row: Record<string, unknown>): DashboardCard {
     CountMode: row.CountMode === "distinct" ? "distinct" : "count",
     DistinctColumn: (row.DistinctColumn as string) ?? null,
     BreakdownField: (row.BreakdownField as string) ?? null,
+    SectionLabel: (row.SectionLabel as string) ?? null,
+    AggregateField: (row.AggregateField as string) ?? null,
     SortOrder: row.SortOrder as number,
     Enabled: row.Enabled as number,
     IsDefault: row.IsDefault as number,
     CreatedAt: row.CreatedAt as string,
     UpdatedAt: row.UpdatedAt as string,
   };
+}
+
+const LEGACY_DEFAULT_KEYS = DEFAULT_DASHBOARD_CARDS.map((c) => c.CardKey);
+
+function selectDefaultSet(existingKeys: Set<string>): DashboardCardSeed[] {
+  const isLegacy = LEGACY_DEFAULT_KEYS.some((key) => existingKeys.has(key));
+  return isLegacy ? DEFAULT_DASHBOARD_CARDS : DEFAULT_SECTIONED_CARDS;
 }
 
 export class DashboardCardRepository {
@@ -80,8 +89,8 @@ export class DashboardCardRepository {
 
     const result = await db.runAsync(
       `INSERT INTO DashboardCards
-       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SortOrder, Enabled, IsDefault)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, SortOrder, Enabled, IsDefault)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         card.ProjectID,
         card.CardKey,
@@ -94,6 +103,8 @@ export class DashboardCardRepository {
         card.CountMode,
         card.DistinctColumn ?? null,
         card.BreakdownField ?? null,
+        card.SectionLabel ?? null,
+        card.AggregateField ?? null,
         sortOrder,
         card.Enabled,
         card.IsDefault,
@@ -169,15 +180,16 @@ export class DashboardCardRepository {
     );
     const existingKeys = new Set(existing.map((r) => r.CardKey));
 
-    const missing = DEFAULT_DASHBOARD_CARDS.filter((c) => !existingKeys.has(c.CardKey));
+    const activeSet = selectDefaultSet(existingKeys);
+    const missing = activeSet.filter((c) => !existingKeys.has(c.CardKey));
     if (missing.length === 0) return;
 
     await db.withTransactionAsync(async () => {
       for (const card of missing) {
         await db.runAsync(
           `INSERT INTO DashboardCards
-           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, SortOrder, Enabled, IsDefault)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, SortOrder, Enabled, IsDefault)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
           [
             projectId,
             card.CardKey,
@@ -189,6 +201,9 @@ export class DashboardCardRepository {
             card.FilterJson ?? null,
             card.CountMode,
             card.DistinctColumn ?? null,
+            card.BreakdownField ?? null,
+            card.SectionLabel ?? null,
+            card.AggregateField ?? null,
             card.SortOrder,
           ]
         );
@@ -205,6 +220,8 @@ export class DashboardCardRepository {
     );
     const existingKeys = new Set(existing.map((r) => r.CardKey));
 
+    if (!LEGACY_DEFAULT_KEYS.some((key) => existingKeys.has(key))) return;
+
     if (existingKeys.has("total_inspections") && existingKeys.has("today_inspections_done")) {
       return;
     }
@@ -215,8 +232,8 @@ export class DashboardCardRepository {
       for (const card of missing) {
         await db.runAsync(
           `INSERT INTO DashboardCards
-           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, SortOrder, Enabled, IsDefault)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, SortOrder, Enabled, IsDefault)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
           [
             projectId,
             card.CardKey,
@@ -228,6 +245,9 @@ export class DashboardCardRepository {
             card.FilterJson ?? null,
             card.CountMode,
             card.DistinctColumn ?? null,
+            card.BreakdownField ?? null,
+            card.SectionLabel ?? null,
+            card.AggregateField ?? null,
             card.SortOrder,
           ]
         );

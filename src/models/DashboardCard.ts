@@ -11,6 +11,8 @@ export interface DashboardCard {
   CountMode: "count" | "distinct";
   DistinctColumn?: string | null;
   BreakdownField?: string | null;
+  SectionLabel?: string | null;
+  AggregateField?: string | null;
   SortOrder: number;
   Enabled: number;
   IsDefault: number;

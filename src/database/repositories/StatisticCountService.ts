@@ -177,4 +177,35 @@ export class StatisticCountService {
       return [];
     }
   }
+
+  static async fieldCard(projectId: number, card: DashboardCard): Promise<number> {
+    try {
+      if (card.EntityType !== "inspections" || !card.AggregateField) return 0;
+
+      const counter = COUNTER_TYPES[card.CounterType];
+      if (!counter) return 0;
+
+      const params: (string | number)[] = [projectId];
+
+      const time = counter.buildTimeClause("i");
+      if (time.clause) params.push(...time.params);
+
+      params.push(card.AggregateField);
+
+      const sql = `SELECT SUM(CAST(iv.FieldValue AS REAL)) AS total
+         FROM Inspections i
+         JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
+         JOIN InspectionFields f ON f.FieldID = iv.FieldID
+         WHERE i.ProjectID = ?
+         ${time.clause}
+         AND f.FieldKey = ?
+         AND f.IsActive = 1`;
+
+      const db = await getDatabase();
+      const row = await db.getFirstAsync<{ total: number | null }>(sql, params);
+      return row?.total ?? 0;
+    } catch {
+      return 0;
+    }
+  }
 }

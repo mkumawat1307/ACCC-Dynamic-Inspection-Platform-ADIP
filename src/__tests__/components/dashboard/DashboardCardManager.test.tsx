@@ -528,4 +528,110 @@ describe("DashboardCardManager", () => {
       })
     );
   });
+
+  it("wraps the editor form in a scrollable container", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    const scrollViews = tree.root.findAll((node) => {
+      const type = (node as unknown as { type?: unknown }).type;
+      if (typeof type !== "function") return false;
+      const typeFn = type as { displayName?: string; name?: string };
+      return typeFn.displayName === "ScrollView" || typeFn.name === "ScrollView";
+    });
+    expect(scrollViews.length).toBeGreaterThan(0);
+  });
+
+  function findDialogByTitle(
+    tree: ReturnType<typeof TestRenderer.create>,
+    title: string
+  ): { dialog: TestInstanceLike; cancelButton?: TestInstanceLike } {
+    const dialogs: TestInstanceLike[] = [];
+    tree.root.findAll((node) => {
+      const type = (node as unknown as { type?: unknown }).type;
+      if (typeof type === "function") {
+        const typeFn = type as { displayName?: string; name?: string };
+        if (typeFn.displayName === "Dialog" || typeFn.name === "Dialog") dialogs.push(node as TestInstanceLike);
+      }
+      return false;
+    });
+    const matching = dialogs.filter((d) => collectStringsFromInstance(d).includes(title));
+    expect(matching.length).toBeGreaterThan(0);
+    const dialog = matching.reduce((deepest, candidate) => {
+      const depth = (node: unknown): number => {
+        let d = 0;
+        let current: unknown = node;
+        while (current && (current as { parent?: unknown }).parent) {
+          d += 1;
+          current = (current as { parent?: unknown }).parent;
+        }
+        return d;
+      };
+      return depth(candidate) > depth(deepest) ? candidate : deepest;
+    }, matching[0]);
+    let cancelButton: TestInstanceLike | undefined;
+    tree.root.findAll((node) => {
+      const props = node.props as { children?: unknown; onPress?: unknown };
+      if (props && props.children === "Cancel" && typeof props.onPress === "function") {
+        let current: unknown = node;
+        while (current && (current as { parent?: unknown }).parent) {
+          current = (current as { parent?: unknown }).parent;
+          const type = (current as { type?: unknown }).type;
+          if (typeof type === "function") {
+            const typeFn = type as { displayName?: string; name?: string };
+            if (typeFn.displayName === "Dialog" || typeFn.name === "Dialog") {
+              if (current === dialog) cancelButton = node as TestInstanceLike;
+              return false;
+            }
+          }
+        }
+      }
+      return false;
+    });
+    return { dialog, cancelButton };
+  }
+
+  it("adds a Cancel button to the entity picker dialog", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Inspections");
+    const { dialog, cancelButton } = findDialogByTitle(tree, "Select Entity");
+    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
+    expect(cancelButton).toBeDefined();
+    await TestRenderer.act(async () => {
+      (cancelButton!.props as { onPress?: () => void }).onPress?.();
+      await flushPromises();
+    });
+    const { dialog: closed } = findDialogByTitle(tree, "Select Entity");
+    expect((closed.props as { visible?: boolean }).visible).toBe(false);
+  });
+
+  it("adds a Cancel button to the counter picker dialog", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Total");
+    const { dialog, cancelButton } = findDialogByTitle(tree, "Select Counter");
+    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
+    expect(cancelButton).toBeDefined();
+    await TestRenderer.act(async () => {
+      (cancelButton!.props as { onPress?: () => void }).onPress?.();
+      await flushPromises();
+    });
+    const { dialog: closed } = findDialogByTitle(tree, "Select Counter");
+    expect((closed.props as { visible?: boolean }).visible).toBe(false);
+  });
+
+  it("adds a Cancel button to the count mode picker dialog", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Count");
+    const { dialog, cancelButton } = findDialogByTitle(tree, "Select Count Mode");
+    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
+    expect(cancelButton).toBeDefined();
+    await TestRenderer.act(async () => {
+      (cancelButton!.props as { onPress?: () => void }).onPress?.();
+      await flushPromises();
+    });
+    const { dialog: closed } = findDialogByTitle(tree, "Select Count Mode");
+    expect((closed.props as { visible?: boolean }).visible).toBe(false);
+  });
 });

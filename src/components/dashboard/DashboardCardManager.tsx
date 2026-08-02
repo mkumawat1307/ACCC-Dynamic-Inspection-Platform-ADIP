@@ -313,6 +313,7 @@ export default function DashboardCardManager({ projectId }: Props) {
       <Dialog visible={editorVisible} onDismiss={() => setEditorVisible(false)}>
         <Dialog.Title>{editingCard ? "Edit Card" : "Add Card"}</Dialog.Title>
         <Dialog.Content>
+          <ScrollView style={styles.editorScroll}>
           <TextInput
             label="Title"
             mode="outlined"
@@ -379,6 +380,9 @@ export default function DashboardCardManager({ projectId }: Props) {
                 />
               ))}
             </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setEntityMenuVisible(false)}>Cancel</Button>
+            </Dialog.Actions>
           </Dialog>
 
           <Text style={styles.fieldLabel}>Counter</Text>
@@ -406,6 +410,9 @@ export default function DashboardCardManager({ projectId }: Props) {
                 />
               ))}
             </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setCounterMenuVisible(false)}>Cancel</Button>
+            </Dialog.Actions>
           </Dialog>
 
           <Text style={styles.fieldLabel}>Count Mode</Text>
@@ -453,6 +460,9 @@ export default function DashboardCardManager({ projectId }: Props) {
                 }}
               />
             </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setModeMenuVisible(false)}>Cancel</Button>
+            </Dialog.Actions>
           </Dialog>
 
           {editorMode === "distinct" ? (
@@ -482,6 +492,9 @@ export default function DashboardCardManager({ projectId }: Props) {
                     />
                   ))}
                 </Dialog.Content>
+                <Dialog.Actions>
+                  <Button onPress={() => setDistinctMenuVisible(false)}>Cancel</Button>
+                </Dialog.Actions>
               </Dialog>
             </>
           ) : null}
@@ -521,6 +534,9 @@ export default function DashboardCardManager({ projectId }: Props) {
                 />
               ))}
             </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setBreakdownMenuVisible(false)}>Cancel</Button>
+            </Dialog.Actions>
           </Dialog>
 
           <Text style={styles.fieldLabel}>Filters</Text>
@@ -566,11 +582,15 @@ export default function DashboardCardManager({ projectId }: Props) {
                 />
               ))}
             </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={() => setFilterMenuIndex(null)}>Cancel</Button>
+            </Dialog.Actions>
           </Dialog>
 
           {validationError ? (
             <HelperText type="error">{validationError}</HelperText>
           ) : null}
+          </ScrollView>
         </Dialog.Content>
         <Dialog.Actions>
           <Button onPress={() => setEditorVisible(false)}>Cancel</Button>
@@ -649,6 +669,10 @@ const styles = StyleSheet.create({
 
   input: {
     marginBottom: 12,
+  },
+
+  editorScroll: {
+    maxHeight: 420,
   },
 
   fieldLabel: {

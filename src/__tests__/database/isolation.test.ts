@@ -122,6 +122,50 @@ describe("Cross-project data isolation", () => {
     expect(breakdownInAAfter).toEqual([{ BreakdownField: "foundation_cond" }]);
   });
 
+  it("does not leak a sectioned aggregate card created in one project into another", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { db: dbA } = await openProject(PROJECT_A);
+
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository") as typeof import("@/src/database/repositories/DashboardCardRepository");
+    const cardId = await DashboardCardRepository.createCard({
+      ProjectID: 1,
+      CardKey: "leak_sectioned_card",
+      Title: "Today's Camera Count",
+      Icon: "camera",
+      Color: "#111111",
+      EntityType: "inspections",
+      CounterType: "today",
+      FilterJson: null,
+      CountMode: "count",
+      DistinctColumn: null,
+      SectionLabel: "Today's",
+      AggregateField: "camera_count",
+      SortOrder: 0,
+      Enabled: 1,
+      IsDefault: 0,
+    });
+    expect(cardId).toBeGreaterThan(0);
+
+    const sectionedInA = await dbA.getAllAsync<{ SectionLabel: string; AggregateField: string }>(
+      "SELECT SectionLabel, AggregateField FROM DashboardCards WHERE CardKey = 'leak_sectioned_card'"
+    );
+    expect(sectionedInA).toEqual([{ SectionLabel: "Today's", AggregateField: "camera_count" }]);
+
+    await dbModule.clearActiveProject();
+
+    const { db: dbB } = await openProject(PROJECT_B);
+
+    const cardsInB = await dbB.getAllAsync<{ CardKey: string }>(
+      "SELECT CardKey FROM DashboardCards"
+    );
+    expect(cardsInB.some((c) => c.CardKey === "leak_sectioned_card")).toBe(false);
+
+    const sectionedInAAfter = await dbA.getAllAsync<{ SectionLabel: string; AggregateField: string }>(
+      "SELECT SectionLabel, AggregateField FROM DashboardCards WHERE CardKey = 'leak_sectioned_card'"
+    );
+    expect(sectionedInAAfter).toEqual([{ SectionLabel: "Today's", AggregateField: "camera_count" }]);
+  });
+
   it("does not leak a custom section added in one project into another", async () => {
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const { db: dbA } = await openProject(PROJECT_A);
