@@ -79,6 +79,49 @@ describe("Cross-project data isolation", () => {
     expect(cardsInAAfter.some((c) => c.CardKey === "leak_probe_card")).toBe(true);
   });
 
+  it("does not leak a breakdown card created in one project into another", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { db: dbA } = await openProject(PROJECT_A);
+
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository") as typeof import("@/src/database/repositories/DashboardCardRepository");
+    const cardId = await DashboardCardRepository.createCard({
+      ProjectID: 1,
+      CardKey: "leak_breakdown_card",
+      Title: "Foundation Breakdown",
+      Icon: "chart-pie",
+      Color: "#111111",
+      EntityType: "inspections",
+      CounterType: "total",
+      FilterJson: null,
+      CountMode: "count",
+      DistinctColumn: null,
+      BreakdownField: "foundation_cond",
+      SortOrder: 0,
+      Enabled: 1,
+      IsDefault: 0,
+    });
+    expect(cardId).toBeGreaterThan(0);
+
+    const breakdownInA = await dbA.getAllAsync<{ BreakdownField: string }>(
+      "SELECT BreakdownField FROM DashboardCards WHERE CardKey = 'leak_breakdown_card'"
+    );
+    expect(breakdownInA).toEqual([{ BreakdownField: "foundation_cond" }]);
+
+    await dbModule.clearActiveProject();
+
+    const { db: dbB } = await openProject(PROJECT_B);
+
+    const cardsInB = await dbB.getAllAsync<{ CardKey: string }>(
+      "SELECT CardKey FROM DashboardCards"
+    );
+    expect(cardsInB.some((c) => c.CardKey === "leak_breakdown_card")).toBe(false);
+
+    const breakdownInAAfter = await dbA.getAllAsync<{ BreakdownField: string }>(
+      "SELECT BreakdownField FROM DashboardCards WHERE CardKey = 'leak_breakdown_card'"
+    );
+    expect(breakdownInAAfter).toEqual([{ BreakdownField: "foundation_cond" }]);
+  });
+
   it("does not leak a custom section added in one project into another", async () => {
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const { db: dbA } = await openProject(PROJECT_A);
