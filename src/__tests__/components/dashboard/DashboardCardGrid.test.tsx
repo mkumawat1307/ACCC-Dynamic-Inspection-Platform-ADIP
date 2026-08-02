@@ -1,6 +1,8 @@
 import React from "react";
 import TestRenderer from "react-test-renderer";
 import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
+import StatCard from "@/src/components/StatCard";
+import StatBreakdownCard from "@/src/components/dashboard/StatBreakdownCard";
 import { DashboardService, CardWithCount } from "@/src/database/repositories/DashboardService";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import useDashboardAutoRefresh from "@/src/hooks/useDashboardAutoRefresh";
@@ -24,6 +26,7 @@ function cardWithCount(overrides: Partial<CardWithCount> = {}): CardWithCount {
     CounterType: "total",
     FilterJson: null,
     CountMode: "count",
+    CardMode: "entitycount",
     DistinctColumn: null,
     BreakdownField: null,
     SectionLabel: null,
@@ -144,7 +147,7 @@ describe("DashboardCardGrid", () => {
         CardID: 9,
         CardKey: "foundation_breakdown",
         Title: "Foundation Condition",
-        BreakdownField: "foundation_cond",
+        CardMode: "dropdown",
         count: undefined,
         breakdown: [
           { label: "Good", count: 42 },
@@ -174,7 +177,7 @@ describe("DashboardCardGrid", () => {
         CardID: 9,
         CardKey: "foundation_breakdown",
         Title: "Foundation Condition",
-        BreakdownField: "foundation_cond",
+        CardMode: "dropdown",
         count: undefined,
         breakdown: [],
       }),
@@ -186,6 +189,45 @@ describe("DashboardCardGrid", () => {
     });
     const strings = collectStrings(tree!.toJSON());
     expect(strings.join(" ")).toContain("No data");
+  });
+
+  it("renders dropdown/datebreakdown cards as StatBreakdownCard and other modes as StatCard", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "entity_count", Title: "Entity Count", CardMode: "entitycount", count: 12 }),
+      cardWithCount({ CardID: 2, CardKey: "sum_card", Title: "Sum Card", CardMode: "sum", count: 40 }),
+      cardWithCount({ CardID: 3, CardKey: "field_count", Title: "Field Count", CardMode: "fieldcount", count: 5 }),
+      cardWithCount({
+        CardID: 4,
+        CardKey: "dropdown_card",
+        Title: "Dropdown Card",
+        CardMode: "dropdown",
+        count: undefined,
+        breakdown: [{ label: "Good", count: 42 }],
+      }),
+      cardWithCount({
+        CardID: 5,
+        CardKey: "date_breakdown",
+        Title: "Date Breakdown",
+        CardMode: "datebreakdown",
+        count: undefined,
+        breakdown: [{ label: "Today", count: 9 }],
+      }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const statCards = tree!.root.findAll((node) => {
+      const type = (node as unknown as { type?: unknown }).type;
+      return typeof type === "function" && type === StatCard;
+    });
+    const breakdownCards = tree!.root.findAll((node) => {
+      const type = (node as unknown as { type?: unknown }).type;
+      return typeof type === "function" && type === StatBreakdownCard;
+    });
+    expect(breakdownCards).toHaveLength(2);
+    expect(statCards).toHaveLength(3);
   });
 
   it("renders section headers for grouped default cards", async () => {

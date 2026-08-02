@@ -13,6 +13,9 @@ interface Props {
   focused?: boolean;
 }
 
+const isBreakdown = (c: CardWithCount) =>
+  c.CardMode === "dropdown" || c.CardMode === "datebreakdown";
+
 export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = true }: Props) {
   const [cards, setCards] = useState<CardWithCount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +66,7 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
       }
     }
 
-    if (card.BreakdownField) {
+    if (isBreakdown(card)) {
       rows.push(
         <StatBreakdownCard
           key={card.CardID}
@@ -77,7 +80,7 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
     }
 
     const next = cards[i + 1];
-    if (next && !next.BreakdownField && (next.SectionLabel ?? null) === section) {
+    if (next && !isBreakdown(next) && (next.SectionLabel ?? null) === section) {
       rows.push(
         <View key={`${card.CardID}-${next.CardID}`} style={styles.statRow}>
           <StatCard
