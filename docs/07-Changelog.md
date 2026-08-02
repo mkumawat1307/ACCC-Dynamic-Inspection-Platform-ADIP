@@ -51,6 +51,7 @@ Patch → Bug fixes
 - Smart Dashboard cards now carry a required `CardMode` column (`entitycount` / `dropdown` / `sum` / `fieldcount` / `datebreakdown`). Existing project DBs migrate and backfill automatically on next open (`migrateProjectSchema`): entity-count cards stay `entitycount`; cards whose breakdown/aggregate field no longer exists fall back to `entitycount` instead of aborting the migration.
 - Smart cards are rendered by their `CardMode`: dropdown/switch/checkbox fields → per-value breakdown; numeric fields → SUM aggregate; text/multiline fields → field-count; date fields → per-date breakdown; device fields (Camera/Switch, dropdown/switch/checkbox types) group Cameras/Switches by column; the `Remarks` field is excluded. Entity-count cards (Total/Today's poles, cameras, inspections) use `entitycount`.
 - Smart cards are non-editable: the card manager is picker-only and the manual Custom Card editor is removed; smart cards are deleted and re-added rather than edited. Deleting one card of a Total/Today's pair hides the field from the picker until both are removed, and re-adding never raises the `UNIQUE(ProjectID, CardKey)` constraint.
+- Project Dashboard UI refinement: consistent spacing, alignment, and grouping across the dashboard screen and its stat/action components via new design tokens (`src/constants/ui.ts`). Project Information is a compact aligned label/value grid, Statistics renders full-bleed with grouped stat cards, action tiles share one style, and the card-grid empty state no longer shows a literal `\u201C` escape.
 
 ### Fixed
 
