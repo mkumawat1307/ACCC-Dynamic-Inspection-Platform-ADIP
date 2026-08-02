@@ -87,6 +87,21 @@ export default class InspectionFieldRepository {
       `,
       [fieldId]
     );
-}
+  }
+
+  static async getActiveTemplateFields(): Promise<{ FieldKey: string; FieldName: string }[]> {
+    const db = await getDatabase();
+    return await db.getAllAsync<{ FieldKey: string; FieldName: string }>(
+      `SELECT f.FieldKey, f.FieldName
+       FROM InspectionFields f
+       INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
+       INNER JOIN InspectionTemplates t ON s.TemplateID = t.TemplateID
+       WHERE t.IsDefault = 1
+         AND s.IsActive = 1
+         AND f.IsActive = 1
+       ORDER BY s.DisplayOrder ASC, f.DisplayOrder ASC;`,
+      []
+    );
+  }
 
 }

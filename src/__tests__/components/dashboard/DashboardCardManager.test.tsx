@@ -31,7 +31,17 @@ jest.mock("react-native-paper", () => {
 
 jest.mock("@/src/database/repositories/DashboardCardRepository");
 
+jest.mock("@/src/database/repositories/InspectionFieldRepository", () => ({
+  __esModule: true,
+  default: {
+    getActiveTemplateFields: jest.fn(),
+  },
+}));
+
+import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
+
 const repo = DashboardCardRepository as jest.Mocked<typeof DashboardCardRepository>;
+const fieldRepo = InspectionFieldRepository as jest.Mocked<typeof InspectionFieldRepository>;
 
 function cardOf(overrides: Partial<DashboardCard> = {}): DashboardCard {
   return {
@@ -46,6 +56,7 @@ function cardOf(overrides: Partial<DashboardCard> = {}): DashboardCard {
     FilterJson: null,
     CountMode: "count",
     DistinctColumn: null,
+    BreakdownField: null,
     SortOrder: 0,
     Enabled: 1,
     IsDefault: 1,
@@ -123,6 +134,10 @@ async function pressButton(tree: ReturnType<typeof TestRenderer.create>, label: 
 describe("DashboardCardManager", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    fieldRepo.getActiveTemplateFields.mockResolvedValue([
+      { FieldKey: "foundation_cond", FieldName: "Foundation Condition" },
+      { FieldKey: "pole_status", FieldName: "Pole Status" },
+    ]);
   });
 
   it("renders all cards with entity and counter summary", async () => {
@@ -453,5 +468,64 @@ describe("DashboardCardManager", () => {
       return props && props.placeholder === "value";
     });
     expect((valueInputs[0].props as { value?: string }).value).toBe("Done");
+  });
+
+  it("creates a breakdown card by picking a form field", async () => {
+    repo.createCard.mockResolvedValue(5);
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Count");
+    await pressButton(tree, "Breakdown");
+    await pressButton(tree, "Foundation Condition");
+    const titleInputs = tree.root.findAll((node) => {
+      const props = node.props as { label?: string };
+      return props && props.label === "Title";
+    });
+    expect((titleInputs[0].props as { value?: string }).value).toBe("Foundation Condition");
+    await pressButton(tree, "Save");
+    expect(repo.createCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Title: "Foundation Condition",
+        EntityType: "inspections",
+        CountMode: "count",
+        DistinctColumn: null,
+        BreakdownField: "foundation_cond",
+      })
+    );
+  });
+
+  it("requires a field before saving a breakdown card", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Count");
+    await pressButton(tree, "Breakdown");
+    await pressButton(tree, "Save");
+    const strings = collectStrings(tree.toJSON());
+    expect(strings.join(" ")).toContain("Select a field to group by.");
+    expect(repo.createCard).not.toHaveBeenCalled();
+  });
+
+  it("edit loads an existing breakdown card's field into the picker", async () => {
+    repo.updateCard.mockResolvedValue(undefined);
+    const tree = await renderManager([
+      cardOf({
+        CardID: 7,
+        CardKey: "foundation_breakdown",
+        Title: "Foundation Condition",
+        EntityType: "inspections",
+        CountMode: "count",
+        BreakdownField: "foundation_cond",
+      }),
+    ]);
+    await pressButton(tree, "pencil");
+    const strings = collectStrings(tree.toJSON());
+    expect(strings).toContain("Foundation Condition");
+    await pressButton(tree, "Save");
+    expect(repo.updateCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        CardID: 7,
+        BreakdownField: "foundation_cond",
+      })
+    );
   });
 });

@@ -49,4 +49,22 @@ describe("InspectionFieldRepository", () => {
       expect(options).toEqual([]);
     });
   });
+
+  describe("getActiveTemplateFields", () => {
+    it("loads active fields of the default template", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        { FieldKey: "foundation_cond", FieldName: "Foundation Condition" },
+        { FieldKey: "pole_status", FieldName: "Pole Status" },
+      ]);
+      const { default: InspectionFieldRepository } = require(
+        "@/src/database/repositories/InspectionFieldRepository"
+      );
+      const rows = await InspectionFieldRepository.getActiveTemplateFields();
+      expect(rows).toHaveLength(2);
+      const [sql] = (mockDb.getAllAsync as jest.Mock).mock.calls[0];
+      expect(sql).toContain("t.IsDefault = 1");
+      expect(sql).toContain("s.IsActive = 1");
+      expect(sql).toContain("f.IsActive = 1");
+    });
+  });
 });
