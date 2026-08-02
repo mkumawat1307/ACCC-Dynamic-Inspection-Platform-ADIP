@@ -147,7 +147,6 @@ return (
         title="Manage Cards"
         subtitle="Add, edit, reorder or disable dashboard cards"
         icon="tune-variant"
-        compact
         onPress={() =>
           router.push({
             pathname: "/projects/dashboard-settings",
@@ -166,7 +165,6 @@ return (
         title="New Inspection"
         subtitle="Start a new pole inspection"
         icon="clipboard-plus"
-        compact
         onPress={() =>
           router.push({
             pathname: "/inspection/new",
@@ -183,7 +181,6 @@ return (
         title="Inspection List"
         subtitle="View completed and draft inspections"
         icon="clipboard-list"
-        compact
         onPress={() =>
           router.push({
             pathname: "/inspection",
@@ -201,7 +198,6 @@ return (
         title="Settings"
         subtitle="Templates, Sections and Fields"
         icon="cog"
-        compact
         onPress={() => router.push("/settings")}
       />
     </View>
@@ -210,7 +206,6 @@ return (
         title="Reports"
         subtitle="Generate inspection reports"
         icon="file-chart"
-        compact
         onPress={() =>
           router.push({
             pathname: "/reports",
