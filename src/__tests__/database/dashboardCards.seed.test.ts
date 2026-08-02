@@ -40,7 +40,7 @@ describe("dashboard-cards.seed", () => {
     expect(execSpy).toHaveBeenCalledWith(createDashboardCardsTable);
   });
 
-  it("seeds exactly the four default cards on an empty project", async () => {
+  it("seeds exactly the six default cards on an empty project", async () => {
     await openProject();
     const { seedDashboardCards, DEFAULT_DASHBOARD_CARDS } = require("@/src/database/seeds/dashboard-cards.seed");
 
@@ -52,14 +52,14 @@ describe("dashboard-cards.seed", () => {
       "SELECT CardKey, Title FROM DashboardCards"
     );
 
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(6);
     expect(cards.map((c) => c.CardKey).sort()).toEqual(
-      ["total_poles", "total_cameras", "today_poles", "today_cameras"].sort()
+      ["total_inspections", "total_poles", "total_cameras", "today_inspections_done", "today_poles", "today_cameras"].sort()
     );
-    expect(DEFAULT_DASHBOARD_CARDS).toHaveLength(4);
+    expect(DEFAULT_DASHBOARD_CARDS).toHaveLength(6);
   });
 
-  it("is idempotent — seeding twice leaves exactly 4 rows", async () => {
+  it("is idempotent — seeding twice leaves exactly 6 rows", async () => {
     await openProject();
     const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
 
@@ -72,7 +72,7 @@ describe("dashboard-cards.seed", () => {
       "SELECT CardKey FROM DashboardCards"
     );
 
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(6);
   });
 
   it("does not duplicate existing default cards when custom rows exist", async () => {
@@ -94,9 +94,25 @@ describe("dashboard-cards.seed", () => {
       "SELECT CardKey FROM DashboardCards"
     );
 
-    expect(cards).toHaveLength(5);
+    expect(cards).toHaveLength(7);
     const keys = cards.map((c) => c.CardKey);
     expect(keys.filter((k) => k === "total_poles")).toHaveLength(1);
     expect(keys).toContain("custom_switch_total");
+  });
+
+  it("seeds today_inspections_done with a Completed status filter", async () => {
+    await openProject();
+    const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
+    await seedDashboardCards();
+
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const db: SQLiteDatabase = await dbModule.getDatabase();
+    const row = await db.getFirstAsync<{ FilterJson: string; CounterType: string; SortOrder: number }>(
+      "SELECT FilterJson, CounterType, SortOrder FROM DashboardCards WHERE CardKey = 'today_inspections_done'"
+    );
+    expect(row).not.toBeNull();
+    expect(row!.FilterJson).toBe(JSON.stringify({ Status: "Completed" }));
+    expect(row!.CounterType).toBe("today");
+    expect(row!.SortOrder).toBe(3);
   });
 });

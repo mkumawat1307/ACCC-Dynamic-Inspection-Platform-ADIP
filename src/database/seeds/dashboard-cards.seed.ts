@@ -10,14 +10,17 @@ export interface DashboardCardSeed {
   CounterType: string;
   CountMode: "count" | "distinct";
   DistinctColumn?: string;
+  FilterJson?: string;
   SortOrder: number;
 }
 
 export const DEFAULT_DASHBOARD_CARDS: DashboardCardSeed[] = [
-  { CardKey: "total_poles",    Title: "Total Poles",     Icon: "transmission-tower", Color: "#0B5ED7", EntityType: "inspections", CounterType: "total", CountMode: "distinct", DistinctColumn: "PoleID", SortOrder: 0 },
-  { CardKey: "total_cameras",  Title: "Total Cameras",   Icon: "cctv",               Color: "#198754", EntityType: "cameras",     CounterType: "total", CountMode: "count",   SortOrder: 1 },
-  { CardKey: "today_poles",    Title: "Today's Poles",   Icon: "transmission-tower", Color: "#DC3545", EntityType: "inspections", CounterType: "today", CountMode: "distinct", DistinctColumn: "PoleID", SortOrder: 2 },
-  { CardKey: "today_cameras",  Title: "Today's Cameras", Icon: "cctv",               Color: "#6F42C1", EntityType: "cameras",     CounterType: "today", CountMode: "count",   SortOrder: 3 },
+  { CardKey: "total_inspections",      Title: "Total Inspections",        Icon: "clipboard-text",     Color: "#0B5ED7", EntityType: "inspections", CounterType: "total", CountMode: "count",   SortOrder: 0 },
+  { CardKey: "total_poles",            Title: "Total Poles",              Icon: "transmission-tower", Color: "#0B5ED7", EntityType: "inspections", CounterType: "total", CountMode: "distinct", DistinctColumn: "i.PoleID", SortOrder: 1 },
+  { CardKey: "total_cameras",          Title: "Total Cameras",            Icon: "cctv",               Color: "#198754", EntityType: "cameras",     CounterType: "total", CountMode: "count",   SortOrder: 2 },
+  { CardKey: "today_inspections_done", Title: "Today's Inspections Done", Icon: "check-circle",       Color: "#198754", EntityType: "inspections", CounterType: "today", CountMode: "count",   FilterJson: JSON.stringify({ Status: "Completed" }), SortOrder: 3 },
+  { CardKey: "today_poles",            Title: "Today's Poles",            Icon: "transmission-tower", Color: "#DC3545", EntityType: "inspections", CounterType: "today", CountMode: "distinct", DistinctColumn: "i.PoleID", SortOrder: 4 },
+  { CardKey: "today_cameras",          Title: "Today's Cameras",          Icon: "cctv",               Color: "#6F42C1", EntityType: "cameras",     CounterType: "today", CountMode: "count",   SortOrder: 5 },
 ];
 
 export async function seedDashboardCards(): Promise<void> {
@@ -41,7 +44,7 @@ export async function seedDashboardCards(): Promise<void> {
       await db.runAsync(
         `INSERT INTO DashboardCards
          (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, SortOrder, Enabled, IsDefault)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1, 1)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
         [
           1,
           card.CardKey,
@@ -50,6 +53,7 @@ export async function seedDashboardCards(): Promise<void> {
           card.Color,
           card.EntityType,
           card.CounterType,
+          card.FilterJson ?? null,
           card.CountMode,
           card.DistinctColumn ?? null,
           card.SortOrder,

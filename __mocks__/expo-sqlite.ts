@@ -48,11 +48,18 @@ function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boole
   let paramIdx = 0;
   return (row: Row) => {
     return conditions.every((cond) => {
-      const match = cond.match(/(\w+)\s*=\s*\?/);
+      const match = cond.match(/(\w+)\s*=\s*(?:\?|'([^']*)'|(\d+))/);
       if (!match) return true;
       const col = match[1];
-      const param = params[paramIdx++];
-      return row[col] === param;
+      let value: unknown;
+      if (match[2] !== undefined) {
+        value = match[2];
+      } else if (match[3] !== undefined) {
+        value = parseInt(match[3], 10);
+      } else {
+        value = params[paramIdx++];
+      }
+      return row[col] === value;
     });
   };
 }
