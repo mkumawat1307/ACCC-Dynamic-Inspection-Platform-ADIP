@@ -46,6 +46,12 @@ Patch → Bug fixes
 - `SmartCardGenerator` service: discovers all active form fields (with field-type and option metadata), classifies each field type into a card kind (breakdown/aggregate/skip), and generates `DashboardCard` rows — two per field (Total + Today's) with correct `BreakdownField`/`AggregateField`/`CounterType`/`SectionLabel` wiring.
 - Isolation test: smart cards created from a field in Project A do not appear in Project B.
 
+### Changed
+
+- Smart Dashboard cards now carry a required `CardMode` column (`entitycount` / `dropdown` / `sum` / `fieldcount` / `datebreakdown`). Existing project DBs migrate and backfill automatically on next open (`migrateProjectSchema`): entity-count cards stay `entitycount`; cards whose breakdown/aggregate field no longer exists fall back to `entitycount` instead of aborting the migration.
+- Smart cards are rendered by their `CardMode`: dropdown/switch/checkbox fields → per-value breakdown; numeric fields → SUM aggregate; text/multiline fields → field-count; date fields → per-date breakdown; device fields (Camera/Switch, dropdown/switch/checkbox types) group Cameras/Switches by column; the `Remarks` field is excluded. Entity-count cards (Total/Today's poles, cameras, inspections) use `entitycount`.
+- Smart cards are non-editable: the card manager is picker-only and the manual Custom Card editor is removed; smart cards are deleted and re-added rather than edited. Deleting one card of a Total/Today's pair hides the field from the picker until both are removed, and re-adding never raises the `UNIQUE(ProjectID, CardKey)` constraint.
+
 ### Fixed
 
 - `DashboardCardRepository.createCard` INSERT column/placeholder mismatch (14 columns / 15 placeholders) that real SQLite would reject — now 16 columns / 16 placeholders including `SectionLabel` and `AggregateField`.
