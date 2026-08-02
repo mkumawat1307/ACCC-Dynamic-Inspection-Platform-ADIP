@@ -1,5 +1,5 @@
 import { getDatabase } from "../db";
-import { DashboardCard } from "@/src/models/DashboardCard";
+import { CardModeValue, DashboardCard } from "@/src/models/DashboardCard";
 import { DashboardCardRepository } from "./DashboardCardRepository";
 
 export interface SmartFormField {
@@ -8,9 +8,12 @@ export interface SmartFormField {
   FieldName: string;
   FieldType: string;
   Options: { label: string; value: string }[];
+  source?: "inspection" | "device";
+  DeviceType?: string;
+  DeviceColumn?: string;
 }
 
-export type SmartCardKind = "breakdown" | "aggregate" | "count" | "skip";
+export type SmartCardKind = CardModeValue | "skip";
 
 export interface SmartCardSpec {
   kind: SmartCardKind;
@@ -21,20 +24,20 @@ export interface SmartCardSpec {
   color: string;
 }
 
-const BREAKDOWN_TYPES = new Set([
-  "dropdown",
-  "switch",
-  "checkbox",
-  "text",
-  "multiline",
-  "date",
-  "date_auto",
-  "time",
-]);
-
-const AGGREGATE_TYPES = new Set(["number"]);
-
-const SKIP_TYPES = new Set(["gps", "device", "camera", "calculation"]);
+const TYPE_TO_MODE: Record<string, CardModeValue | "skip"> = {
+  dropdown: "dropdown",
+  switch: "dropdown",
+  checkbox: "dropdown",
+  number: "sum",
+  text: "fieldcount",
+  multiline: "fieldcount",
+  date: "datebreakdown",
+  date_auto: "datebreakdown",
+  gps: "skip",
+  device: "skip",
+  camera: "skip",
+  calculation: "skip",
+};
 
 function normalizeType(fieldType: string): string {
   return fieldType.toLowerCase();
@@ -105,6 +108,7 @@ export class SmartCardGenerator {
          AND s.IsActive = 1
          AND f.IsActive = 1
          AND f.IsVisible = 1
+         AND f.FieldKey != 'remarks'
        ORDER BY s.DisplayOrder ASC, f.DisplayOrder ASC;`
     );
 
@@ -124,17 +128,46 @@ export class SmartCardGenerator {
         FieldName: row.FieldName,
         FieldType: type,
         Options: options.map((o) => ({ label: o.OptionLabel, value: o.OptionValue })),
+        source: "inspection",
       });
     }
     return result;
   }
 
+  static async getDeviceFields(): Promise<SmartFormField[]> {
+    const db = await getDatabase();
+
+    const rows = await db.getAllAsync<{
+      FieldDefID: number;
+      DeviceType: string;
+      FieldName: string;
+      Label: string;
+      FieldType: string;
+    }>(
+      `SELECT FieldDefID, DeviceType, FieldName, Label, FieldType
+       FROM DeviceFieldDefinitions
+       WHERE DeviceType IN ('Camera', 'Switch')
+         AND FieldType IN ('dropdown', 'switch', 'checkbox')
+         AND IsActive = 1
+       ORDER BY DeviceType, DisplayOrder`
+    );
+
+    return rows.map((row) => ({
+      FieldID: row.FieldDefID,
+      FieldKey: `dev_${row.DeviceType}_${row.FieldName}`,
+      FieldName: row.Label,
+      FieldType: normalizeType(row.FieldType),
+      Options: [],
+      source: "device" as const,
+      DeviceType: row.DeviceType,
+      DeviceColumn: row.FieldName,
+    }));
+  }
+
   static getCardKind(fieldType: string): SmartCardKind {
-    const type = normalizeType(fieldType);
-    if (AGGREGATE_TYPES.has(type)) return "aggregate";
-    if (BREAKDOWN_TYPES.has(type)) return "breakdown";
-    if (SKIP_TYPES.has(type)) return "skip";
-    return "skip";
+    const mode = TYPE_TO_MODE[normalizeType(fieldType)];
+    if (mode === undefined || mode === "entitycount") return "skip";
+    return mode;
   }
 
   static getSpec(field: SmartFormField): SmartCardSpec {
@@ -155,25 +188,37 @@ export class SmartCardGenerator {
     projectId: number,
     baseSortOrder: number = 0
   ): DashboardCard[] {
+    const kind = this.getCardKind(field.FieldType);
+    if (kind === "skip") return [];
+    if (field.FieldKey === "remarks") return [];
+    const isSum = kind === "sum";
+    const isDevice = field.source === "device";
+    const entityType = isDevice
+      ? field.DeviceType === "Switch"
+        ? "switches"
+        : "cameras"
+      : "inspections";
+    const targetField = isDevice ? field.DeviceColumn! : field.FieldKey;
+    const keyBase = isDevice
+      ? `smart_dev_${field.DeviceType}_${field.DeviceColumn}`
+      : `smart_${field.FieldKey}`;
     const spec = this.getSpec(field);
-    if (spec.kind === "skip") return [];
-
-    const isAggregate = spec.kind === "aggregate";
 
     const totalCard: DashboardCard = {
       ProjectID: projectId,
-      CardKey: `smart_${spec.fieldKey}_total`,
-      Title: spec.fieldName,
+      CardKey: `${keyBase}_total`,
+      Title: field.FieldName,
       Icon: spec.icon,
       Color: spec.color,
-      EntityType: "inspections",
+      EntityType: entityType,
       CounterType: "total",
       FilterJson: null,
       CountMode: "count",
       DistinctColumn: null,
-      BreakdownField: spec.kind === "breakdown" ? spec.fieldKey : null,
+      CardMode: kind,
+      BreakdownField: isSum ? null : targetField,
+      AggregateField: isSum ? targetField : null,
       SectionLabel: "Total",
-      AggregateField: isAggregate ? spec.fieldKey : null,
       SortOrder: baseSortOrder,
       Enabled: 1,
       IsDefault: 0,
@@ -181,7 +226,7 @@ export class SmartCardGenerator {
 
     const todayCard: DashboardCard = {
       ...totalCard,
-      CardKey: `smart_${spec.fieldKey}_today`,
+      CardKey: `${keyBase}_today`,
       CounterType: "today",
       SectionLabel: "Today's",
       SortOrder: baseSortOrder + 1,
@@ -191,14 +236,18 @@ export class SmartCardGenerator {
   }
 
   static async getAvailableFields(projectId: number): Promise<SmartFormField[]> {
-    const allFields = await this.getFormFields();
+    const allFields = await this.getAllFields();
     const existingCards = await DashboardCardRepository.getAllCards(projectId);
     const existingKeys = new Set(existingCards.map((c) => c.CardKey));
 
     return allFields.filter((field) => {
       if (this.getCardKind(field.FieldType) === "skip") return false;
-      const hasTotal = existingKeys.has(`smart_${field.FieldKey}_total`);
-      const hasToday = existingKeys.has(`smart_${field.FieldKey}_today`);
+      const keyBase =
+        field.source === "device"
+          ? `smart_dev_${field.DeviceType}_${field.DeviceColumn}`
+          : `smart_${field.FieldKey}`;
+      const hasTotal = existingKeys.has(`${keyBase}_total`);
+      const hasToday = existingKeys.has(`${keyBase}_today`);
       return !(hasTotal && hasToday);
     });
   }
@@ -216,7 +265,7 @@ export class SmartCardGenerator {
     projectId: number,
     fieldKey: string
   ): Promise<number[]> {
-    const fields = await this.getFormFields();
+    const fields = await this.getAllFields();
     const field = fields.find((f) => f.FieldKey === fieldKey);
     if (!field) return [];
 
@@ -229,5 +278,11 @@ export class SmartCardGenerator {
       createdIds.push(id);
     }
     return createdIds;
+  }
+
+  private static async getAllFields(): Promise<SmartFormField[]> {
+    const inspectionFields = await this.getFormFields();
+    const deviceFields = await this.getDeviceFields();
+    return [...inspectionFields, ...deviceFields];
   }
 }
