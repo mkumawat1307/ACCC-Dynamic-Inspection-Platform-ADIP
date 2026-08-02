@@ -16,6 +16,7 @@ import { seedRepeatableGroups } from "../seeds/repeatable-groups.seed";
 import { seedRepeatableGroupFields } from "../seeds/repeatable-group-fields.seed";
 import { seedDeviceOptions } from "../seeds/device-options.seed";
 import { seedDeviceFieldDefinitions } from "../seeds/device-field-definitions.seed";
+import { seedDashboardCards } from "../seeds/dashboard-cards.seed";
 
 const PROJECTS_FOLDER = "Projects";
 
@@ -29,6 +30,7 @@ const SETTINGS_TABLES = [
   "DeviceOptions",
   "DeviceFieldDefinitions",
   "ProjectDeviceTypes",
+  "DashboardCards",
 ] as const;
 
 const INSPECTION_DATA_TABLES = [
@@ -88,6 +90,7 @@ export async function createProjectDb(
   await seedRepeatableGroupFields();
   await seedDeviceOptions();
   await seedDeviceFieldDefinitions();
+  await seedDashboardCards();
 
   await clearActiveProject();
 

@@ -19,6 +19,9 @@ import { createCamerasTable } from "./tables/cameras.table";
 import { createSwitchesTable } from "./tables/switches.table";
 import { createPhotosTable } from "./tables/photos.table";
 import { createDeviceRecordsTable } from "./tables/device-records.table";
+import { createDashboardCardsTable } from "./tables/dashboard-cards.table";
+
+import { DashboardCardRepository } from "./repositories/DashboardCardRepository";
 
 import { logger } from "@/src/utils/logger";
 
@@ -187,6 +190,9 @@ export async function createProjectSchema() {
         );
     `);
 
+    logger.info("[schema] Creating DashboardCards table...");
+    await db.execAsync(createDashboardCardsTable);
+
     logger.info("âœ… [schema] createProjectSchema() â€” END");
 }
 
@@ -200,34 +206,44 @@ export async function migrateProjectSchema() {
     );
     if (remarksSection) {
         logger.info("[schema] migrateProjectSchema() — remarks section already exists (ok)");
-        return;
+    } else {
+        const categorization = await db.getFirstAsync<{ SectionID: number; TemplateID: number; DisplayOrder: number }>(
+            `SELECT SectionID, TemplateID, DisplayOrder FROM InspectionSections WHERE SectionKey = 'categorization' LIMIT 1`
+        );
+        if (!categorization) {
+            logger.info("[schema] migrateProjectSchema() — categorization section not found, skipping");
+        } else {
+            const result = await db.runAsync(
+                `INSERT INTO InspectionSections
+                 (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
+                 VALUES (?, ?, ?, ?, ?, ?, 0, 1, 1, 1)`,
+                [categorization.TemplateID, "Remarks", "remarks", "Remarks", "note-text", categorization.DisplayOrder + 1]
+            );
+            const remarksId = result.lastInsertRowId;
+
+            await db.runAsync(
+                `UPDATE InspectionFields SET SectionID = ? WHERE FieldKey = 'remarks' AND SectionID = ?`,
+                [remarksId, categorization.SectionID]
+            );
+
+            await db.runAsync(
+                `UPDATE InspectionSections SET SectionName = 'Categorization' WHERE SectionID = ?`,
+                [categorization.SectionID]
+            );
+        }
     }
 
-    const categorization = await db.getFirstAsync<{ SectionID: number; TemplateID: number; DisplayOrder: number }>(
-        `SELECT SectionID, TemplateID, DisplayOrder FROM InspectionSections WHERE SectionKey = 'categorization' LIMIT 1`
-    );
-    if (!categorization) {
-        logger.info("[schema] migrateProjectSchema() — categorization section not found, skipping");
-        return;
+    try {
+        await db.execAsync(createDashboardCardsTable);
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — DashboardCards table creation failed (non-fatal):", e);
     }
 
-    const result = await db.runAsync(
-        `INSERT INTO InspectionSections
-         (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
-         VALUES (?, ?, ?, ?, ?, ?, 0, 1, 1, 1)`,
-        [categorization.TemplateID, "Remarks", "remarks", "Remarks", "note-text", categorization.DisplayOrder + 1]
-    );
-    const remarksId = result.lastInsertRowId;
-
-    await db.runAsync(
-        `UPDATE InspectionFields SET SectionID = ? WHERE FieldKey = 'remarks' AND SectionID = ?`,
-        [remarksId, categorization.SectionID]
-    );
-
-    await db.runAsync(
-        `UPDATE InspectionSections SET SectionName = 'Categorization' WHERE SectionID = ?`,
-        [categorization.SectionID]
-    );
+    try {
+        await DashboardCardRepository.ensureDefaultCards(1);
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — ensureDefaultCards failed (non-fatal):", e);
+    }
 
     logger.info("✅ [schema] migrateProjectSchema() — END");
 }

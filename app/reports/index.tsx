@@ -64,8 +64,7 @@ export default function ReportsScreen() {
     }
   };
 
-  const baseCount = table?.rows.filter((r) => !r.isDeviceRow).length ?? 0;
-  const deviceCount = table?.rows.filter((r) => r.isDeviceRow).length ?? 0;
+  const totalRows = table?.rows.length ?? 0;
   const columnCount = table?.headers.length ?? 0;
 
   return (
@@ -101,7 +100,7 @@ export default function ReportsScreen() {
         ) : table && table.rows.length > 0 ? (
           <>
             <Text style={styles.summary}>
-              {baseCount} inspections · {deviceCount} device rows · {columnCount} columns
+              Total Inspections: {table.inspectionCount} · Total Rows: {totalRows} · Total Columns: {columnCount}
             </Text>
             <ReportTablePreview table={table} />
           </>

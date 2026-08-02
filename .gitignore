@@ -41,3 +41,7 @@ yarn-error.*
 coverage/
 
 app-example
+
+# Expo typegen output junk
+%TEMP%/
+

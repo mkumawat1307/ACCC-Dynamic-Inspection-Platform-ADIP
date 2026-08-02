@@ -1,6 +1,7 @@
 // src/database/repositories/InspectionRepository.ts
 
 import { getDatabase } from "../db";
+import { logger } from "@/src/utils/logger";
 import { InspectionSection, InspectionField } from "./InspectionTypes";
 import { deleteInspectionData } from "./inspectionDataHelper";
 
@@ -140,6 +141,22 @@ static async saveFieldValue(
   value: string
 ) {
   const db = await getDatabase();
+
+  const parents = await db.getFirstAsync<{ hasInspection: number | null; hasField: number | null }>(
+    `
+    SELECT
+      (SELECT 1 FROM Inspections WHERE InspectionID = ?) AS hasInspection,
+      (SELECT 1 FROM InspectionFields WHERE FieldID = ?) AS hasField
+    `,
+    [inspectionId, fieldId]
+  );
+
+  if (!parents?.hasInspection || !parents?.hasField) {
+    logger.warn(
+      `[InspectionRepository.saveFieldValue] skipped write: inspection ${inspectionId} or field ${fieldId} does not exist`
+    );
+    return;
+  }
 
   const existing = await db.getFirstAsync<{ ValueID: number }>(
     `

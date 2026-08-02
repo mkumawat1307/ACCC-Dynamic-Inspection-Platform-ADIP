@@ -44,6 +44,7 @@ export interface ReportTable {
   sections: ReportSection[];
   headers: string[];
   rows: ReportRow[];
+  inspectionCount: number;
 }
 
 function normalizeDeviceType(deviceType: string): string {
@@ -139,6 +140,19 @@ export async function buildReportTable(
   inspectionIds?: number | number[]
 ): Promise<ReportTable> {
   return (await buildReportTableInternal(projectId, inspectionIds)).table;
+}
+
+export async function getReportCounts(projectId: number): Promise<{
+  inspectionCount: number;
+  rowCount: number;
+  columnCount: number;
+}> {
+  const { table } = await buildReportTableInternal(projectId);
+  return {
+    inspectionCount: table.inspectionCount,
+    rowCount: table.rows.length,
+    columnCount: table.headers.length,
+  };
 }
 
 async function buildReportTableInternal(
@@ -368,7 +382,7 @@ async function buildReportTableInternal(
     }
   }
 
-  return { table: { sections, headers, rows: rowsOut }, inspectionCount: inspections.length };
+  return { table: { sections, headers, rows: rowsOut, inspectionCount: inspections.length }, inspectionCount: inspections.length };
 }
 
 function parseDeviceData(data: string | null): Record<string, string> {
