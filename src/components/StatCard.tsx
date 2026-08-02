@@ -2,6 +2,7 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import { Card, Text } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { COLORS, RADIUS, SPACING } from "@/src/constants/ui";
 
 interface StatCardProps {
   title: string;
@@ -14,17 +15,13 @@ export default function StatCard({
   title,
   value,
   icon,
-  color = "#0B5ED7",
+  color = COLORS.primary,
 }: StatCardProps) {
   return (
     <Card style={styles.card}>
-      <Card.Content>
+      <Card.Content style={styles.content}>
         <View style={styles.iconContainer}>
-          <MaterialCommunityIcons
-            name={icon}
-            size={28}
-            color={color}
-          />
+          <MaterialCommunityIcons name={icon} size={28} color={color} />
         </View>
 
         <Text variant="headlineMedium" style={styles.value}>
@@ -42,13 +39,16 @@ export default function StatCard({
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    margin: 6,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
+  },
+
+  content: {
+    alignItems: "center",
   },
 
   iconContainer: {
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
   },
 
   value: {
@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
 
   title: {
     textAlign: "center",
-    color: "#666",
-    marginTop: 4,
+    color: COLORS.textSecondary,
+    marginTop: SPACING.xs,
   },
 });
