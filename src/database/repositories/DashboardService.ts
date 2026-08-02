@@ -17,15 +17,25 @@ export class DashboardService {
     const cards = await DashboardCardRepository.getEnabledCards(projectId);
     const result: CardWithCount[] = [];
     for (const card of cards) {
-      if (card.AggregateField) {
-        const count = await StatisticCountService.fieldCard(projectId, card);
-        result.push({ ...card, count, breakdown: undefined });
-      } else if (card.BreakdownField) {
-        const breakdown = await StatisticCountService.breakdownCard(projectId, card);
-        result.push({ ...card, count: undefined, breakdown });
-      } else {
-        const count = await StatisticCountService.countCard(projectId, card);
-        result.push({ ...card, count, breakdown: undefined });
+      switch (card.CardMode) {
+        case "sum":
+          result.push({ ...card, count: await StatisticCountService.fieldCard(projectId, card), breakdown: undefined });
+          break;
+        case "fieldcount":
+          result.push({ ...card, count: await StatisticCountService.fieldCountCard(projectId, card), breakdown: undefined });
+          break;
+        case "datebreakdown":
+          result.push({ ...card, count: undefined, breakdown: await StatisticCountService.dateBreakdownCard(projectId, card) });
+          break;
+        case "dropdown":
+          if (card.EntityType === "inspections") {
+            result.push({ ...card, count: undefined, breakdown: await StatisticCountService.breakdownCard(projectId, card) });
+          } else {
+            result.push({ ...card, count: undefined, breakdown: await StatisticCountService.deviceBreakdownCard(projectId, card) });
+          }
+          break;
+        default:
+          result.push({ ...card, count: await StatisticCountService.countCard(projectId, card), breakdown: undefined });
       }
     }
     return result;

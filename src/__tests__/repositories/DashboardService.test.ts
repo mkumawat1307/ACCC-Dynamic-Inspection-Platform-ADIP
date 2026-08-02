@@ -25,6 +25,7 @@ function cardOf(overrides: Partial<DashboardCard> = {}): DashboardCard {
     BreakdownField: null,
     SectionLabel: null,
     AggregateField: null,
+    CardMode: "entitycount",
     SortOrder: 0,
     Enabled: 1,
     IsDefault: 1,
@@ -37,20 +38,106 @@ describe("DashboardService", () => {
     jest.clearAllMocks();
   });
 
-  it("returns enabled cards with their computed counts", async () => {
-    cardRepo.getEnabledCards.mockResolvedValue([
-      cardOf(),
-      cardOf({ CardID: 2, CardKey: "total_cameras", Title: "Total Cameras" }),
-    ]);
-    countService.countCard.mockResolvedValueOnce(12).mockResolvedValueOnce(40);
+  it("dispatches entitycount to countCard", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([cardOf()]);
+    countService.countCard.mockResolvedValue(12);
 
     const result = await DashboardService.getEnabledCardsWithCounts(1);
 
-    expect(cardRepo.getEnabledCards).toHaveBeenCalledWith(1);
-    expect(countService.countCard).toHaveBeenCalledTimes(2);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toEqual(expect.objectContaining({ CardID: 1, count: 12 }));
-    expect(result[1]).toEqual(expect.objectContaining({ CardID: 2, count: 40 }));
+    expect(countService.fieldCard).not.toHaveBeenCalled();
+    expect(countService.fieldCountCard).not.toHaveBeenCalled();
+    expect(countService.breakdownCard).not.toHaveBeenCalled();
+    expect(countService.deviceBreakdownCard).not.toHaveBeenCalled();
+    expect(countService.dateBreakdownCard).not.toHaveBeenCalled();
+    expect(countService.countCard).toHaveBeenCalledWith(1, expect.objectContaining({ CardID: 1 }));
+    expect(result[0]).toEqual(expect.objectContaining({ CardID: 1, count: 12, breakdown: undefined }));
+  });
+
+  it("dispatches sum to fieldCard", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([
+      cardOf({ CardID: 5, CardKey: "total_camera_count", AggregateField: "camera_count", CardMode: "sum" }),
+    ]);
+    countService.fieldCard.mockResolvedValue(17);
+
+    const result = await DashboardService.getEnabledCardsWithCounts(1);
+
+    expect(countService.countCard).not.toHaveBeenCalled();
+    expect(countService.fieldCard).toHaveBeenCalledWith(1, expect.objectContaining({ CardMode: "sum" }));
+    expect(result[0]).toEqual(expect.objectContaining({ CardID: 5, count: 17, breakdown: undefined }));
+  });
+
+  it("dispatches fieldcount to fieldCountCard", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([
+      cardOf({ CardID: 6, CardKey: "camera_count_done", BreakdownField: "camera_count", CardMode: "fieldcount" }),
+    ]);
+    countService.fieldCountCard.mockResolvedValue(9);
+
+    const result = await DashboardService.getEnabledCardsWithCounts(1);
+
+    expect(countService.countCard).not.toHaveBeenCalled();
+    expect(countService.fieldCountCard).toHaveBeenCalledWith(1, expect.objectContaining({ CardMode: "fieldcount" }));
+    expect(result[0]).toEqual(expect.objectContaining({ CardID: 6, count: 9, breakdown: undefined }));
+  });
+
+  it("dispatches dropdown with inspections to breakdownCard", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([
+      cardOf({ CardID: 9, CardKey: "foundation_breakdown", BreakdownField: "foundation_cond", CardMode: "dropdown" }),
+    ]);
+    countService.breakdownCard.mockResolvedValue([
+      { label: "Good", count: 42 },
+      { label: "Bad", count: 7 },
+    ]);
+
+    const result = await DashboardService.getEnabledCardsWithCounts(1);
+
+    expect(countService.countCard).not.toHaveBeenCalled();
+    expect(countService.deviceBreakdownCard).not.toHaveBeenCalled();
+    expect(countService.breakdownCard).toHaveBeenCalledWith(1, expect.objectContaining({ BreakdownField: "foundation_cond" }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      CardID: 9,
+      count: undefined,
+      breakdown: [
+        { label: "Good", count: 42 },
+        { label: "Bad", count: 7 },
+      ],
+    }));
+  });
+
+  it("dispatches dropdown with cameras to deviceBreakdownCard", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([
+      cardOf({ CardID: 10, CardKey: "camera_type_breakdown", EntityType: "cameras", BreakdownField: "CameraType", CardMode: "dropdown" }),
+    ]);
+    countService.deviceBreakdownCard.mockResolvedValue([
+      { label: "PTZ", count: 3 },
+      { label: "Fixed", count: 2 },
+    ]);
+
+    const result = await DashboardService.getEnabledCardsWithCounts(1);
+
+    expect(countService.breakdownCard).not.toHaveBeenCalled();
+    expect(countService.deviceBreakdownCard).toHaveBeenCalledWith(1, expect.objectContaining({ EntityType: "cameras" }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      CardID: 10,
+      count: undefined,
+      breakdown: [
+        { label: "PTZ", count: 3 },
+        { label: "Fixed", count: 2 },
+      ],
+    }));
+  });
+
+  it("dispatches datebreakdown to dateBreakdownCard", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([
+      cardOf({ CardID: 11, CardKey: "inspection_date_breakdown", BreakdownField: "inspection_date", CardMode: "datebreakdown" }),
+    ]);
+    countService.dateBreakdownCard.mockResolvedValue([{ label: "2026-08-02", count: 5 }]);
+
+    const result = await DashboardService.getEnabledCardsWithCounts(1);
+
+    expect(countService.countCard).not.toHaveBeenCalled();
+    expect(countService.breakdownCard).not.toHaveBeenCalled();
+    expect(countService.dateBreakdownCard).toHaveBeenCalledWith(1, expect.objectContaining({ CardMode: "datebreakdown" }));
+    expect(result[0]).toEqual(expect.objectContaining({ CardID: 11, count: undefined, breakdown: [{ label: "2026-08-02", count: 5 }] }));
   });
 
   it("treats a failing card count as zero without throwing", async () => {
@@ -71,71 +158,37 @@ describe("DashboardService", () => {
     expect(countService.countCard).not.toHaveBeenCalled();
   });
 
-  it("returns breakdown rows for a breakdown card without calling countCard", async () => {
+  it("dispatches each mode to its engine across a mixed set", async () => {
     cardRepo.getEnabledCards.mockResolvedValue([
-      cardOf({ CardID: 9, CardKey: "foundation_breakdown", BreakdownField: "foundation_cond" }),
-    ]);
-    countService.breakdownCard.mockResolvedValue([
-      { label: "Good", count: 42 },
-      { label: "Bad", count: 7 },
-    ]);
-
-    const result = await DashboardService.getEnabledCardsWithCounts(1);
-
-    expect(countService.countCard).not.toHaveBeenCalled();
-    expect(countService.breakdownCard).toHaveBeenCalledWith(1, expect.objectContaining({ BreakdownField: "foundation_cond" }));
-    expect(result[0]).toEqual(expect.objectContaining({
-      CardID: 9,
-      count: undefined,
-      breakdown: [
-        { label: "Good", count: 42 },
-        { label: "Bad", count: 7 },
-      ],
-    }));
-  });
-
-  it("mixes normal and breakdown cards", async () => {
-    cardRepo.getEnabledCards.mockResolvedValue([
-      cardOf({ CardID: 1, CardKey: "total_poles" }),
-      cardOf({ CardID: 2, CardKey: "foundation_breakdown", BreakdownField: "foundation_cond" }),
-    ]);
-    countService.countCard.mockResolvedValue(12);
-    countService.breakdownCard.mockResolvedValue([{ label: "Good", count: 42 }]);
-
-    const result = await DashboardService.getEnabledCardsWithCounts(1);
-
-    expect(result[0]).toEqual(expect.objectContaining({ count: 12, breakdown: undefined }));
-    expect(result[1]).toEqual(expect.objectContaining({ count: undefined, breakdown: [{ label: "Good", count: 42 }] }));
-  });
-
-  it("returns a summed value for an aggregate card without calling count/breakdown", async () => {
-    cardRepo.getEnabledCards.mockResolvedValue([
-      cardOf({ CardID: 5, CardKey: "total_camera_count", AggregateField: "camera_count" }),
-    ]);
-    countService.fieldCard.mockResolvedValue(17);
-
-    const result = await DashboardService.getEnabledCardsWithCounts(1);
-
-    expect(countService.countCard).not.toHaveBeenCalled();
-    expect(countService.breakdownCard).not.toHaveBeenCalled();
-    expect(countService.fieldCard).toHaveBeenCalledWith(1, expect.objectContaining({ AggregateField: "camera_count" }));
-    expect(result[0]).toEqual(expect.objectContaining({ CardID: 5, count: 17 }));
-  });
-
-  it("mixes count, breakdown, and aggregate cards", async () => {
-    cardRepo.getEnabledCards.mockResolvedValue([
-      cardOf({ CardID: 1, CardKey: "total_poles" }),
-      cardOf({ CardID: 2, CardKey: "foundation_breakdown", BreakdownField: "foundation_cond" }),
-      cardOf({ CardID: 3, CardKey: "total_camera_count", AggregateField: "camera_count" }),
+      cardOf({ CardID: 1, CardKey: "total_poles", CardMode: "entitycount" }),
+      cardOf({ CardID: 2, CardKey: "foundation_breakdown", BreakdownField: "foundation_cond", CardMode: "dropdown" }),
+      cardOf({ CardID: 3, CardKey: "total_camera_count", AggregateField: "camera_count", CardMode: "sum" }),
+      cardOf({ CardID: 4, CardKey: "camera_count_done", BreakdownField: "camera_count", CardMode: "fieldcount" }),
+      cardOf({ CardID: 5, CardKey: "inspection_date_breakdown", BreakdownField: "inspection_date", CardMode: "datebreakdown" }),
+      cardOf({ CardID: 6, CardKey: "camera_type_breakdown", EntityType: "cameras", BreakdownField: "CameraType", CardMode: "dropdown" }),
     ]);
     countService.countCard.mockResolvedValue(12);
     countService.breakdownCard.mockResolvedValue([{ label: "Good", count: 42 }]);
     countService.fieldCard.mockResolvedValue(17);
+    countService.fieldCountCard.mockResolvedValue(9);
+    countService.dateBreakdownCard.mockResolvedValue([{ label: "2026-08-02", count: 5 }]);
+    countService.deviceBreakdownCard.mockResolvedValue([{ label: "PTZ", count: 3 }]);
 
     const result = await DashboardService.getEnabledCardsWithCounts(1);
 
-    expect(result[0]).toEqual(expect.objectContaining({ count: 12, breakdown: undefined }));
-    expect(result[1]).toEqual(expect.objectContaining({ count: undefined, breakdown: [{ label: "Good", count: 42 }] }));
-    expect(result[2]).toEqual(expect.objectContaining({ count: 17, breakdown: undefined }));
+    expect(countService.countCard).toHaveBeenCalledTimes(1);
+    expect(countService.fieldCard).toHaveBeenCalledTimes(1);
+    expect(countService.fieldCountCard).toHaveBeenCalledTimes(1);
+    expect(countService.breakdownCard).toHaveBeenCalledTimes(1);
+    expect(countService.dateBreakdownCard).toHaveBeenCalledTimes(1);
+    expect(countService.deviceBreakdownCard).toHaveBeenCalledTimes(1);
+    expect(result).toEqual([
+      expect.objectContaining({ CardID: 1, count: 12, breakdown: undefined }),
+      expect.objectContaining({ CardID: 2, count: undefined, breakdown: [{ label: "Good", count: 42 }] }),
+      expect.objectContaining({ CardID: 3, count: 17, breakdown: undefined }),
+      expect.objectContaining({ CardID: 4, count: 9, breakdown: undefined }),
+      expect.objectContaining({ CardID: 5, count: undefined, breakdown: [{ label: "2026-08-02", count: 5 }] }),
+      expect.objectContaining({ CardID: 6, count: undefined, breakdown: [{ label: "PTZ", count: 3 }] }),
+    ]);
   });
 });

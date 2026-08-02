@@ -9,6 +9,7 @@ export interface CountEntityConfig {
   projectClause: string;
   filterableColumns: string[];
   distinctableColumns: string[];
+  deviceColumns: string[];
 }
 
 export const COUNT_ENTITIES: Record<string, CountEntityConfig> = {
@@ -19,6 +20,7 @@ export const COUNT_ENTITIES: Record<string, CountEntityConfig> = {
     projectClause: "i.ProjectID = ?",
     filterableColumns: ["Status"],
     distinctableColumns: ["i.PoleID", "i.InspectionID"],
+    deviceColumns: [],
   },
   cameras: {
     table: "Cameras",
@@ -27,6 +29,17 @@ export const COUNT_ENTITIES: Record<string, CountEntityConfig> = {
     projectClause: "i.ProjectID = ?",
     filterableColumns: ["CameraType", "CameraStatus"],
     distinctableColumns: ["c.CameraID"],
+    deviceColumns: [
+      "CameraType",
+      "CameraStatus",
+      "CameraMake",
+      "CameraModel",
+      "CameraIP",
+      "CameraSerialNumber",
+      "CameraSI",
+      "SDCardCapacity",
+      "SDCardStatus",
+    ],
   },
   switches: {
     table: "Switches",
@@ -35,6 +48,15 @@ export const COUNT_ENTITIES: Record<string, CountEntityConfig> = {
     projectClause: "i.ProjectID = ?",
     filterableColumns: ["SwitchType", "SwitchStatus"],
     distinctableColumns: ["s.SwitchID"],
+    deviceColumns: [
+      "SwitchType",
+      "SwitchStatus",
+      "SwitchMake",
+      "SwitchModel",
+      "SwitchIP",
+      "SwitchSerialNumber",
+      "SwitchSI",
+    ],
   },
   devices: {
     table: "DeviceRecords",
@@ -43,6 +65,7 @@ export const COUNT_ENTITIES: Record<string, CountEntityConfig> = {
     projectClause: "i.ProjectID = ?",
     filterableColumns: ["DeviceType", "DeviceLabel"],
     distinctableColumns: ["r.RecordID"],
+    deviceColumns: [],
   },
 };
 
@@ -206,6 +229,121 @@ export class StatisticCountService {
       return row?.total ?? 0;
     } catch {
       return 0;
+    }
+  }
+
+  static async fieldCountCard(projectId: number, card: DashboardCard): Promise<number> {
+    try {
+      if (card.EntityType !== "inspections" || !card.BreakdownField) return 0;
+
+      const counter = COUNTER_TYPES[card.CounterType];
+      if (!counter) return 0;
+
+      const params: (string | number)[] = [projectId];
+
+      const time = counter.buildTimeClause("i");
+      if (time.clause) params.push(...time.params);
+
+      params.push(card.BreakdownField);
+
+      const sql = `SELECT COUNT(DISTINCT iv.InspectionID) AS count
+         FROM Inspections i
+         JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
+         JOIN InspectionFields f ON f.FieldID = iv.FieldID
+         WHERE i.ProjectID = ?
+         ${time.clause}
+         AND f.FieldKey = ?
+         AND f.IsActive = 1
+         AND iv.FieldValue IS NOT NULL AND iv.FieldValue != ''`;
+
+      const db = await getDatabase();
+      const row = await db.getFirstAsync<{ count: number }>(sql, params);
+      return row?.count ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  static async dateBreakdownCard(
+    projectId: number,
+    card: DashboardCard
+  ): Promise<{ label: string; count: number }[]> {
+    try {
+      if (card.EntityType !== "inspections" || !card.BreakdownField) return [];
+
+      const entity = COUNT_ENTITIES.inspections;
+      const counter = COUNTER_TYPES[card.CounterType];
+      if (!counter) return [];
+
+      const params: (string | number)[] = [projectId];
+
+      const time = counter.buildTimeClause(entity.alias);
+      if (time.clause) params.push(...time.params);
+
+      const filters = parseFilterJson(card.FilterJson);
+      const filterFragments: string[] = [];
+      for (const [field, value] of Object.entries(filters)) {
+        if (!entity.filterableColumns.includes(field)) continue;
+        filterFragments.push(`AND ${entity.alias}.${field} = ?`);
+        params.push(String(value));
+      }
+
+      params.push(card.BreakdownField);
+
+      const sql = `SELECT iv.FieldValue AS label, COUNT(DISTINCT iv.InspectionID) AS count
+         FROM Inspections i
+         JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
+         JOIN InspectionFields f ON f.FieldID = iv.FieldID
+         WHERE i.ProjectID = ?
+         ${time.clause}
+         ${filterFragments.join(" ")}
+         AND f.FieldKey = ?
+         AND f.IsActive = 1
+         GROUP BY iv.FieldValue
+         ORDER BY count DESC, label ASC`;
+
+      const db = await getDatabase();
+      const rows = await db.getAllAsync<{ label: string | null; count: number }>(sql, params);
+      return rows.map((row) => ({ label: row.label ?? "(Not set)", count: row.count }));
+    } catch {
+      return [];
+    }
+  }
+
+  static async deviceBreakdownCard(
+    projectId: number,
+    card: DashboardCard
+  ): Promise<{ label: string; count: number }[]> {
+    try {
+      if (!card.BreakdownField) return [];
+
+      const entity = COUNT_ENTITIES[card.EntityType];
+      if (!entity || !entity.deviceColumns.includes(card.BreakdownField)) return [];
+
+      const counter = COUNTER_TYPES[card.CounterType];
+      if (!counter) return [];
+
+      const params: (string | number)[] = [projectId];
+
+      const time = counter.buildTimeClause(entity.alias);
+      if (time.clause) params.push(...time.params);
+
+      const column = card.BreakdownField;
+
+      const sql = `SELECT ${entity.alias}.${column} AS label, COUNT(*) AS count
+         FROM ${entity.table} ${entity.alias}
+         ${entity.joins}
+         WHERE ${entity.projectClause}
+         ${time.clause}
+         AND ${entity.alias}.${column} IS NOT NULL AND ${entity.alias}.${column} != ''
+         GROUP BY ${entity.alias}.${column}
+         ORDER BY count DESC, label ASC`;
+
+      const db = await getDatabase();
+      const rows = await db.getAllAsync<{ label: string | null; count: number }>(sql, params);
+      return rows.map((row) => ({ label: row.label ?? "(Not set)", count: row.count }));
+    } catch {
+      return [];
     }
   }
 }
