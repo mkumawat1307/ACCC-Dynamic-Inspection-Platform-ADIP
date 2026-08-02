@@ -14,6 +14,7 @@ import {
 } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { DashboardCardRepository } from "@/src/database/repositories/DashboardCardRepository";
+import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import { COUNT_ENTITIES, COUNTER_TYPES } from "@/src/database/repositories/StatisticCountService";
 import { DashboardCard } from "@/src/models/DashboardCard";
 
@@ -96,8 +97,10 @@ export default function DashboardCardManager({ projectId }: Props) {
   const [color, setColor] = useState("#0B5ED7");
   const [entityType, setEntityType] = useState("inspections");
   const [counterType, setCounterType] = useState("total");
-  const [countMode, setCountMode] = useState<"count" | "distinct">("count");
+  const [editorMode, setEditorMode] = useState<"count" | "distinct" | "breakdown">("count");
   const [distinctColumn, setDistinctColumn] = useState<string>("");
+  const [breakdownField, setBreakdownField] = useState<string>("");
+  const [breakdownOptions, setBreakdownOptions] = useState<{ FieldKey: string; FieldName: string }[]>([]);
   const [filters, setFilters] = useState<FilterRow[]>([]);
   const [validationError, setValidationError] = useState<string>("");
 
@@ -108,6 +111,7 @@ export default function DashboardCardManager({ projectId }: Props) {
   const [counterMenuVisible, setCounterMenuVisible] = useState(false);
   const [modeMenuVisible, setModeMenuVisible] = useState(false);
   const [distinctMenuVisible, setDistinctMenuVisible] = useState(false);
+  const [breakdownMenuVisible, setBreakdownMenuVisible] = useState(false);
   const [filterMenuIndex, setFilterMenuIndex] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -128,8 +132,10 @@ export default function DashboardCardManager({ projectId }: Props) {
     setColor("#0B5ED7");
     setEntityType("inspections");
     setCounterType("total");
-    setCountMode("count");
+    setEditorMode("count");
     setDistinctColumn("");
+    setBreakdownField("");
+    setBreakdownOptions([]);
     setFilters([]);
     setValidationError("");
     setEditorVisible(true);
@@ -142,14 +148,22 @@ export default function DashboardCardManager({ projectId }: Props) {
     setColor(card.Color);
     setEntityType(card.EntityType);
     setCounterType(card.CounterType);
-    setCountMode(card.CountMode);
+    setEditorMode(card.BreakdownField ? "breakdown" : card.CountMode === "distinct" ? "distinct" : "count");
     setDistinctColumn(card.DistinctColumn ?? "");
+    setBreakdownField(card.BreakdownField ?? "");
     setFilters(parseFilters(card.FilterJson));
     setValidationError("");
     setEditorVisible(true);
+    if (card.BreakdownField) {
+      InspectionFieldRepository.getActiveTemplateFields().then(setBreakdownOptions);
+    }
   };
 
   const handleSave = async () => {
+    if (editorMode === "breakdown" && !breakdownField) {
+      setValidationError("Select a field to group by.");
+      return;
+    }
     if (!title.trim()) {
       setValidationError("Title is required.");
       return;
@@ -168,8 +182,9 @@ export default function DashboardCardManager({ projectId }: Props) {
       EntityType: entityType,
       CounterType: counterType,
       FilterJson: filtersToJson(filters),
-      CountMode: countMode,
-      DistinctColumn: countMode === "distinct" ? distinctColumn : null,
+      CountMode: editorMode === "distinct" ? "distinct" : "count",
+      DistinctColumn: editorMode === "distinct" ? distinctColumn : null,
+      BreakdownField: editorMode === "breakdown" ? breakdownField : null,
       SortOrder: editingCard?.SortOrder ?? 0,
       Enabled: editingCard?.Enabled ?? 1,
       IsDefault: editingCard?.IsDefault ?? 0,
@@ -353,6 +368,10 @@ export default function DashboardCardManager({ projectId }: Props) {
                   title={entityLabel(key)}
                   onPress={() => {
                     setEntityType(key);
+                    if (key !== "inspections") {
+                      setEditorMode((prev) => (prev === "breakdown" ? "count" : prev));
+                      setBreakdownField("");
+                    }
                     setDistinctColumn("");
                     setFilters([]);
                     setEntityMenuVisible(false);
@@ -395,7 +414,7 @@ export default function DashboardCardManager({ projectId }: Props) {
             onPress={() => setModeMenuVisible(true)}
             style={styles.input}
           >
-            {countMode === "distinct" ? "Distinct" : "Count"}
+            {editorMode === "breakdown" ? "Breakdown" : editorMode === "distinct" ? "Distinct" : "Count"}
           </Button>
           <Dialog
             visible={modeMenuVisible}
@@ -406,21 +425,37 @@ export default function DashboardCardManager({ projectId }: Props) {
               <List.Item
                 title="Count"
                 onPress={() => {
-                  setCountMode("count");
+                  setEditorMode("count");
+                  setBreakdownField("");
                   setModeMenuVisible(false);
                 }}
               />
               <List.Item
                 title="Distinct"
                 onPress={() => {
-                  setCountMode("distinct");
+                  setEditorMode("distinct");
+                  setBreakdownField("");
                   setModeMenuVisible(false);
+                }}
+              />
+              <List.Item
+                title="Breakdown"
+                onPress={() => {
+                  setEditorMode("breakdown");
+                  setDistinctColumn("");
+                  setEntityType("inspections");
+                  setBreakdownField("");
+                  setFilters([]);
+                  setModeMenuVisible(false);
+                  InspectionFieldRepository.getActiveTemplateFields()
+                    .then(setBreakdownOptions)
+                    .then(() => setBreakdownMenuVisible(true));
                 }}
               />
             </Dialog.Content>
           </Dialog>
 
-          {countMode === "distinct" ? (
+          {editorMode === "distinct" ? (
             <>
               <Text style={styles.fieldLabel}>Distinct Column</Text>
               <Button
@@ -450,6 +485,43 @@ export default function DashboardCardManager({ projectId }: Props) {
               </Dialog>
             </>
           ) : null}
+
+          {editorMode === "breakdown" ? (
+            <>
+              <Text style={styles.fieldLabel}>Group by field</Text>
+              <Button
+                mode="outlined"
+                onPress={() => {
+                  InspectionFieldRepository.getActiveTemplateFields()
+                    .then(setBreakdownOptions)
+                    .then(() => setBreakdownMenuVisible(true));
+                }}
+                style={styles.input}
+              >
+                {(breakdownOptions.find((o) => o.FieldKey === breakdownField)?.FieldName ?? breakdownField) || "Select field"}
+              </Button>
+            </>
+          ) : null}
+
+          <Dialog
+            visible={breakdownMenuVisible}
+            onDismiss={() => setBreakdownMenuVisible(false)}
+          >
+            <Dialog.Title>Select Group-by Field</Dialog.Title>
+            <Dialog.Content>
+              {breakdownOptions.map((option) => (
+                <List.Item
+                  key={option.FieldKey}
+                  title={option.FieldName}
+                  onPress={() => {
+                    setBreakdownField(option.FieldKey);
+                    setTitle((prev) => (editingCard ? prev : prev.trim() ? prev : option.FieldName));
+                    setBreakdownMenuVisible(false);
+                  }}
+                />
+              ))}
+            </Dialog.Content>
+          </Dialog>
 
           <Text style={styles.fieldLabel}>Filters</Text>
           {filters.map((row, index) => (
