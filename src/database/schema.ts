@@ -245,6 +245,19 @@ export async function migrateProjectSchema() {
         logger.info("[schema] migrateProjectSchema — ensureDefaultCards failed (non-fatal):", e);
     }
 
+    try {
+        await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN BreakdownField TEXT;`);
+        logger.info("[schema] Migration: BreakdownField column added to DashboardCards");
+    } catch {
+        logger.info("[schema] Migration: BreakdownField column already exists in DashboardCards (ok)");
+    }
+
+    try {
+        await DashboardCardRepository.migrateDefaultCards(1);
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — migrateDefaultCards failed (non-fatal):", e);
+    }
+
     logger.info("✅ [schema] migrateProjectSchema() — END");
 }
 
