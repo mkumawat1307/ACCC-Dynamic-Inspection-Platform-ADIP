@@ -263,4 +263,160 @@ describe("schema.ts createSchema", () => {
       expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN AggregateField TEXT")
     );
   });
+
+  interface LegacyCardRow {
+    CardKey: string;
+    AggregateField?: string | null;
+    BreakdownField?: string | null;
+    CardMode?: string | null;
+    [key: string]: unknown;
+  }
+
+  class LegacyDashboardDb {
+    readonly columns = new Set<string>(["CardKey", "AggregateField", "BreakdownField"]);
+    readonly cards: LegacyCardRow[] = [];
+    readonly fields = new Map<string, string>();
+
+    async execAsync(sql: string): Promise<void> {
+      const alterMatch = sql.match(/ALTER TABLE DashboardCards ADD COLUMN (\w+)/);
+      if (alterMatch) {
+        const column = alterMatch[1];
+        if (this.columns.has(column)) {
+          throw new Error(`duplicate column name: ${column}`);
+        }
+        this.columns.add(column);
+        for (const row of this.cards) {
+          if (row[column] === undefined) {
+            row[column] = column === "CardMode" ? "entitycount" : null;
+          }
+        }
+        return;
+      }
+      if (/^\s*UPDATE DashboardCards/.test(sql)) {
+        if (sql.includes("AggregateField IS NOT NULL")) {
+          for (const row of this.cards) {
+            if (row.CardMode === "entitycount" && row.AggregateField) {
+              row.CardMode = "sum";
+            }
+          }
+        } else if (sql.includes("InspectionFields f")) {
+          for (const row of this.cards) {
+            const aggregateMissing =
+              row.AggregateField === null || row.AggregateField === undefined;
+            if (row.CardMode === "entitycount" && row.BreakdownField && aggregateMissing) {
+              row.CardMode = this.deriveMode(this.fields.get(String(row.BreakdownField)));
+            }
+          }
+        }
+      }
+    }
+
+    private deriveMode(fieldType: string | undefined): string {
+      const normalized = (fieldType ?? "").toLowerCase();
+      if (normalized === "date" || normalized === "date_auto") {
+        return "datebreakdown";
+      }
+      if (normalized === "dropdown" || normalized === "switch" || normalized === "checkbox") {
+        return "dropdown";
+      }
+      if (normalized === "text" || normalized === "multiline") {
+        return "fieldcount";
+      }
+      return "entitycount";
+    }
+
+    async getFirstAsync<T>(): Promise<T | null> {
+      return { SectionID: 99 } as T;
+    }
+
+    async runAsync(
+      sql: string,
+      params: unknown[] = []
+    ): Promise<{ lastInsertRowId: number; changes: number }> {
+      const insertMatch = sql.match(/^\s*INSERT INTO (\w+) \(([^)]+)\) VALUES \(([^)]+)\);?\s*$/i);
+      if (!insertMatch) {
+        return { lastInsertRowId: 0, changes: 0 };
+      }
+      const tableName = insertMatch[1];
+      const columns = insertMatch[2].split(",").map((c) => c.trim());
+      if (tableName === "DashboardCards") {
+        const row: LegacyCardRow = { CardKey: "" };
+        columns.forEach((column, i) => {
+          row[column] = params[i] ?? null;
+        });
+        this.cards.push(row);
+        return { lastInsertRowId: this.cards.length, changes: 1 };
+      }
+      if (tableName === "InspectionFields") {
+        const keyIndex = columns.indexOf("FieldKey");
+        const typeIndex = columns.indexOf("FieldType");
+        this.fields.set(String(params[keyIndex] ?? ""), String(params[typeIndex] ?? ""));
+        return { lastInsertRowId: this.fields.size, changes: 1 };
+      }
+      return { lastInsertRowId: 0, changes: 0 };
+    }
+  }
+
+  function cardModes(cards: LegacyCardRow[]): Record<string, string> {
+    const modes: Record<string, string> = {};
+    for (const card of cards) {
+      modes[card.CardKey] = String(card.CardMode);
+    }
+    return modes;
+  }
+
+  it("migrateProjectSchema backfills DashboardCards.CardMode idempotently", async () => {
+    const legacyDb = new LegacyDashboardDb();
+
+    await legacyDb.runAsync(
+      `INSERT INTO DashboardCards (CardKey, AggregateField) VALUES (?, ?)`,
+      ["sum_card", "camera_count"]
+    );
+    await legacyDb.runAsync(
+      `INSERT INTO DashboardCards (CardKey, BreakdownField) VALUES (?, ?)`,
+      ["fieldcount_card", "foundation_cond"]
+    );
+    await legacyDb.runAsync(
+      `INSERT INTO DashboardCards (CardKey, BreakdownField) VALUES (?, ?)`,
+      ["datebreakdown_card", "inspection_date"]
+    );
+    await legacyDb.runAsync(
+      `INSERT INTO DashboardCards (CardKey, BreakdownField) VALUES (?, ?)`,
+      ["dropdown_card", "fence_cond"]
+    );
+    await legacyDb.runAsync(`INSERT INTO DashboardCards (CardKey) VALUES (?)`, ["entitycount_card"]);
+    await legacyDb.runAsync(
+      `INSERT INTO InspectionFields (FieldKey, FieldType) VALUES (?, ?)`,
+      ["foundation_cond", "text"]
+    );
+    await legacyDb.runAsync(
+      `INSERT INTO InspectionFields (FieldKey, FieldType) VALUES (?, ?)`,
+      ["inspection_date", "date_auto"]
+    );
+    await legacyDb.runAsync(
+      `INSERT INTO InspectionFields (FieldKey, FieldType) VALUES (?, ?)`,
+      ["fence_cond", "dropdown"]
+    );
+
+    const { getDatabase } = require("@/src/database/db");
+    getDatabase.mockResolvedValueOnce(legacyDb);
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema();
+
+    expect(legacyDb.columns.has("CardMode")).toBe(true);
+    const expected = {
+      sum_card: "sum",
+      fieldcount_card: "fieldcount",
+      datebreakdown_card: "datebreakdown",
+      dropdown_card: "dropdown",
+      entitycount_card: "entitycount",
+    };
+    expect(cardModes(legacyDb.cards)).toEqual(expected);
+
+    getDatabase.mockResolvedValueOnce(legacyDb);
+    await expect(migrateProjectSchema()).resolves.toBeUndefined();
+
+    expect(cardModes(legacyDb.cards)).toEqual(expected);
+  });
 });

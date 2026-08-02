@@ -267,6 +267,36 @@ export async function migrateProjectSchema() {
     }
 
     try {
+        await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN CardMode TEXT NOT NULL DEFAULT 'entitycount';`);
+        logger.info("[schema] Migration: CardMode column added to DashboardCards");
+    } catch {
+        logger.info("[schema] Migration: CardMode column already exists in DashboardCards (ok)");
+    }
+
+    try {
+        await db.execAsync(`
+            UPDATE DashboardCards SET CardMode = 'sum'
+            WHERE CardMode = 'entitycount' AND AggregateField IS NOT NULL AND AggregateField != '';
+        `);
+        await db.execAsync(`
+            UPDATE DashboardCards SET CardMode = (
+                SELECT CASE
+                    WHEN LOWER(f.FieldType) IN ('date', 'date_auto') THEN 'datebreakdown'
+                    WHEN LOWER(f.FieldType) IN ('dropdown', 'switch', 'checkbox') THEN 'dropdown'
+                    WHEN LOWER(f.FieldType) IN ('text', 'multiline') THEN 'fieldcount'
+                    ELSE 'entitycount'
+                END
+                FROM InspectionFields f
+                WHERE f.FieldKey = DashboardCards.BreakdownField
+            )
+            WHERE CardMode = 'entitycount' AND BreakdownField IS NOT NULL AND BreakdownField != '' AND AggregateField IS NULL;
+        `);
+        logger.info("[schema] Migration: CardMode backfill complete for DashboardCards");
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — CardMode backfill failed (non-fatal):", e);
+    }
+
+    try {
         await DashboardCardRepository.migrateDefaultCards(1);
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — migrateDefaultCards failed (non-fatal):", e);
