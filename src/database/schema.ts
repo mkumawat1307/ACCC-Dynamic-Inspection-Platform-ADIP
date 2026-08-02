@@ -26,7 +26,7 @@ import { DashboardCardRepository } from "./repositories/DashboardCardRepository"
 import { logger } from "@/src/utils/logger";
 
 export async function createGlobalSchema() {
-    logger.info("ðŸ“„ [schema] createGlobalSchema() â€” START");
+    logger.info("📄 [schema] createGlobalSchema() — START");
 
     const db = await getGlobalDatabase();
     logger.info("[schema] Got global DB handle");
@@ -94,11 +94,11 @@ export async function createGlobalSchema() {
         logger.info("[schema] Migration: IsActive column already exists in Districts (ok)");
     }
 
-    logger.info("âœ… [schema] createGlobalSchema() â€” END");
+    logger.info("✅ [schema] createGlobalSchema() — END");
 }
 
 export async function createProjectSchema() {
-    logger.info("ðŸ“„ [schema] createProjectSchema() â€” START");
+    logger.info("📄 [schema] createProjectSchema() — START");
 
     const db = await getDatabase();
     logger.info("[schema] Got project DB handle");
@@ -193,7 +193,7 @@ export async function createProjectSchema() {
     logger.info("[schema] Creating DashboardCards table...");
     await db.execAsync(createDashboardCardsTable);
 
-    logger.info("âœ… [schema] createProjectSchema() â€” END");
+    logger.info("✅ [schema] createProjectSchema() — END");
 }
 
 export async function migrateProjectSchema() {
@@ -306,7 +306,7 @@ export async function migrateProjectSchema() {
 }
 
 export async function createSchema() {
-    logger.info("[schema] createSchema() â€” START");
+    logger.info("[schema] createSchema() — START");
 
     const db = await getDatabase();
 
@@ -314,15 +314,15 @@ export async function createSchema() {
         "SELECT name FROM sqlite_master WHERE type='table'"
     );
     const tableNames = tables.map(t => t.name);
-    logger.info("[schema] createSchema â€” existing tables:", JSON.stringify(tableNames));
+    logger.info("[schema] createSchema — existing tables:", JSON.stringify(tableNames));
 
     if (tableNames.includes("Divisions")) {
-        logger.info("[schema] createSchema â€” detected global DB (has Divisions)");
+        logger.info("[schema] createSchema — detected global DB (has Divisions)");
         await createGlobalSchema();
     } else {
-        logger.info("[schema] createSchema â€” detected project DB (no Divisions)");
+        logger.info("[schema] createSchema — detected project DB (no Divisions)");
         await createProjectSchema();
     }
 
-    logger.info("[schema] createSchema() â€” END");
+    logger.info("[schema] createSchema() — END");
 }
