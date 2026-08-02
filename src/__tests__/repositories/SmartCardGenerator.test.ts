@@ -25,33 +25,50 @@ function field(overrides: Partial<SmartFormField> = {}): SmartFormField {
   };
 }
 
+function deviceField(overrides: Partial<SmartFormField> = {}): SmartFormField {
+  return field({
+    FieldID: 10,
+    FieldKey: "dev_Camera_CameraStatus",
+    FieldName: "Camera Status",
+    FieldType: "dropdown",
+    source: "device",
+    DeviceType: "Camera",
+    DeviceColumn: "CameraStatus",
+    ...overrides,
+  });
+}
+
 describe("SmartCardGenerator - card type inference", () => {
-  it("maps dropdown to breakdown", () => {
-    expect(SmartCardGenerator.getCardKind("dropdown")).toBe("breakdown");
+  it("maps dropdown to dropdown mode", () => {
+    expect(SmartCardGenerator.getCardKind("dropdown")).toBe("dropdown");
   });
 
-  it("maps switch to breakdown", () => {
-    expect(SmartCardGenerator.getCardKind("switch")).toBe("breakdown");
+  it("maps switch to dropdown mode", () => {
+    expect(SmartCardGenerator.getCardKind("switch")).toBe("dropdown");
   });
 
-  it("maps checkbox to breakdown", () => {
-    expect(SmartCardGenerator.getCardKind("checkbox")).toBe("breakdown");
+  it("maps checkbox to dropdown mode", () => {
+    expect(SmartCardGenerator.getCardKind("checkbox")).toBe("dropdown");
   });
 
-  it("maps number to aggregate", () => {
-    expect(SmartCardGenerator.getCardKind("number")).toBe("aggregate");
+  it("maps number to sum mode", () => {
+    expect(SmartCardGenerator.getCardKind("number")).toBe("sum");
   });
 
-  it("maps text to breakdown", () => {
-    expect(SmartCardGenerator.getCardKind("text")).toBe("breakdown");
+  it("maps text to fieldcount mode", () => {
+    expect(SmartCardGenerator.getCardKind("text")).toBe("fieldcount");
   });
 
-  it("maps multiline to breakdown", () => {
-    expect(SmartCardGenerator.getCardKind("multiline")).toBe("breakdown");
+  it("maps multiline to fieldcount mode", () => {
+    expect(SmartCardGenerator.getCardKind("multiline")).toBe("fieldcount");
   });
 
-  it("maps DATE_AUTO to breakdown", () => {
-    expect(SmartCardGenerator.getCardKind("DATE_AUTO")).toBe("breakdown");
+  it("maps DATE_AUTO to datebreakdown mode", () => {
+    expect(SmartCardGenerator.getCardKind("DATE_AUTO")).toBe("datebreakdown");
+  });
+
+  it("maps date to datebreakdown mode", () => {
+    expect(SmartCardGenerator.getCardKind("date")).toBe("datebreakdown");
   });
 
   it("maps GPS to skip", () => {
@@ -61,6 +78,19 @@ describe("SmartCardGenerator - card type inference", () => {
   it("maps device to skip", () => {
     expect(SmartCardGenerator.getCardKind("device")).toBe("skip");
   });
+
+  it("maps camera to skip", () => {
+    expect(SmartCardGenerator.getCardKind("camera")).toBe("skip");
+  });
+
+  it("maps calculation to skip", () => {
+    expect(SmartCardGenerator.getCardKind("calculation")).toBe("skip");
+  });
+
+  it("maps unmapped types to skip", () => {
+    expect(SmartCardGenerator.getCardKind("time")).toBe("skip");
+    expect(SmartCardGenerator.getCardKind("unknown_type")).toBe("skip");
+  });
 });
 
 describe("SmartCardGenerator - card generation", () => {
@@ -68,7 +98,7 @@ describe("SmartCardGenerator - card generation", () => {
     jest.clearAllMocks();
   });
 
-  it("generates two breakdown cards (Total + Today's) for a dropdown field", () => {
+  it("generates two dropdown cards (Total + Today's) for a dropdown field", () => {
     const cards = SmartCardGenerator.generateCardsForField(
       field({ FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" }),
       1,
@@ -80,6 +110,7 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards[0].Title).toBe("Pole Status");
     expect(cards[0].EntityType).toBe("inspections");
     expect(cards[0].CounterType).toBe("total");
+    expect(cards[0].CardMode).toBe("dropdown");
     expect(cards[0].BreakdownField).toBe("pole_status");
     expect(cards[0].AggregateField).toBeNull();
     expect(cards[0].SectionLabel).toBe("Total");
@@ -90,11 +121,12 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards[1].CardKey).toBe("smart_pole_status_today");
     expect(cards[1].CounterType).toBe("today");
     expect(cards[1].SectionLabel).toBe("Today's");
+    expect(cards[1].CardMode).toBe("dropdown");
     expect(cards[1].BreakdownField).toBe("pole_status");
     expect(cards[1].SortOrder).toBe(11);
   });
 
-  it("generates two aggregate (SUM) cards for a number field", () => {
+  it("generates two sum (SUM) cards for a number field", () => {
     const cards = SmartCardGenerator.generateCardsForField(
       field({ FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number" }),
       1,
@@ -102,63 +134,67 @@ describe("SmartCardGenerator - card generation", () => {
     );
     expect(cards).toHaveLength(2);
 
+    expect(cards[0].CardMode).toBe("sum");
     expect(cards[0].BreakdownField).toBeNull();
     expect(cards[0].AggregateField).toBe("camera_count");
     expect(cards[0].CounterType).toBe("total");
     expect(cards[0].SectionLabel).toBe("Total");
 
+    expect(cards[1].CardMode).toBe("sum");
     expect(cards[1].AggregateField).toBe("camera_count");
     expect(cards[1].CounterType).toBe("today");
     expect(cards[1].SectionLabel).toBe("Today's");
   });
 
-  it("generates two breakdown cards for a text field", () => {
+  it("generates two fieldcount cards for a text field", () => {
     const cards = SmartCardGenerator.generateCardsForField(
       field({ FieldKey: "block", FieldName: "Block", FieldType: "text" }),
       1
     );
     expect(cards).toHaveLength(2);
+    expect(cards[0].CardMode).toBe("fieldcount");
     expect(cards[0].BreakdownField).toBe("block");
     expect(cards[0].AggregateField).toBeNull();
     expect(cards[0].SectionLabel).toBe("Total");
     expect(cards[1].SectionLabel).toBe("Today's");
   });
 
-  it("generates two breakdown cards for a multiline field", () => {
+  it("returns empty array for the remarks field (excluded)", () => {
     const cards = SmartCardGenerator.generateCardsForField(
       field({ FieldKey: "remarks", FieldName: "Remarks", FieldType: "multiline" }),
       1
     );
-    expect(cards).toHaveLength(2);
-    expect(cards[0].BreakdownField).toBe("remarks");
-    expect(cards[1].SectionLabel).toBe("Today's");
+    expect(cards).toHaveLength(0);
   });
 
-  it("generates two breakdown cards for a switch field", () => {
+  it("generates two dropdown cards for a switch field", () => {
     const cards = SmartCardGenerator.generateCardsForField(
       field({ FieldKey: "has_earth", FieldName: "Earthing Wire", FieldType: "switch" }),
       1
     );
     expect(cards).toHaveLength(2);
+    expect(cards[0].CardMode).toBe("dropdown");
     expect(cards[0].BreakdownField).toBe("has_earth");
     expect(cards[1].SectionLabel).toBe("Today's");
   });
 
-  it("generates two breakdown cards for a checkbox field", () => {
+  it("generates two dropdown cards for a checkbox field", () => {
     const cards = SmartCardGenerator.generateCardsForField(
       field({ FieldKey: "verified", FieldName: "Verified", FieldType: "checkbox" }),
       1
     );
     expect(cards).toHaveLength(2);
+    expect(cards[0].CardMode).toBe("dropdown");
     expect(cards[0].BreakdownField).toBe("verified");
   });
 
-  it("generates two breakdown cards for a date_auto field", () => {
+  it("generates two datebreakdown cards for a date_auto field", () => {
     const cards = SmartCardGenerator.generateCardsForField(
       field({ FieldKey: "inspection_date", FieldName: "Date", FieldType: "date_auto" }),
       1
     );
     expect(cards).toHaveLength(2);
+    expect(cards[0].CardMode).toBe("datebreakdown");
     expect(cards[0].BreakdownField).toBe("inspection_date");
     expect(cards[1].SectionLabel).toBe("Today's");
   });
@@ -233,6 +269,39 @@ describe("SmartCardGenerator - card generation", () => {
     const keys = [...cards1, ...cards2].map((c) => c.CardKey);
     expect(new Set(keys).size).toBe(keys.length);
   });
+
+  it("generates dropdown cards for a device field using the column as breakdown", () => {
+    const cards = SmartCardGenerator.generateCardsForField(
+      deviceField({ DeviceType: "Camera" }),
+      1
+    );
+    expect(cards).toHaveLength(2);
+
+    expect(cards[0].CardKey).toBe("smart_dev_Camera_CameraStatus_total");
+    expect(cards[1].CardKey).toBe("smart_dev_Camera_CameraStatus_today");
+    expect(cards[0].CardMode).toBe("dropdown");
+    expect(cards[0].EntityType).toBe("cameras");
+    expect(cards[0].BreakdownField).toBe("CameraStatus");
+    expect(cards[0].AggregateField).toBeNull();
+    expect(cards[0].Title).toBe("Camera Status");
+    expect(cards[1].EntityType).toBe("cameras");
+    expect(cards[1].BreakdownField).toBe("CameraStatus");
+  });
+
+  it("uses switches entity type for a Switch device field", () => {
+    const cards = SmartCardGenerator.generateCardsForField(
+      deviceField({
+        FieldKey: "dev_Switch_SwitchState",
+        FieldName: "Switch State",
+        DeviceType: "Switch",
+        DeviceColumn: "SwitchState",
+      }),
+      1
+    );
+    expect(cards).toHaveLength(2);
+    expect(cards[0].EntityType).toBe("switches");
+    expect(cards[0].CardKey).toBe("smart_dev_Switch_SwitchState_total");
+  });
 });
 
 describe("SmartCardGenerator - getFormFields", () => {
@@ -244,7 +313,7 @@ describe("SmartCardGenerator - getFormFields", () => {
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
   });
 
-  it("fetches active fields with their options", async () => {
+  it("fetches active fields with their options and marks source as inspection", async () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce([
         { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
@@ -260,12 +329,28 @@ describe("SmartCardGenerator - getFormFields", () => {
     expect(fields).toHaveLength(2);
     expect(fields[0].FieldKey).toBe("pole_status");
     expect(fields[0].FieldType).toBe("dropdown");
+    expect(fields[0].source).toBe("inspection");
     expect(fields[0].Options).toHaveLength(2);
     expect(fields[0].Options[0]).toEqual({ label: "Available", value: "Available" });
     expect(fields[1].FieldType).toBe("number");
+    expect(fields[1].source).toBe("inspection");
     expect(fields[1].Options).toHaveLength(0);
 
     expect(mockDb.getAllAsync).toHaveBeenCalledTimes(3);
+  });
+
+  it("excludes the remarks field in the query", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldKey: "remarks", FieldName: "Remarks", FieldType: "multiline" },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const fields = await SmartCardGenerator.getFormFields();
+    expect(fields).toHaveLength(1);
+
+    const sql = mockDb.getAllAsync.mock.calls[0][0] as string;
+    expect(sql).toContain("AND f.FieldKey != 'remarks'");
   });
 
   it("normalizes field type to lowercase", async () => {
@@ -277,6 +362,53 @@ describe("SmartCardGenerator - getFormFields", () => {
 
     const fields = await SmartCardGenerator.getFormFields();
     expect(fields[0].FieldType).toBe("date_auto");
+  });
+});
+
+describe("SmartCardGenerator - getDeviceFields", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("queries active Camera/Switch fields with dropdown/switch/checkbox types", async () => {
+    mockDb.getAllAsync.mockResolvedValueOnce([]);
+
+    await SmartCardGenerator.getDeviceFields();
+
+    const sql = mockDb.getAllAsync.mock.calls[0][0] as string;
+    expect(sql).toContain("FROM DeviceFieldDefinitions");
+    expect(sql).toContain("DeviceType IN ('Camera', 'Switch')");
+    expect(sql).toContain("FieldType IN ('dropdown', 'switch', 'checkbox')");
+    expect(sql).toContain("IsActive = 1");
+    expect(sql).toContain("ORDER BY DeviceType, DisplayOrder");
+  });
+
+  it("maps device field rows to SmartFormField with dev_ keys and source device", async () => {
+    mockDb.getAllAsync.mockResolvedValueOnce([
+      { FieldDefID: 10, DeviceType: "Camera", FieldName: "CameraStatus", Label: "Camera Status", FieldType: "dropdown" },
+      { FieldDefID: 11, DeviceType: "Switch", FieldName: "SwitchState", Label: "Switch State", FieldType: "SWITCH" },
+    ]);
+
+    const fields = await SmartCardGenerator.getDeviceFields();
+    expect(fields).toHaveLength(2);
+
+    expect(fields[0].FieldID).toBe(10);
+    expect(fields[0].FieldKey).toBe("dev_Camera_CameraStatus");
+    expect(fields[0].FieldName).toBe("Camera Status");
+    expect(fields[0].FieldType).toBe("dropdown");
+    expect(fields[0].Options).toEqual([]);
+    expect(fields[0].source).toBe("device");
+    expect(fields[0].DeviceType).toBe("Camera");
+    expect(fields[0].DeviceColumn).toBe("CameraStatus");
+
+    expect(fields[1].FieldKey).toBe("dev_Switch_SwitchState");
+    expect(fields[1].FieldType).toBe("switch");
+    expect(fields[1].DeviceType).toBe("Switch");
+    expect(fields[1].DeviceColumn).toBe("SwitchState");
   });
 });
 
@@ -297,6 +429,7 @@ describe("SmartCardGenerator - getAvailableFields", () => {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { CardKey: "smart_pole_status_total", SortOrder: 0 },
         { CardKey: "smart_pole_status_today", SortOrder: 1 },
@@ -313,6 +446,7 @@ describe("SmartCardGenerator - getAvailableFields", () => {
         { FieldID: 1, FieldKey: "gps_coord", FieldName: "GPS", FieldType: "GPS" },
       ])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
     const available = await SmartCardGenerator.getAvailableFields(1);
@@ -327,10 +461,35 @@ describe("SmartCardGenerator - getAvailableFields", () => {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
     const available = await SmartCardGenerator.getAvailableFields(1);
     expect(available).toHaveLength(2);
+  });
+
+  it("combines inspection and device fields and dedups device cards by smart_dev keys", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { FieldDefID: 10, DeviceType: "Camera", FieldName: "CameraStatus", Label: "Camera Status", FieldType: "dropdown" },
+        { FieldDefID: 11, DeviceType: "Switch", FieldName: "SwitchState", Label: "Switch State", FieldType: "dropdown" },
+      ])
+      .mockResolvedValueOnce([
+        { CardKey: "smart_dev_Camera_CameraStatus_total", SortOrder: 0 },
+        { CardKey: "smart_dev_Camera_CameraStatus_today", SortOrder: 1 },
+      ]);
+
+    const available = await SmartCardGenerator.getAvailableFields(1);
+    expect(available).toHaveLength(2);
+    expect(available[0].FieldKey).toBe("pole_status");
+    expect(available[0].source).toBe("inspection");
+    expect(available[1].FieldKey).toBe("dev_Switch_SwitchState");
+    expect(available[1].source).toBe("device");
+    expect(available[1].DeviceType).toBe("Switch");
   });
 });
 
