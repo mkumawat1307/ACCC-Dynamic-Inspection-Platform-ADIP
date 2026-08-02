@@ -48,8 +48,8 @@ describe("dashboard-cards.seed", () => {
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
-    const cards = await db.getAllAsync<{ CardKey: string; SectionLabel: string }>(
-      "SELECT CardKey, SectionLabel FROM DashboardCards"
+    const cards = await db.getAllAsync<{ CardKey: string; SectionLabel: string; CardMode: string }>(
+      "SELECT CardKey, SectionLabel, CardMode FROM DashboardCards"
     );
 
     expect(cards).toHaveLength(6);
@@ -58,6 +58,9 @@ describe("dashboard-cards.seed", () => {
     );
     expect(cards.filter((c) => c.SectionLabel === "Total")).toHaveLength(3);
     expect(cards.filter((c) => c.SectionLabel === "Today's")).toHaveLength(3);
+    expect(cards.filter((c) => c.CardMode === "entitycount")).toHaveLength(2);
+    expect(cards.filter((c) => c.CardMode === "dropdown")).toHaveLength(2);
+    expect(cards.filter((c) => c.CardMode === "sum")).toHaveLength(2);
     expect(DEFAULT_SECTIONED_CARDS).toHaveLength(6);
   });
 
@@ -126,17 +129,39 @@ describe("dashboard-cards.seed", () => {
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
-    const camera = await db.getFirstAsync<{ AggregateField: string; SectionLabel: string }>(
-      "SELECT AggregateField, SectionLabel FROM DashboardCards WHERE CardKey = 'total_camera_count'"
+    const camera = await db.getFirstAsync<{ AggregateField: string; SectionLabel: string; CardMode: string }>(
+      "SELECT AggregateField, SectionLabel, CardMode FROM DashboardCards WHERE CardKey = 'total_camera_count'"
     );
     expect(camera).not.toBeNull();
     expect(camera!.AggregateField).toBe("camera_count");
     expect(camera!.SectionLabel).toBe("Total");
+    expect(camera!.CardMode).toBe("sum");
 
-    const pole = await db.getFirstAsync<{ BreakdownField: string }>(
-      "SELECT BreakdownField FROM DashboardCards WHERE CardKey = 'total_pole_status'"
+    const pole = await db.getFirstAsync<{ BreakdownField: string; CardMode: string }>(
+      "SELECT BreakdownField, CardMode FROM DashboardCards WHERE CardKey = 'total_pole_status'"
     );
     expect(pole).not.toBeNull();
     expect(pole!.BreakdownField).toBe("pole_avail");
+    expect(pole!.CardMode).toBe("dropdown");
+  });
+
+  it("seeds every default card with an explicit CardMode", async () => {
+    await openProject();
+    const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
+    await seedDashboardCards();
+
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const db: SQLiteDatabase = await dbModule.getDatabase();
+    const cards = await db.getAllAsync<{ CardKey: string; CardMode: string }>(
+      "SELECT CardKey, CardMode FROM DashboardCards"
+    );
+    const byKey = Object.fromEntries(cards.map((c) => [c.CardKey, c.CardMode]));
+
+    expect(byKey["total_inspection_done"]).toBe("entitycount");
+    expect(byKey["total_pole_status"]).toBe("dropdown");
+    expect(byKey["total_camera_count"]).toBe("sum");
+    expect(byKey["today_inspection_done"]).toBe("entitycount");
+    expect(byKey["today_pole_status"]).toBe("dropdown");
+    expect(byKey["today_camera_count"]).toBe("sum");
   });
 });
