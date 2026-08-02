@@ -421,7 +421,7 @@ describe("SmartCardGenerator - getAvailableFields", () => {
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
   });
 
-  it("returns fields that don't have both smart cards yet", async () => {
+  it("offers only fields with neither smart card present", async () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce([
         { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
@@ -434,6 +434,22 @@ describe("SmartCardGenerator - getAvailableFields", () => {
         { CardKey: "smart_pole_status_total", SortOrder: 0 },
         { CardKey: "smart_pole_status_today", SortOrder: 1 },
       ]);
+
+    const available = await SmartCardGenerator.getAvailableFields(1);
+    expect(available).toHaveLength(1);
+    expect(available[0].FieldKey).toBe("camera_count");
+  });
+
+  it("does not offer a field when only one card of its pair remains", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
+        { FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ CardKey: "smart_pole_status_total", SortOrder: 0 }]);
 
     const available = await SmartCardGenerator.getAvailableFields(1);
     expect(available).toHaveLength(1);
@@ -512,5 +528,79 @@ describe("SmartCardGenerator - getNextSortOrder", () => {
     mockDb.getFirstAsync.mockResolvedValue(null);
     const order = await SmartCardGenerator.getNextSortOrder(1);
     expect(order).toBe(0);
+  });
+});
+
+describe("SmartCardGenerator - addSmartCardsForField", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("creates both cards when none exist", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldKey: "test_field", FieldName: "Test Field", FieldType: "text" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    mockDb.getFirstAsync.mockResolvedValue({ max: 5 });
+
+    const ids = await SmartCardGenerator.addSmartCardsForField(1, "test_field");
+
+    expect(ids).toHaveLength(2);
+    const insertCalls = mockDb.runAsync.mock.calls.filter((call) =>
+      String(call[0]).includes("INSERT INTO DashboardCards")
+    );
+    expect(insertCalls).toHaveLength(2);
+    const params = insertCalls.map((call) => (call[1] as unknown[])[1]);
+    expect(params).toEqual(["smart_test_field_total", "smart_test_field_today"]);
+  });
+
+  it("skips an existing partial card and creates only the missing one", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldKey: "test_field", FieldName: "Test Field", FieldType: "text" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ CardKey: "smart_test_field_total", SortOrder: 0 }]);
+    mockDb.getFirstAsync.mockResolvedValue({ max: 5 });
+
+    const ids = await SmartCardGenerator.addSmartCardsForField(1, "test_field");
+
+    expect(ids).toHaveLength(1);
+    const insertCalls = mockDb.runAsync.mock.calls.filter((call) =>
+      String(call[0]).includes("INSERT INTO DashboardCards")
+    );
+    expect(insertCalls).toHaveLength(1);
+    const params = insertCalls[0][1] as unknown[];
+    expect(params[1]).toBe("smart_test_field_today");
+  });
+
+  it("returns no new cards when both cards already exist", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { FieldID: 1, FieldKey: "test_field", FieldName: "Test Field", FieldType: "text" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { CardKey: "smart_test_field_total", SortOrder: 0 },
+        { CardKey: "smart_test_field_today", SortOrder: 1 },
+      ]);
+    mockDb.getFirstAsync.mockResolvedValue({ max: 5 });
+
+    const ids = await SmartCardGenerator.addSmartCardsForField(1, "test_field");
+
+    expect(ids).toHaveLength(0);
+    const insertCalls = mockDb.runAsync.mock.calls.filter((call) =>
+      String(call[0]).includes("INSERT INTO DashboardCards")
+    );
+    expect(insertCalls).toHaveLength(0);
   });
 });
