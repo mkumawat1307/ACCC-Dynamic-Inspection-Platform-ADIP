@@ -4,6 +4,7 @@ import { ActivityIndicator } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { DashboardService, CardWithCount } from "@/src/database/repositories/DashboardService";
 import StatCard from "@/src/components/StatCard";
+import StatBreakdownCard from "@/src/components/dashboard/StatBreakdownCard";
 
 interface Props {
   projectId: number;
@@ -43,25 +44,53 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0 }: Props) {
   }
 
   const rows = [];
-  for (let i = 0; i < cards.length; i += 2) {
-    rows.push(
-      <View key={i} style={styles.statRow}>
-        <StatCard
-          title={cards[i].Title}
-          value={cards[i].count}
-          icon={cards[i].Icon as keyof typeof MaterialCommunityIcons.glyphMap}
-          color={cards[i].Color}
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+
+    if (card.BreakdownField) {
+      rows.push(
+        <StatBreakdownCard
+          key={card.CardID}
+          title={card.Title}
+          icon={card.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
+          color={card.Color}
+          rows={card.breakdown ?? []}
         />
-        {cards[i + 1] ? (
+      );
+      continue;
+    }
+
+    const next = cards[i + 1];
+    if (next && !next.BreakdownField) {
+      rows.push(
+        <View key={`${card.CardID}-${next.CardID}`} style={styles.statRow}>
           <StatCard
-            title={cards[i + 1].Title}
-            value={cards[i + 1].count}
-            icon={cards[i + 1].Icon as keyof typeof MaterialCommunityIcons.glyphMap}
-            color={cards[i + 1].Color}
+            title={card.Title}
+            value={card.count ?? 0}
+            icon={card.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
+            color={card.Color}
           />
-        ) : null}
-      </View>
-    );
+          <StatCard
+            title={next.Title}
+            value={next.count ?? 0}
+            icon={next.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
+            color={next.Color}
+          />
+        </View>
+      );
+      i++;
+    } else {
+      rows.push(
+        <View key={card.CardID} style={styles.statRow}>
+          <StatCard
+            title={card.Title}
+            value={card.count ?? 0}
+            icon={card.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
+            color={card.Color}
+          />
+        </View>
+      );
+    }
   }
 
   return <View>{rows}</View>;

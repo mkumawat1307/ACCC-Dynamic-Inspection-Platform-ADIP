@@ -20,6 +20,7 @@ function cardWithCount(overrides: Partial<CardWithCount> = {}): CardWithCount {
     FilterJson: null,
     CountMode: "count",
     DistinctColumn: null,
+    BreakdownField: null,
     SortOrder: 0,
     Enabled: 1,
     IsDefault: 1,
@@ -126,5 +127,55 @@ describe("DashboardCardGrid", () => {
     expect(strings).toContain("Total Poles");
     expect(strings).toContain("Total Cameras");
     expect(strings).toContain("12");
+  });
+
+  it("renders a breakdown card's value rows", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({
+        CardID: 9,
+        CardKey: "foundation_breakdown",
+        Title: "Foundation Condition",
+        BreakdownField: "foundation_cond",
+        count: undefined,
+        breakdown: [
+          { label: "Good", count: 42 },
+          { label: "Bad", count: 7 },
+          { label: "Fair", count: 3 },
+        ],
+      }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).toContain("Foundation Condition");
+    expect(strings).toContain("Good");
+    expect(strings).toContain("42");
+    expect(strings).toContain("Bad");
+    expect(strings).toContain("7");
+    expect(strings).toContain("Fair");
+    expect(strings).toContain("3");
+  });
+
+  it("renders (No data) for an empty breakdown", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({
+        CardID: 9,
+        CardKey: "foundation_breakdown",
+        Title: "Foundation Condition",
+        BreakdownField: "foundation_cond",
+        count: undefined,
+        breakdown: [],
+      }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings.join(" ")).toContain("No data");
   });
 });
