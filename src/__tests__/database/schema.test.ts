@@ -384,6 +384,10 @@ describe("schema.ts createSchema", () => {
       `INSERT INTO DashboardCards (CardKey, BreakdownField) VALUES (?, ?)`,
       ["dropdown_card", "fence_cond"]
     );
+    await legacyDb.runAsync(
+      `INSERT INTO DashboardCards (CardKey, BreakdownField) VALUES (?, ?)`,
+      ["dangling_card", "removed_field"]
+    );
     await legacyDb.runAsync(`INSERT INTO DashboardCards (CardKey) VALUES (?)`, ["entitycount_card"]);
     await legacyDb.runAsync(
       `INSERT INTO InspectionFields (FieldKey, FieldType) VALUES (?, ?)`,
@@ -401,6 +405,8 @@ describe("schema.ts createSchema", () => {
     const { getDatabase } = require("@/src/database/db");
     getDatabase.mockResolvedValueOnce(legacyDb);
 
+    const execSpy = jest.spyOn(legacyDb, "execAsync");
+
     const { migrateProjectSchema } = require("@/src/database/schema");
     await migrateProjectSchema();
 
@@ -410,13 +416,106 @@ describe("schema.ts createSchema", () => {
       fieldcount_card: "fieldcount",
       datebreakdown_card: "datebreakdown",
       dropdown_card: "dropdown",
+      dangling_card: "entitycount",
       entitycount_card: "entitycount",
     };
     expect(cardModes(legacyDb.cards)).toEqual(expected);
+
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE DashboardCards SET CardMode = COALESCE((")
+    );
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.stringContaining("WHEN LOWER(f.FieldType) IN ('date', 'date_auto') THEN 'datebreakdown'")
+    );
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.stringContaining("WHEN LOWER(f.FieldType) IN ('dropdown', 'switch', 'checkbox') THEN 'dropdown'")
+    );
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.stringContaining("WHEN LOWER(f.FieldType) IN ('text', 'multiline') THEN 'fieldcount'")
+    );
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.stringContaining("ELSE 'entitycount'")
+    );
+    expect(execSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "WHERE CardMode = 'entitycount' AND BreakdownField IS NOT NULL AND BreakdownField != '' AND AggregateField IS NULL"
+      )
+    );
 
     getDatabase.mockResolvedValueOnce(legacyDb);
     await expect(migrateProjectSchema()).resolves.toBeUndefined();
 
     expect(cardModes(legacyDb.cards)).toEqual(expected);
+  });
+
+  it("real SQLite CardMode backfill tolerates a dangling BreakdownField via COALESCE", async () => {
+    const { DatabaseSync } = require("node:sqlite");
+
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema();
+
+    const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
+    const sumBackfill = emitted.find(
+      (sql) => sql.includes("UPDATE DashboardCards SET CardMode = 'sum'") && sql.includes("AggregateField IS NOT NULL")
+    );
+    const breakdownBackfill = emitted.find(
+      (sql) => sql.includes("InspectionFields f") && sql.includes("BreakdownField")
+    );
+    expect(sumBackfill).toBeDefined();
+    expect(breakdownBackfill).toBeDefined();
+
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE InspectionFields (
+        FieldID INTEGER PRIMARY KEY AUTOINCREMENT,
+        FieldKey TEXT,
+        FieldType TEXT
+      );
+      CREATE TABLE DashboardCards (
+        CardID INTEGER PRIMARY KEY AUTOINCREMENT,
+        ProjectID INTEGER NOT NULL,
+        CardKey TEXT NOT NULL,
+        AggregateField TEXT,
+        BreakdownField TEXT,
+        CardMode TEXT NOT NULL DEFAULT 'entitycount',
+        UNIQUE(ProjectID, CardKey)
+      );
+    `);
+    db.prepare("INSERT INTO InspectionFields (FieldKey, FieldType) VALUES (?, ?)").run(
+      "foundation_cond",
+      "text"
+    );
+    db.prepare(
+      `INSERT INTO DashboardCards (ProjectID, CardKey, AggregateField, BreakdownField, CardMode)
+       VALUES (1, 'valid_text', NULL, 'foundation_cond', 'entitycount')`
+    ).run();
+    db.prepare(
+      `INSERT INTO DashboardCards (ProjectID, CardKey, AggregateField, BreakdownField, CardMode)
+       VALUES (1, 'dangling', NULL, 'removed_field', 'entitycount')`
+    ).run();
+    db.prepare(
+      `INSERT INTO DashboardCards (ProjectID, CardKey, AggregateField, BreakdownField, CardMode)
+       VALUES (1, 'sum_card', 'camera_count', NULL, 'entitycount')`
+    ).run();
+
+    expect(() => {
+      db.exec(sumBackfill!);
+      db.exec(breakdownBackfill!);
+    }).not.toThrow();
+
+    const modes: Record<string, string> = {};
+    const rows = db
+      .prepare("SELECT CardKey, CardMode FROM DashboardCards ORDER BY CardKey")
+      .all() as Array<{ CardKey: string; CardMode: string }>;
+    for (const row of rows) {
+      modes[row.CardKey] = row.CardMode;
+    }
+
+    expect(modes.valid_text).toBe("fieldcount");
+    expect(modes.dangling).toBe("entitycount");
+    expect(modes.sum_card).toBe("sum");
+    db.close();
   });
 });

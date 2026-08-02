@@ -279,7 +279,7 @@ export async function migrateProjectSchema() {
             WHERE CardMode = 'entitycount' AND AggregateField IS NOT NULL AND AggregateField != '';
         `);
         await db.execAsync(`
-            UPDATE DashboardCards SET CardMode = (
+            UPDATE DashboardCards SET CardMode = COALESCE((
                 SELECT CASE
                     WHEN LOWER(f.FieldType) IN ('date', 'date_auto') THEN 'datebreakdown'
                     WHEN LOWER(f.FieldType) IN ('dropdown', 'switch', 'checkbox') THEN 'dropdown'
@@ -288,7 +288,7 @@ export async function migrateProjectSchema() {
                 END
                 FROM InspectionFields f
                 WHERE f.FieldKey = DashboardCards.BreakdownField
-            )
+            ), 'entitycount')
             WHERE CardMode = 'entitycount' AND BreakdownField IS NOT NULL AND BreakdownField != '' AND AggregateField IS NULL;
         `);
         logger.info("[schema] Migration: CardMode backfill complete for DashboardCards");

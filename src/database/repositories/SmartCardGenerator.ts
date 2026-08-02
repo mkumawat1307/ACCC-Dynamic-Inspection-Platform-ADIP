@@ -248,7 +248,7 @@ export class SmartCardGenerator {
           : `smart_${field.FieldKey}`;
       const hasTotal = existingKeys.has(`${keyBase}_total`);
       const hasToday = existingKeys.has(`${keyBase}_today`);
-      return !(hasTotal && hasToday);
+      return !(hasTotal || hasToday);
     });
   }
 
@@ -272,8 +272,12 @@ export class SmartCardGenerator {
     const baseSortOrder = await this.getNextSortOrder(projectId);
     const cards = this.generateCardsForField(field, projectId, baseSortOrder);
 
+    const existingCards = await DashboardCardRepository.getAllCards(projectId);
+    const existingKeys = new Set(existingCards.map((c) => c.CardKey));
+
     const createdIds: number[] = [];
     for (const card of cards) {
+      if (existingKeys.has(card.CardKey)) continue;
       const id = await DashboardCardRepository.createCard(card);
       createdIds.push(id);
     }
