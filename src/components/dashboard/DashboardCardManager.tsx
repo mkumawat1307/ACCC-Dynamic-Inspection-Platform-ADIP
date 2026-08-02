@@ -14,6 +14,7 @@ import {
 } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { DashboardCardRepository } from "@/src/database/repositories/DashboardCardRepository";
+import { SmartCardGenerator, SmartFormField } from "@/src/database/repositories/SmartCardGenerator";
 import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import { COUNT_ENTITIES, COUNTER_TYPES } from "@/src/database/repositories/StatisticCountService";
 import { DashboardCard } from "@/src/models/DashboardCard";
@@ -49,6 +50,22 @@ const ENTITY_LABELS: Record<string, string> = {
   cameras: "Cameras",
   switches: "Switches",
   devices: "Devices",
+};
+
+const FIELD_TYPE_LABELS: Record<string, string> = {
+  dropdown: "Dropdown",
+  switch: "Switch (Yes/No)",
+  checkbox: "Checkbox",
+  number: "Number",
+  text: "Text",
+  multiline: "Multiline",
+  date: "Date",
+  date_auto: "Date (Auto)",
+  time: "Time",
+  gps: "GPS",
+  device: "Device",
+  camera: "Camera",
+  calculation: "Calculation",
 };
 
 interface FilterRow {
@@ -113,6 +130,9 @@ export default function DashboardCardManager({ projectId }: Props) {
   const [distinctMenuVisible, setDistinctMenuVisible] = useState(false);
   const [breakdownMenuVisible, setBreakdownMenuVisible] = useState(false);
   const [filterMenuIndex, setFilterMenuIndex] = useState<number | null>(null);
+  const [fieldPickerVisible, setFieldPickerVisible] = useState(false);
+  const [fieldPickerLoading, setFieldPickerLoading] = useState(false);
+  const [availableFields, setAvailableFields] = useState<SmartFormField[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -233,6 +253,20 @@ export default function DashboardCardManager({ projectId }: Props) {
     load();
   };
 
+  const loadAvailableFields = useCallback(async () => {
+    setFieldPickerLoading(true);
+    const fields = await SmartCardGenerator.getAvailableFields(projectId);
+    setAvailableFields(fields);
+    setFieldPickerLoading(false);
+  }, [projectId]);
+
+  const handleSmartAdd = async (fieldKey: string) => {
+    await SmartCardGenerator.addSmartCardsForField(projectId, fieldKey);
+    setFieldPickerVisible(false);
+    load();
+    loadAvailableFields();
+  };
+
   const entityConfig = COUNT_ENTITIES[entityType];
   const entityLabel = (key: string) => ENTITY_LABELS[key] ?? key;
   const counterLabel = (key: string) => COUNTER_TYPES[key]?.label ?? key;
@@ -253,8 +287,18 @@ export default function DashboardCardManager({ projectId }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.toolbar}>
-        <Button icon="plus" mode="contained-tonal" onPress={openAdd}>
+        <Button
+          icon="plus"
+          mode="contained-tonal"
+          onPress={() => {
+            setFieldPickerVisible(true);
+            loadAvailableFields();
+          }}
+        >
           Add Card
+        </Button>
+        <Button icon="tune-variant" mode="text" onPress={openAdd}>
+          Custom Card
         </Button>
         <Button icon="restore" mode="text" onPress={handleResetDefaults}>
           Reset Defaults
@@ -595,6 +639,43 @@ export default function DashboardCardManager({ projectId }: Props) {
         <Dialog.Actions>
           <Button onPress={() => setEditorVisible(false)}>Cancel</Button>
           <Button onPress={handleSave}>Save</Button>
+        </Dialog.Actions>
+      </Dialog>
+
+      <Dialog visible={fieldPickerVisible} onDismiss={() => setFieldPickerVisible(false)}>
+        <Dialog.Title>Add Card</Dialog.Title>
+        <Dialog.Content>
+          {fieldPickerLoading ? (
+            <ActivityIndicator style={styles.loading} />
+          ) : availableFields.length === 0 ? (
+            <Text style={styles.empty}>All available fields have cards configured.</Text>
+          ) : (
+            <ScrollView style={styles.editorScroll}>
+              {availableFields.map((f) => {
+                const spec = SmartCardGenerator.getSpec(f);
+                return (
+                  <List.Item
+                    key={f.FieldKey}
+                    title={f.FieldName}
+                    description={FIELD_TYPE_LABELS[f.FieldType] ?? f.FieldType}
+                    left={(props) => (
+                      <View style={styles.iconWrap}>
+                        <MaterialCommunityIcons
+                          name={spec.icon as keyof typeof MaterialCommunityIcons.glyphMap}
+                          size={24}
+                          color={spec.color}
+                        />
+                      </View>
+                    )}
+                    onPress={() => handleSmartAdd(f.FieldKey)}
+                  />
+                );
+              })}
+            </ScrollView>
+          )}
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button onPress={() => setFieldPickerVisible(false)}>Cancel</Button>
         </Dialog.Actions>
       </Dialog>
 

@@ -38,10 +38,19 @@ jest.mock("@/src/database/repositories/InspectionFieldRepository", () => ({
   },
 }));
 
+jest.mock("@/src/database/repositories/SmartCardGenerator");
+
 import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
+import { SmartCardGenerator, SmartFormField } from "@/src/database/repositories/SmartCardGenerator";
 
 const repo = DashboardCardRepository as jest.Mocked<typeof DashboardCardRepository>;
 const fieldRepo = InspectionFieldRepository as jest.Mocked<typeof InspectionFieldRepository>;
+const smartGen = SmartCardGenerator as jest.Mocked<typeof SmartCardGenerator>;
+
+const mockFields: SmartFormField[] = [
+  { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown", Options: [{ label: "Available", value: "Available" }] },
+  { FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number", Options: [] },
+];
 
 function cardOf(overrides: Partial<DashboardCard> = {}): DashboardCard {
   return {
@@ -138,6 +147,16 @@ describe("DashboardCardManager", () => {
       { FieldKey: "foundation_cond", FieldName: "Foundation Condition" },
       { FieldKey: "pole_status", FieldName: "Pole Status" },
     ]);
+    smartGen.getAvailableFields.mockResolvedValue(mockFields);
+    smartGen.addSmartCardsForField.mockResolvedValue([1, 2]);
+    smartGen.getSpec.mockReturnValue({
+      kind: "breakdown",
+      fieldKey: "test",
+      fieldName: "Test",
+      title: "Test",
+      icon: "chart-box-outline",
+      color: "#0B5ED7",
+    });
   });
 
   it("renders all cards with entity and counter summary", async () => {
@@ -205,7 +224,7 @@ describe("DashboardCardManager", () => {
 
   it("blocks saving when the title is empty", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Save");
     const strings = collectStrings(tree.toJSON());
     expect(strings.join(" ")).toContain("Title is required.");
@@ -215,7 +234,7 @@ describe("DashboardCardManager", () => {
   it("creates a card after the form is filled", async () => {
     repo.createCard.mockResolvedValue(5);
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     const textInputs = tree.root.findAll((node) => {
       const props = node.props as { label?: string };
       return props && props.label === "Title";
@@ -259,7 +278,7 @@ describe("DashboardCardManager", () => {
   it("entity selection updates available distinct columns", async () => {
     repo.createCard.mockResolvedValue(5);
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Inspections");
     await pressButton(tree, "Cameras");
     await pressButton(tree, "Count");
@@ -274,7 +293,7 @@ describe("DashboardCardManager", () => {
 
   it("add and remove filter rows", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Add Filter");
     const valueInputs = tree.root.findAll((node) => {
       const props = node.props as { placeholder?: string };
@@ -306,14 +325,14 @@ describe("DashboardCardManager", () => {
 
   it("cancel closes the editor without saving", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Cancel");
     expect(repo.createCard).not.toHaveBeenCalled();
   });
 
   it("selecting count mode back to Count hides distinct column", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Count");
     await pressButton(tree, "Distinct");
     await pressButton(tree, "Distinct");
@@ -353,7 +372,7 @@ describe("DashboardCardManager", () => {
   it("selects an icon and color for a new card", async () => {
     repo.createCard.mockResolvedValue(5);
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     const titleInputs = tree.root.findAll((node) => {
       const props = node.props as { label?: string };
       return props && props.label === "Title";
@@ -381,7 +400,7 @@ describe("DashboardCardManager", () => {
   it("selects a counter type for a new card", async () => {
     repo.createCard.mockResolvedValue(5);
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     const titleInputs = tree.root.findAll((node) => {
       const props = node.props as { label?: string };
       return props && props.label === "Title";
@@ -401,7 +420,7 @@ describe("DashboardCardManager", () => {
   it("changes a filter row's column key via the picker", async () => {
     repo.createCard.mockResolvedValue(5);
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Inspections");
     await pressButton(tree, "Cameras");
     await pressButton(tree, "Add Filter");
@@ -473,7 +492,7 @@ describe("DashboardCardManager", () => {
   it("creates a breakdown card by picking a form field", async () => {
     repo.createCard.mockResolvedValue(5);
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Count");
     await pressButton(tree, "Breakdown");
     await pressButton(tree, "Foundation Condition");
@@ -496,7 +515,7 @@ describe("DashboardCardManager", () => {
 
   it("requires a field before saving a breakdown card", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Count");
     await pressButton(tree, "Breakdown");
     await pressButton(tree, "Save");
@@ -531,7 +550,7 @@ describe("DashboardCardManager", () => {
 
   it("wraps the editor form in a scrollable container", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     const scrollViews = tree.root.findAll((node) => {
       const type = (node as unknown as { type?: unknown }).type;
       if (typeof type !== "function") return false;
@@ -592,7 +611,7 @@ describe("DashboardCardManager", () => {
 
   it("adds a Cancel button to the entity picker dialog", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Inspections");
     const { dialog, cancelButton } = findDialogByTitle(tree, "Select Entity");
     expect((dialog.props as { visible?: boolean }).visible).toBe(true);
@@ -607,7 +626,7 @@ describe("DashboardCardManager", () => {
 
   it("adds a Cancel button to the counter picker dialog", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Total");
     const { dialog, cancelButton } = findDialogByTitle(tree, "Select Counter");
     expect((dialog.props as { visible?: boolean }).visible).toBe(true);
@@ -622,7 +641,7 @@ describe("DashboardCardManager", () => {
 
   it("adds a Cancel button to the count mode picker dialog", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Custom Card");
     await pressButton(tree, "Count");
     const { dialog, cancelButton } = findDialogByTitle(tree, "Select Count Mode");
     expect((dialog.props as { visible?: boolean }).visible).toBe(true);
@@ -633,5 +652,45 @@ describe("DashboardCardManager", () => {
     });
     const { dialog: closed } = findDialogByTitle(tree, "Select Count Mode");
     expect((closed.props as { visible?: boolean }).visible).toBe(false);
+  });
+
+  it("Add Card button opens the smart field picker dialog", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    const strings = collectStrings(tree.toJSON());
+    expect(strings).toContain("Pole Status");
+    expect(strings).toContain("Camera Count");
+    expect(strings).toContain("Dropdown");
+    expect(strings).toContain("Number");
+  });
+
+  it("Add Card button opens dialog titled 'Add Card'", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    const { dialog } = findDialogByTitle(tree, "Add Card");
+    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
+  });
+
+  it("field picker shows empty state when no fields are available", async () => {
+    smartGen.getAvailableFields.mockResolvedValue([]);
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    const strings = collectStrings(tree.toJSON());
+    expect(strings.join(" ")).toContain("All available fields have cards configured.");
+  });
+
+  it("selecting a field in the picker creates cards and closes the dialog", async () => {
+    repo.getAllCards.mockResolvedValue([]);
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Pole Status");
+    expect(smartGen.addSmartCardsForField).toHaveBeenCalledWith(1, "pole_status");
+  });
+
+  it("Add Card and Custom Card are distinct buttons", async () => {
+    const tree = await renderManager([]);
+    const strings = collectStrings(tree.toJSON());
+    expect(strings).toContain("Add Card");
+    expect(strings).toContain("Custom Card");
   });
 });
