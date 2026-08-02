@@ -1,19 +1,15 @@
-//frontend\app\projects\dashboard.tsx
 import React, { useEffect, useState } from "react";
 import { StyleSheet, View, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
-import {
-  Card,
-  Text,
-  ActivityIndicator,
-  Appbar,
-} from "react-native-paper";
+import { Card, Text, ActivityIndicator, Appbar } from "react-native-paper";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
 import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
 import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
+import { COLORS, RADIUS, SPACING } from "@/src/constants/ui";
 
 export default function ProjectDashboard() {
   const { projectId, projectData: projectDataJson } = useLocalSearchParams<{
@@ -24,265 +20,281 @@ export default function ProjectDashboard() {
   const { project: contextProject } = useInspection();
   const [statReloadKey, setStatReloadKey] = useState(0);
   const isFocused = useIsFocused();
+  const [loading, setLoading] = useState(true);
+  const [project, setProject] = useState<Project | null>(null);
 
-const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    loadProject();
+  }, []);
 
-const [project, setProject] = useState<Project | null>(null);
-useEffect(() => {
-  loadProject();
-}, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      setStatReloadKey((k) => k + 1);
+    }, [])
+  );
 
-useFocusEffect(
-  React.useCallback(() => {
-    setStatReloadKey((k) => k + 1);
-  }, [])
-);
+  async function loadProject() {
+    if (!projectId) return;
 
-async function loadProject() {
-  if (!projectId) return;
+    // 1. Use projectData passed via navigation params (most reliable -- no DB call needed)
+    if (projectDataJson) {
+      try {
+        const parsed = JSON.parse(projectDataJson) as Project;
+        setProject(parsed);
+        setLoading(false);
+        return;
+      } catch {
+        // fall through
+      }
+    }
 
-  // 1. Use projectData passed via navigation params (most reliable -- no DB call needed)
-  if (projectDataJson) {
-    try {
-      const parsed = JSON.parse(projectDataJson) as Project;
-      setProject(parsed);
+    // 2. Use context (may not have propagated yet due to React batching)
+    if (contextProject && contextProject.ProjectID === Number(projectId)) {
+      setProject(contextProject);
       setLoading(false);
       return;
-    } catch {
-      // fall through
     }
-  }
 
-  // 2. Use context (may not have propagated yet due to React batching)
-  if (contextProject && contextProject.ProjectID === Number(projectId)) {
-    setProject(contextProject);
+    // 3. No global-DB fallback: switching to the global DB mid-project-session
+    //    corrupts the Android handle (ADR-014). Show not-found instead.
+    setProject(null);
     setLoading(false);
-    return;
   }
 
-  // 3. No global-DB fallback: switching to the global DB mid-project-session
-  //    corrupts the Android handle (ADR-014). Show not-found instead.
-  setProject(null);
-  setLoading(false);
-}
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <ActivityIndicator size="large" />
+      </SafeAreaView>
+    );
+  }
 
-    if (loading) {
+  if (!project) {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <Text>Project not found.</Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <ActivityIndicator size="large" />
-    </SafeAreaView>
-  );
-}
+    <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+      <Appbar.Header>
+        <Appbar.BackAction onPress={() => router.back()} />
+        <Appbar.Content title="Project Dashboard" />
+      </Appbar.Header>
 
-if (!project) {
-  return (
-    <SafeAreaView
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Text>Project not found.</Text>
-    </SafeAreaView>
-  );
-}
-
-return (
-  <SafeAreaView
-    style={styles.container}
-    edges={["left", "right", "bottom"]}
->
-    <Appbar.Header>
-    <Appbar.BackAction onPress={() => router.back()} />
-
-    <Appbar.Content title="Project Dashboard" />
-    </Appbar.Header>
-
-    <ScrollView
+      <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-    >
-    <Card style={styles.card}>
-        <Card.Content>
-            <Text variant="headlineSmall" style={styles.cardTitle}>
-            Project Information
-            </Text>
-
-            <Text variant="titleLarge" style={styles.projectHeading}>
-            Division: {project.DivisionName || "-"}  District: {project.DistrictName || "-"}
-            </Text>
-
-            <Text variant="titleMedium" style={styles.projectName}>
-            Project: {project.ProjectName}
-            </Text>
-
-            <Text>
-            Inspector : {project.InspectorName || "-"}
-            </Text>
-
-            <Text>
-            Client : {project.Client || "-"}
-            </Text>
-
-            <Text>
-            Description : {project.Description || "-"}
-            </Text>
-        </Card.Content>
+      >
+        <Card style={styles.card}>
+          <Card.Title
+            title="Project Information"
+            titleVariant="titleMedium"
+            left={() => (
+              <MaterialCommunityIcons
+                name="information-outline"
+                size={22}
+                color={COLORS.primary}
+              />
+            )}
+          />
+          <Card.Content>
+            <View style={styles.infoGrid}>
+              <InfoField label="Division" value={project.DivisionName || "-"} />
+              <InfoField label="District" value={project.DistrictName || "-"} />
+              <InfoField label="Inspector" value={project.InspectorName || "-"} />
+              <InfoField label="Client" value={project.Client || "-"} />
+            </View>
+            <InfoField label="Description" value={project.Description || "-"} full />
+          </Card.Content>
         </Card>
-    <Card style={styles.card}>
-    <Card.Title title="Statistics" />
-    <Card.Content>
-        <DashboardCardGrid projectId={project.ProjectID} reloadKey={statReloadKey} focused={isFocused} />
-    </Card.Content>
-    </Card>
-    <View style={styles.manageRow}>
-    <DashboardActionCard
-        title="Manage Cards"
-        subtitle="Add, edit, reorder or disable dashboard cards"
-        icon="tune-variant"
-        onPress={() =>
-          router.push({
-            pathname: "/projects/dashboard-settings",
-            params: {
-              projectId: project.ProjectID.toString(),
-            },
-          })
-        }
-    />
-    </View>
 
-<View style={styles.actionGrid}>
-  <View style={styles.actionRow}>
-    <View style={styles.actionHalf}>
-      <DashboardActionCard
-        title="New Inspection"
-        subtitle="Start a new pole inspection"
-        icon="clipboard-plus"
-        onPress={() =>
-          router.push({
-            pathname: "/inspection/new",
-            params: {
-              projectId: project.ProjectID.toString(),
-              projectData: JSON.stringify(project),
-            },
-          })
-        }
-      />
-    </View>
-    <View style={styles.actionHalf}>
-      <DashboardActionCard
-        title="Inspection List"
-        subtitle="View completed and draft inspections"
-        icon="clipboard-list"
-        onPress={() =>
-          router.push({
-            pathname: "/inspection",
-            params: {
-              projectId: project.ProjectID.toString(),
-            },
-          })
-        }
-      />
-    </View>
-  </View>
-  <View style={styles.actionRow}>
-    <View style={styles.actionHalf}>
-      <DashboardActionCard
-        title="Settings"
-        subtitle="Templates, Sections and Fields"
-        icon="cog"
-        onPress={() => router.push("/settings")}
-      />
-    </View>
-    <View style={styles.actionHalf}>
-      <DashboardActionCard
-        title="Reports"
-        subtitle="Generate inspection reports"
-        icon="file-chart"
-        onPress={() =>
-          router.push({
-            pathname: "/reports",
-            params: {
-              projectId: project.ProjectID.toString(),
-              projectName: project.ProjectName,
-            },
-          })
-        }
-      />
-    </View>
-  </View>
-</View>
+        <Text style={styles.sectionHeader}>Statistics</Text>
+        <DashboardCardGrid
+          projectId={project.ProjectID}
+          reloadKey={statReloadKey}
+          focused={isFocused}
+        />
 
-    </ScrollView>
-   </SafeAreaView>
-    
-);
-  
+        <View style={styles.manageCard}>
+          <DashboardActionCard
+            title="Manage Cards"
+            subtitle="Add, edit, reorder or disable dashboard cards"
+            icon="tune-variant"
+            onPress={() =>
+              router.push({
+                pathname: "/projects/dashboard-settings",
+                params: {
+                  projectId: project.ProjectID.toString(),
+                },
+              })
+            }
+          />
+        </View>
+
+        <Text style={styles.sectionHeader}>Quick Actions</Text>
+        <View style={styles.actionGrid}>
+          <View style={styles.actionRow}>
+            <View style={styles.actionHalf}>
+              <DashboardActionCard
+                title="New Inspection"
+                subtitle="Start a new pole inspection"
+                icon="clipboard-plus"
+                onPress={() =>
+                  router.push({
+                    pathname: "/inspection/new",
+                    params: {
+                      projectId: project.ProjectID.toString(),
+                      projectData: JSON.stringify(project),
+                    },
+                  })
+                }
+              />
+            </View>
+            <View style={styles.actionHalf}>
+              <DashboardActionCard
+                title="Inspection List"
+                subtitle="View completed and draft inspections"
+                icon="clipboard-list"
+                onPress={() =>
+                  router.push({
+                    pathname: "/inspection",
+                    params: {
+                      projectId: project.ProjectID.toString(),
+                    },
+                  })
+                }
+              />
+            </View>
+          </View>
+          <View style={styles.actionRow}>
+            <View style={styles.actionHalf}>
+              <DashboardActionCard
+                title="Settings"
+                subtitle="Templates, Sections and Fields"
+                icon="cog"
+                onPress={() => router.push("/settings")}
+              />
+            </View>
+            <View style={styles.actionHalf}>
+              <DashboardActionCard
+                title="Reports"
+                subtitle="Generate inspection reports"
+                icon="file-chart"
+                onPress={() =>
+                  router.push({
+                    pathname: "/reports",
+                    params: {
+                      projectId: project.ProjectID.toString(),
+                      projectName: project.ProjectName,
+                    },
+                  })
+                }
+              />
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function InfoField({
+  label,
+  value,
+  full,
+}: {
+  label: string;
+  value: string;
+  full?: boolean;
+}) {
+  return (
+    <View style={full ? styles.infoFull : styles.infoField}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: COLORS.background,
   },
 
-  title: {
-    textAlign: "center",
-    marginBottom: 20,
-    fontWeight: "bold",
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  content: {
+    padding: SPACING.lg,
+    paddingBottom: SPACING.xl,
   },
 
   card: {
-    marginBottom: 25,
+    marginBottom: SPACING.xl,
+    borderRadius: RADIUS.md,
   },
 
-  projectHeading: {
+  infoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+
+  infoField: {
+    width: "50%",
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+
+  infoFull: {
+    paddingHorizontal: SPACING.md,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+
+  infoLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+
+  infoValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+  },
+
+  sectionHeader: {
+    fontSize: 16,
     fontWeight: "700",
-    color: "#0B5ED7",
+    color: COLORS.textPrimary,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
   },
 
-  cardTitle: {
-    fontWeight: "bold",
-    marginBottom: 6,
+  manageCard: {
+    marginTop: SPACING.xl,
+    marginBottom: SPACING.xl,
   },
 
-  projectName: {
-    fontWeight: "700",
-    marginBottom: 8,
-    marginTop: 8,
+  actionGrid: {
+    marginBottom: SPACING.lg,
   },
 
-  button: {
-    marginBottom: 15,
+  actionRow: {
+    flexDirection: "row",
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
   },
-  content: {
-  padding: 20,
-  paddingBottom: 40,
-},
 
-statRow: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-},
-actionGrid: {
-  marginBottom: 14,
-},
-manageRow: {
-  marginBottom: 2,
-},
-actionRow: {
-  flexDirection: "row",
-  gap: 10,
-  marginBottom: 0,
-},
-actionHalf: {
-  flex: 1,
-},
+  actionHalf: {
+    flex: 1,
+  },
 });
