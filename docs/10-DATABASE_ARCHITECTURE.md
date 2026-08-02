@@ -188,3 +188,5 @@ seedDatabase(): Promise<void>
 | `app/settings/options.tsx` | Remove `TemplateSyncHelper` import |
 | `app/settings/device-types.tsx` | Remove `TemplateSyncHelper` calls + cloned template sync |
 | `app/settings/device-options.tsx` | Remove `TemplateSyncHelper` calls + cloned template sync |
+| `src/database/repositories/SmartCardGenerator.ts` | **NEW** — auto-creates Total + Today dashboard cards from inspection form field selection, classified into a `CardMode` (entitycount/dropdown/sum/fieldcount/datebreakdown) |
+| `src/components/dashboard/DashboardCardManager.tsx` | **NEW** — Smart Add Card flow (picker-only; smart cards are non-editable) |
