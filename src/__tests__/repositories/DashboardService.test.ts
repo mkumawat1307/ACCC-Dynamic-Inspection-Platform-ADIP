@@ -22,6 +22,7 @@ function cardOf(overrides: Partial<DashboardCard> = {}): DashboardCard {
     FilterJson: null,
     CountMode: "count",
     DistinctColumn: null,
+    BreakdownField: null,
     SortOrder: 0,
     Enabled: 1,
     IsDefault: 1,
@@ -66,5 +67,42 @@ describe("DashboardService", () => {
 
     expect(result).toEqual([]);
     expect(countService.countCard).not.toHaveBeenCalled();
+  });
+
+  it("returns breakdown rows for a breakdown card without calling countCard", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([
+      cardOf({ CardID: 9, CardKey: "foundation_breakdown", BreakdownField: "foundation_cond" }),
+    ]);
+    countService.breakdownCard.mockResolvedValue([
+      { label: "Good", count: 42 },
+      { label: "Bad", count: 7 },
+    ]);
+
+    const result = await DashboardService.getEnabledCardsWithCounts(1);
+
+    expect(countService.countCard).not.toHaveBeenCalled();
+    expect(countService.breakdownCard).toHaveBeenCalledWith(1, expect.objectContaining({ BreakdownField: "foundation_cond" }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      CardID: 9,
+      count: undefined,
+      breakdown: [
+        { label: "Good", count: 42 },
+        { label: "Bad", count: 7 },
+      ],
+    }));
+  });
+
+  it("mixes normal and breakdown cards", async () => {
+    cardRepo.getEnabledCards.mockResolvedValue([
+      cardOf({ CardID: 1, CardKey: "total_poles" }),
+      cardOf({ CardID: 2, CardKey: "foundation_breakdown", BreakdownField: "foundation_cond" }),
+    ]);
+    countService.countCard.mockResolvedValue(12);
+    countService.breakdownCard.mockResolvedValue([{ label: "Good", count: 42 }]);
+
+    const result = await DashboardService.getEnabledCardsWithCounts(1);
+
+    expect(result[0]).toEqual(expect.objectContaining({ count: 12, breakdown: undefined }));
+    expect(result[1]).toEqual(expect.objectContaining({ count: undefined, breakdown: [{ label: "Good", count: 42 }] }));
   });
 });
