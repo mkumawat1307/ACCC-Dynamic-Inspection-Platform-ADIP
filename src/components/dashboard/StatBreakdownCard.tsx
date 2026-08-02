@@ -3,6 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { Card, Text } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { BreakdownRow } from "@/src/database/repositories/DashboardService";
+import { COLORS, RADIUS, SPACING } from "@/src/constants/ui";
 
 interface StatBreakdownCardProps {
   title: string;
@@ -14,7 +15,7 @@ interface StatBreakdownCardProps {
 export default function StatBreakdownCard({
   title,
   icon,
-  color = "#0B5ED7",
+  color = COLORS.primary,
   rows,
 }: StatBreakdownCardProps) {
   return (
@@ -26,6 +27,7 @@ export default function StatBreakdownCard({
             {title}
           </Text>
         </View>
+        <View style={styles.divider} />
         {rows.length === 0 ? (
           <Text variant="bodyMedium" style={styles.empty}>
             No data
@@ -49,33 +51,44 @@ export default function StatBreakdownCard({
 
 const styles = StyleSheet.create({
   card: {
-    margin: 6,
-    borderRadius: 12,
+    borderRadius: RADIUS.md,
   },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
   },
+
   title: {
-    marginLeft: 8,
+    marginLeft: SPACING.sm,
     fontWeight: "bold",
     flex: 1,
   },
+
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#E0E0E0",
+    marginBottom: SPACING.sm,
+  },
+
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 4,
+    paddingVertical: SPACING.xs,
   },
+
   rowLabel: {
-    color: "#444",
+    color: COLORS.textSecondary,
   },
+
   rowCount: {
     fontWeight: "bold",
   },
+
   empty: {
-    color: "#999",
+    color: COLORS.textMuted,
     textAlign: "center",
-    paddingVertical: 8,
+    paddingVertical: SPACING.sm,
   },
 });
