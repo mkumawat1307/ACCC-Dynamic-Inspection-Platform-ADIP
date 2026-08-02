@@ -131,4 +131,50 @@ export class StatisticCountService {
       return 0;
     }
   }
+
+  static async breakdownCard(
+    projectId: number,
+    card: DashboardCard
+  ): Promise<{ label: string; count: number }[]> {
+    try {
+      if (card.EntityType !== "inspections" || !card.BreakdownField) return [];
+
+      const entity = COUNT_ENTITIES.inspections;
+      const counter = COUNTER_TYPES[card.CounterType];
+      if (!counter) return [];
+
+      const params: (string | number)[] = [projectId];
+
+      const time = counter.buildTimeClause(entity.alias);
+      if (time.clause) params.push(...time.params);
+
+      const filters = parseFilterJson(card.FilterJson);
+      const filterFragments: string[] = [];
+      for (const [field, value] of Object.entries(filters)) {
+        if (!entity.filterableColumns.includes(field)) continue;
+        filterFragments.push(`AND ${entity.alias}.${field} = ?`);
+        params.push(String(value));
+      }
+
+      params.push(card.BreakdownField);
+
+      const sql = `SELECT iv.FieldValue AS label, COUNT(DISTINCT iv.InspectionID) AS count
+         FROM Inspections i
+         JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
+         JOIN InspectionFields f ON f.FieldID = iv.FieldID
+         WHERE i.ProjectID = ?
+         ${time.clause}
+         ${filterFragments.join(" ")}
+         AND f.FieldKey = ?
+         AND f.IsActive = 1
+         GROUP BY iv.FieldValue
+         ORDER BY count DESC, label ASC`;
+
+      const db = await getDatabase();
+      const rows = await db.getAllAsync<{ label: string | null; count: number }>(sql, params);
+      return rows.map((row) => ({ label: row.label ?? "(Not set)", count: row.count }));
+    } catch {
+      return [];
+    }
+  }
 }

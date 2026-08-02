@@ -234,4 +234,80 @@ describe("StatisticCountService", () => {
       expect(params).toEqual([1, getTodayDateString()]);
     });
   });
+
+  describe("breakdownCard", () => {
+    const breakdownCard = (overrides: Partial<DashboardCard> = {}): DashboardCard =>
+      cardOf({ EntityType: "inspections", BreakdownField: "foundation_cond", ...overrides });
+
+    it("groups inspections by field value", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        { label: "Good", count: 42 },
+        { label: "Bad", count: 7 },
+        { label: "Fair", count: 3 },
+      ]);
+      const result = await StatisticCountService.breakdownCard(1, breakdownCard());
+      expect(result).toEqual([
+        { label: "Good", count: 42 },
+        { label: "Bad", count: 7 },
+        { label: "Fair", count: 3 },
+      ]);
+      const [sql, params] = (mockDb.getAllAsync as jest.Mock).mock.calls[0];
+      expect(normalizeSql(sql)).toContain("FROM Inspections i");
+      expect(normalizeSql(sql)).toContain("JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID");
+      expect(normalizeSql(sql)).toContain("JOIN InspectionFields f ON f.FieldID = iv.FieldID");
+      expect(normalizeSql(sql)).toContain("GROUP BY iv.FieldValue");
+      expect(params).toEqual([1, "foundation_cond"]);
+    });
+
+    it("adds the today date clause and param", async () => {
+      mockDb.getAllAsync.mockResolvedValue([]);
+      await StatisticCountService.breakdownCard(1, breakdownCard({ CounterType: "today" }));
+      const [sql, params] = (mockDb.getAllAsync as jest.Mock).mock.calls[0];
+      expect(normalizeSql(sql)).toContain("AND i.InspectionDate = ?");
+      expect(params).toEqual([1, getTodayDateString(), "foundation_cond"]);
+    });
+
+    it("stacks a Status filter from FilterJson", async () => {
+      mockDb.getAllAsync.mockResolvedValue([]);
+      await StatisticCountService.breakdownCard(
+        1,
+        breakdownCard({ FilterJson: JSON.stringify({ Status: "Completed" }) })
+      );
+      const [sql, params] = (mockDb.getAllAsync as jest.Mock).mock.calls[0];
+      expect(normalizeSql(sql)).toContain("AND i.Status = ?");
+      expect(params).toEqual([1, "Completed", "foundation_cond"]);
+    });
+
+    it("maps null FieldValue labels to (Not set)", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        { label: null, count: 5 },
+      ]);
+      const result = await StatisticCountService.breakdownCard(1, breakdownCard());
+      expect(result).toEqual([{ label: "(Not set)", count: 5 }]);
+    });
+
+    it("returns [] for a non-inspections entity without touching the db", async () => {
+      const result = await StatisticCountService.breakdownCard(1, breakdownCard({ EntityType: "cameras" }));
+      expect(result).toEqual([]);
+      expect(mockDb.getAllAsync).not.toHaveBeenCalled();
+    });
+
+    it("returns [] when BreakdownField is missing", async () => {
+      const result = await StatisticCountService.breakdownCard(1, cardOf());
+      expect(result).toEqual([]);
+      expect(mockDb.getAllAsync).not.toHaveBeenCalled();
+    });
+
+    it("returns [] when the query rejects", async () => {
+      mockDb.getAllAsync.mockRejectedValue(new Error("no such table"));
+      const result = await StatisticCountService.breakdownCard(1, breakdownCard());
+      expect(result).toEqual([]);
+    });
+
+    it("returns [] when getDatabase throws", async () => {
+      (getDatabase as jest.Mock).mockRejectedValue(new Error("db closed"));
+      const result = await StatisticCountService.breakdownCard(1, breakdownCard());
+      expect(result).toEqual([]);
+    });
+  });
 });
