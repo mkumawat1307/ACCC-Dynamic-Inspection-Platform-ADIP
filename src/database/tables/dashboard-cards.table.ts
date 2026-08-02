@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS DashboardCards (
     BreakdownField TEXT,
     SectionLabel TEXT,
     AggregateField TEXT,
+    CardMode TEXT NOT NULL DEFAULT 'entitycount',
     SortOrder INTEGER NOT NULL DEFAULT 0,
     Enabled INTEGER NOT NULL DEFAULT 1,
     IsDefault INTEGER NOT NULL DEFAULT 0,
