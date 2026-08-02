@@ -178,21 +178,23 @@ describe("DashboardCardRepository", () => {
   });
 
   describe("ensureDefaultCards", () => {
-    it("inserts all four defaults when none exist", async () => {
+    it("inserts all six defaults when none exist", async () => {
       mockDb.getAllAsync.mockResolvedValue([]);
       mockDb.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
       await DashboardCardRepository.ensureDefaultCards(1);
-      expect(mockDb.runAsync).toHaveBeenCalledTimes(4);
+      expect(mockDb.runAsync).toHaveBeenCalledTimes(6);
       const allParams = (mockDb.runAsync as jest.Mock).mock.calls.map((c) => c[1]);
       const keys = allParams.map((p) => p[1]);
-      expect(keys).toEqual(["total_poles", "total_cameras", "today_poles", "today_cameras"]);
+      expect(keys).toEqual(["total_inspections", "total_poles", "total_cameras", "today_inspections_done", "today_poles", "today_cameras"]);
     });
 
     it("is idempotent when all defaults exist", async () => {
       mockDb.getAllAsync.mockResolvedValue([
+        { CardKey: "total_inspections" },
         { CardKey: "total_poles" },
         { CardKey: "total_cameras" },
+        { CardKey: "today_inspections_done" },
         { CardKey: "today_poles" },
         { CardKey: "today_cameras" },
       ]);
@@ -203,8 +205,10 @@ describe("DashboardCardRepository", () => {
 
     it("does not re-enable or overwrite an existing default", async () => {
       mockDb.getAllAsync.mockResolvedValue([
+        { CardKey: "total_inspections" },
         { CardKey: "total_poles" },
         { CardKey: "total_cameras" },
+        { CardKey: "today_inspections_done" },
         { CardKey: "today_poles" },
         { CardKey: "today_cameras" },
       ]);
@@ -215,7 +219,9 @@ describe("DashboardCardRepository", () => {
 
     it("re-inserts only the deleted default keys", async () => {
       mockDb.getAllAsync.mockResolvedValue([
+        { CardKey: "total_inspections" },
         { CardKey: "total_poles" },
+        { CardKey: "today_inspections_done" },
         { CardKey: "today_poles" },
         { CardKey: "today_cameras" },
       ]);
@@ -257,6 +263,82 @@ describe("DashboardCardRepository", () => {
       const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       expect(sql).toContain("BreakdownField = ?");
       expect(params).toContain("pole_status");
+    });
+  });
+
+  describe("migrateDefaultCards", () => {
+    it("inserts the two new defaults and renumbers the old four", async () => {
+      mockDb.getAllAsync
+        .mockResolvedValueOnce([
+          { CardKey: "total_poles" },
+          { CardKey: "total_cameras" },
+          { CardKey: "today_poles" },
+          { CardKey: "today_cameras" },
+        ])
+        .mockResolvedValueOnce([
+          { CardID: 1, CardKey: "total_poles" },
+          { CardID: 2, CardKey: "total_cameras" },
+          { CardID: 3, CardKey: "today_poles" },
+          { CardID: 4, CardKey: "today_cameras" },
+        ]);
+      mockDb.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.migrateDefaultCards(1);
+
+      expect(mockDb.runAsync).toHaveBeenCalledTimes(6);
+      const inserts = (mockDb.runAsync as jest.Mock).mock.calls.filter((c) => c[0].includes("INSERT INTO DashboardCards"));
+      expect(inserts).toHaveLength(2);
+      const insertParams = inserts.map((c) => c[1]);
+      expect(insertParams.map((p) => p[1])).toEqual(["total_inspections", "today_inspections_done"]);
+      expect(insertParams[1][7]).toBe(JSON.stringify({ Status: "Completed" }));
+
+      const updates = (mockDb.runAsync as jest.Mock).mock.calls.filter((c) => c[0].includes("UPDATE DashboardCards"));
+      expect(updates).toHaveLength(4);
+      expect(updates[0][1]).toEqual([1, "i.PoleID", 1]);
+      expect(updates[1][1]).toEqual([2, null, 2]);
+      expect(updates[2][1]).toEqual([4, "i.PoleID", 3]);
+      expect(updates[3][1]).toEqual([5, null, 4]);
+      expect(updates[0][0]).not.toContain("SET Title");
+    });
+
+    it("is a no-op when both new defaults already exist", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        { CardKey: "total_inspections" },
+        { CardKey: "total_poles" },
+        { CardKey: "total_cameras" },
+        { CardKey: "today_inspections_done" },
+        { CardKey: "today_poles" },
+        { CardKey: "today_cameras" },
+      ]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.migrateDefaultCards(1);
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
+      expect(mockDb.withTransactionAsync).not.toHaveBeenCalled();
+    });
+
+    it("preserves admin-edited titles and Enabled state on existing defaults", async () => {
+      mockDb.getAllAsync
+        .mockResolvedValueOnce([
+          { CardKey: "total_poles" },
+          { CardKey: "total_cameras" },
+          { CardKey: "today_poles" },
+          { CardKey: "today_cameras" },
+        ])
+        .mockResolvedValueOnce([
+          { CardID: 1, CardKey: "total_poles" },
+          { CardID: 2, CardKey: "total_cameras" },
+          { CardID: 3, CardKey: "today_poles" },
+          { CardID: 4, CardKey: "today_cameras" },
+        ]);
+      mockDb.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.migrateDefaultCards(1);
+
+      const updates = (mockDb.runAsync as jest.Mock).mock.calls.filter((c) => c[0].includes("UPDATE DashboardCards"));
+      for (const [, params] of updates) {
+        expect(params).toHaveLength(3);
+      }
+      expect(updates[0][0]).not.toContain("Enabled");
     });
   });
 });

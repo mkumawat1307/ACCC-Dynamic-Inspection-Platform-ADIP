@@ -177,7 +177,7 @@ export class DashboardCardRepository {
         await db.runAsync(
           `INSERT INTO DashboardCards
            (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, SortOrder, Enabled, IsDefault)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
           [
             projectId,
             card.CardKey,
@@ -186,11 +186,64 @@ export class DashboardCardRepository {
             card.Color,
             card.EntityType,
             card.CounterType,
-            null,
+            card.FilterJson ?? null,
             card.CountMode,
             card.DistinctColumn ?? null,
             card.SortOrder,
           ]
+        );
+      }
+    });
+  }
+
+  static async migrateDefaultCards(projectId: number): Promise<void> {
+    const db = await getDatabase();
+
+    const existing = await db.getAllAsync<{ CardKey: string }>(
+      `SELECT CardKey FROM DashboardCards WHERE ProjectID = ?`,
+      [projectId]
+    );
+    const existingKeys = new Set(existing.map((r) => r.CardKey));
+
+    if (existingKeys.has("total_inspections") && existingKeys.has("today_inspections_done")) {
+      return;
+    }
+
+    const missing = DEFAULT_DASHBOARD_CARDS.filter((c) => !existingKeys.has(c.CardKey));
+
+    await db.withTransactionAsync(async () => {
+      for (const card of missing) {
+        await db.runAsync(
+          `INSERT INTO DashboardCards
+           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, SortOrder, Enabled, IsDefault)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+          [
+            projectId,
+            card.CardKey,
+            card.Title,
+            card.Icon,
+            card.Color,
+            card.EntityType,
+            card.CounterType,
+            card.FilterJson ?? null,
+            card.CountMode,
+            card.DistinctColumn ?? null,
+            card.SortOrder,
+          ]
+        );
+      }
+
+      const defaults = await db.getAllAsync<{ CardID: number; CardKey: string }>(
+        `SELECT CardID, CardKey FROM DashboardCards WHERE ProjectID = ? AND IsDefault = 1`,
+        [projectId]
+      );
+      const canonical = new Map(DEFAULT_DASHBOARD_CARDS.map((c) => [c.CardKey, c]));
+      for (const row of defaults) {
+        const config = canonical.get(row.CardKey);
+        if (!config) continue;
+        await db.runAsync(
+          `UPDATE DashboardCards SET SortOrder = ?, DistinctColumn = ? WHERE CardID = ?`,
+          [config.SortOrder, config.DistinctColumn ?? null, row.CardID]
         );
       }
     });
