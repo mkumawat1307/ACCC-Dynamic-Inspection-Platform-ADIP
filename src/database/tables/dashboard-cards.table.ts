@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS DashboardCards (
     FilterJson TEXT,
     CountMode TEXT NOT NULL DEFAULT 'count',
     DistinctColumn TEXT,
+    BreakdownField TEXT,
     SortOrder INTEGER NOT NULL DEFAULT 0,
     Enabled INTEGER NOT NULL DEFAULT 1,
     IsDefault INTEGER NOT NULL DEFAULT 0,

@@ -44,6 +44,7 @@ function rowOf(card: DashboardCard): Record<string, unknown> {
     FilterJson: card.FilterJson ?? null,
     CountMode: card.CountMode,
     DistinctColumn: card.DistinctColumn ?? null,
+    BreakdownField: card.BreakdownField ?? null,
     SortOrder: card.SortOrder,
     Enabled: card.Enabled,
     IsDefault: card.IsDefault,
@@ -116,7 +117,7 @@ describe("DashboardCardRepository", () => {
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     await DashboardCardRepository.createCard(baseCard({ SortOrder: undefined as unknown as number }));
     const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
-    expect(params[10]).toBe(8);
+    expect(params[11]).toBe(8);
   });
 
   it("createCard falls back to 0 when max SortOrder is null", async () => {
@@ -124,7 +125,7 @@ describe("DashboardCardRepository", () => {
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     await DashboardCardRepository.createCard(baseCard({ SortOrder: undefined as unknown as number }));
     const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
-    expect(params[10]).toBe(0);
+    expect(params[11]).toBe(0);
   });
 
   it("updateCard persists changes with parameterized values", async () => {
@@ -224,6 +225,38 @@ describe("DashboardCardRepository", () => {
       expect(mockDb.runAsync).toHaveBeenCalledTimes(1);
       const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       expect(params[1]).toBe("total_cameras");
+    });
+  });
+
+  describe("BreakdownField", () => {
+    it("maps BreakdownField from a row", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        rowOf(baseCard({ CardID: 3, BreakdownField: "foundation_cond" })),
+      ]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const cards = await DashboardCardRepository.getAllCards(1);
+      expect(cards[0].BreakdownField).toBe("foundation_cond");
+    });
+
+    it("createCard persists BreakdownField", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ max: 3 });
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.createCard(
+        baseCard({ BreakdownField: "foundation_cond" })
+      );
+      const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(params[10]).toBe("foundation_cond");
+      expect(params[11]).toBe(0);
+    });
+
+    it("updateCard persists BreakdownField", async () => {
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.updateCard(
+        baseCard({ CardID: 5, BreakdownField: "pole_status" })
+      );
+      const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(sql).toContain("BreakdownField = ?");
+      expect(params).toContain("pole_status");
     });
   });
 });

@@ -10,6 +10,7 @@ export interface DashboardCard {
   FilterJson?: string | null;
   CountMode: "count" | "distinct";
   DistinctColumn?: string | null;
+  BreakdownField?: string | null;
   SortOrder: number;
   Enabled: number;
   IsDefault: number;
