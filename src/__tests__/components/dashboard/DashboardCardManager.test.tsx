@@ -31,25 +31,18 @@ jest.mock("react-native-paper", () => {
 
 jest.mock("@/src/database/repositories/DashboardCardRepository");
 
-jest.mock("@/src/database/repositories/InspectionFieldRepository", () => ({
-  __esModule: true,
-  default: {
-    getActiveTemplateFields: jest.fn(),
-  },
-}));
-
 jest.mock("@/src/database/repositories/SmartCardGenerator");
 
-import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import { SmartCardGenerator, SmartFormField } from "@/src/database/repositories/SmartCardGenerator";
 
 const repo = DashboardCardRepository as jest.Mocked<typeof DashboardCardRepository>;
-const fieldRepo = InspectionFieldRepository as jest.Mocked<typeof InspectionFieldRepository>;
 const smartGen = SmartCardGenerator as jest.Mocked<typeof SmartCardGenerator>;
 
 const mockFields: SmartFormField[] = [
   { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown", Options: [{ label: "Available", value: "Available" }] },
   { FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number", Options: [] },
+  { FieldID: 101, FieldKey: "dev_Camera_Presence", FieldName: "Camera Presence", FieldType: "dropdown", Options: [], source: "device", DeviceType: "Camera", DeviceColumn: "Presence" },
+  { FieldID: 102, FieldKey: "dev_Switch_State", FieldName: "Switch State", FieldType: "switch", Options: [], source: "device", DeviceType: "Switch", DeviceColumn: "State" },
 ];
 
 function cardOf(overrides: Partial<DashboardCard> = {}): DashboardCard {
@@ -64,6 +57,7 @@ function cardOf(overrides: Partial<DashboardCard> = {}): DashboardCard {
     CounterType: "total",
     FilterJson: null,
     CountMode: "count",
+    CardMode: "entitycount",
     DistinctColumn: null,
     BreakdownField: null,
     SortOrder: 0,
@@ -143,14 +137,10 @@ async function pressButton(tree: ReturnType<typeof TestRenderer.create>, label: 
 describe("DashboardCardManager", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    fieldRepo.getActiveTemplateFields.mockResolvedValue([
-      { FieldKey: "foundation_cond", FieldName: "Foundation Condition" },
-      { FieldKey: "pole_status", FieldName: "Pole Status" },
-    ]);
     smartGen.getAvailableFields.mockResolvedValue(mockFields);
     smartGen.addSmartCardsForField.mockResolvedValue([1, 2]);
     smartGen.getSpec.mockReturnValue({
-      kind: "breakdown",
+      kind: "entitycount",
       fieldKey: "test",
       fieldName: "Test",
       title: "Test",
@@ -203,118 +193,6 @@ describe("DashboardCardManager", () => {
     expect(repo.deleteCard).toHaveBeenCalledWith(1);
   });
 
-  it("reorders cards by moving one down", async () => {
-    repo.reorderCards.mockResolvedValue(undefined);
-    const tree = await renderManager([
-      cardOf(),
-      cardOf({ CardID: 2, CardKey: "total_cameras", Title: "Total Cameras" }),
-    ]);
-    await pressButton(tree, "arrow-down");
-    expect(repo.reorderCards).toHaveBeenCalledWith(1, [2, 1]);
-  });
-
-  it("reset calls ensureDefaultCards and reloads", async () => {
-    repo.ensureDefaultCards.mockResolvedValue(undefined);
-    const tree = await renderManager([cardOf()]);
-    repo.getAllCards.mockClear();
-    await pressButton(tree, "Reset Defaults");
-    expect(repo.ensureDefaultCards).toHaveBeenCalledWith(1);
-    expect(repo.getAllCards).toHaveBeenCalled();
-  });
-
-  it("blocks saving when the title is empty", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Save");
-    const strings = collectStrings(tree.toJSON());
-    expect(strings.join(" ")).toContain("Title is required.");
-    expect(repo.createCard).not.toHaveBeenCalled();
-  });
-
-  it("creates a card after the form is filled", async () => {
-    repo.createCard.mockResolvedValue(5);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    const textInputs = tree.root.findAll((node) => {
-      const props = node.props as { label?: string };
-      return props && props.label === "Title";
-    });
-    expect(textInputs.length).toBeGreaterThan(0);
-    await TestRenderer.act(async () => {
-      (textInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("Total Switches");
-      await flushPromises();
-    });
-    await pressButton(tree, "Save");
-    expect(repo.createCard).toHaveBeenCalledWith(
-      expect.objectContaining({
-        Title: "Total Switches",
-        EntityType: "inspections",
-        CounterType: "total",
-      })
-    );
-  });
-
-  it("edit form populates existing values and calls updateCard", async () => {
-    repo.updateCard.mockResolvedValue(undefined);
-    const tree = await renderManager([
-      cardOf({ CardID: 7, Title: "Custom Card", EntityType: "cameras", CounterType: "today" }),
-    ]);
-    await pressButton(tree, "pencil");
-    const textInputs = tree.root.findAll((node) => {
-      const props = node.props as { label?: string };
-      return props && props.label === "Title";
-    });
-    expect((textInputs[0].props as { value?: string }).value).toBe("Custom Card");
-    await TestRenderer.act(async () => {
-      (textInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("Renamed Card");
-      await flushPromises();
-    });
-    await pressButton(tree, "Save");
-    expect(repo.updateCard).toHaveBeenCalledWith(
-      expect.objectContaining({ CardID: 7, Title: "Renamed Card", EntityType: "cameras" })
-    );
-  });
-
-  it("entity selection updates available distinct columns", async () => {
-    repo.createCard.mockResolvedValue(5);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Inspections");
-    await pressButton(tree, "Cameras");
-    await pressButton(tree, "Count");
-    await pressButton(tree, "Distinct");
-    await pressButton(tree, "Select column");
-    const distinctOptions = tree.root.findAll((node) => {
-      const props = node.props as { title?: string };
-      return props && (props.title === "c.CameraID" || props.title === "i.PoleID");
-    });
-    expect(distinctOptions.length).toBeGreaterThan(0);
-  });
-
-  it("add and remove filter rows", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Add Filter");
-    const valueInputs = tree.root.findAll((node) => {
-      const props = node.props as { placeholder?: string };
-      return props && props.placeholder === "value";
-    });
-    expect(valueInputs.length).toBeGreaterThan(0);
-    await TestRenderer.act(async () => {
-      (valueInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("Offline");
-      await flushPromises();
-    });
-    const closeButtons = tree.root.findAll((node) => {
-      const props = node.props as { icon?: string };
-      return props && props.icon === "close";
-    });
-    expect(closeButtons.length).toBeGreaterThan(0);
-    await TestRenderer.act(async () => {
-      (closeButtons[0].props as { onPress?: () => void }).onPress?.();
-      await flushPromises();
-    });
-  });
-
   it("cancel closes the delete dialog without deleting", async () => {
     repo.deleteCard.mockResolvedValue(undefined);
     const tree = await renderManager([cardOf()]);
@@ -323,132 +201,14 @@ describe("DashboardCardManager", () => {
     expect(repo.deleteCard).not.toHaveBeenCalled();
   });
 
-  it("cancel closes the editor without saving", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Cancel");
-    expect(repo.createCard).not.toHaveBeenCalled();
-  });
-
-  it("selecting count mode back to Count hides distinct column", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Count");
-    await pressButton(tree, "Distinct");
-    await pressButton(tree, "Distinct");
-    await pressButton(tree, "Count");
-    const distinctLabel = tree.root.findAll((node) => {
-      const props = node.props as { children?: unknown };
-      return typeof props.children === "string" && props.children === "Distinct Column";
-    });
-    expect(distinctLabel.length).toBe(0);
-  });
-
-  it("updates an existing card's filter json via edit save", async () => {
-    repo.updateCard.mockResolvedValue(undefined);
+  it("reorders cards by moving one down", async () => {
+    repo.reorderCards.mockResolvedValue(undefined);
     const tree = await renderManager([
-      cardOf({ CardID: 7, Title: "Custom Card", EntityType: "cameras", CounterType: "today" }),
+      cardOf(),
+      cardOf({ CardID: 2, CardKey: "total_cameras", Title: "Total Cameras" }),
     ]);
-    await pressButton(tree, "pencil");
-    await pressButton(tree, "Add Filter");
-    const valueInputs = tree.root.findAll((node) => {
-      const props = node.props as { placeholder?: string };
-      return props && props.placeholder === "value";
-    });
-    await TestRenderer.act(async () => {
-      (valueInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("PTZ");
-      await flushPromises();
-    });
-    await pressButton(tree, "Save");
-    expect(repo.updateCard).toHaveBeenCalledWith(
-      expect.objectContaining({
-        CardID: 7,
-        EntityType: "cameras",
-        FilterJson: JSON.stringify({ CameraType: "PTZ" }),
-      })
-    );
-  });
-
-  it("selects an icon and color for a new card", async () => {
-    repo.createCard.mockResolvedValue(5);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    const titleInputs = tree.root.findAll((node) => {
-      const props = node.props as { label?: string };
-      return props && props.label === "Title";
-    });
-    await TestRenderer.act(async () => {
-      (titleInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("My Card");
-      await flushPromises();
-    });
-    await pressButton(tree, "cctv");
-    const colorButtons = tree.root.findAll((node) => {
-      const props = node.props as { containerColor?: string; onPress?: () => void };
-      return props && typeof props.onPress === "function" && props.containerColor === "#DC3545";
-    });
-    expect(colorButtons.length).toBeGreaterThan(0);
-    await TestRenderer.act(async () => {
-      (colorButtons[0].props as { onPress?: () => void }).onPress?.();
-      await flushPromises();
-    });
-    await pressButton(tree, "Save");
-    expect(repo.createCard).toHaveBeenCalledWith(
-      expect.objectContaining({ Title: "My Card", Icon: "cctv", Color: "#DC3545" })
-    );
-  });
-
-  it("selects a counter type for a new card", async () => {
-    repo.createCard.mockResolvedValue(5);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    const titleInputs = tree.root.findAll((node) => {
-      const props = node.props as { label?: string };
-      return props && props.label === "Title";
-    });
-    await TestRenderer.act(async () => {
-      (titleInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("Today's Poles");
-      await flushPromises();
-    });
-    await pressButton(tree, "Total");
-    await pressButton(tree, "Today's");
-    await pressButton(tree, "Save");
-    expect(repo.createCard).toHaveBeenCalledWith(
-      expect.objectContaining({ Title: "Today's Poles", CounterType: "today" })
-    );
-  });
-
-  it("changes a filter row's column key via the picker", async () => {
-    repo.createCard.mockResolvedValue(5);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Inspections");
-    await pressButton(tree, "Cameras");
-    await pressButton(tree, "Add Filter");
-    await pressButton(tree, "CameraType");
-    await pressButton(tree, "CameraStatus");
-    const titleInputs = tree.root.findAll((node) => {
-      const props = node.props as { label?: string };
-      return props && props.label === "Title";
-    });
-    await TestRenderer.act(async () => {
-      (titleInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("Offline Cameras");
-      await flushPromises();
-    });
-    const valueInputs = tree.root.findAll((node) => {
-      const props = node.props as { placeholder?: string };
-      return props && props.placeholder === "value";
-    });
-    await TestRenderer.act(async () => {
-      (valueInputs[0].props as { onChangeText?: (t: string) => void }).onChangeText?.("Offline");
-      await flushPromises();
-    });
-    await pressButton(tree, "Save");
-    expect(repo.createCard).toHaveBeenCalledWith(
-      expect.objectContaining({
-        EntityType: "cameras",
-        FilterJson: JSON.stringify({ CameraStatus: "Offline" }),
-      })
-    );
+    await pressButton(tree, "arrow-down");
+    expect(repo.reorderCards).toHaveBeenCalledWith(1, [2, 1]);
   });
 
   it("reorders cards by moving one up", async () => {
@@ -469,95 +229,73 @@ describe("DashboardCardManager", () => {
     expect(repo.reorderCards).toHaveBeenCalledWith(1, [2, 1]);
   });
 
-  it("edit populates existing filter rows from FilterJson", async () => {
-    repo.updateCard.mockResolvedValue(undefined);
-    const tree = await renderManager([
-      cardOf({
-        CardID: 7,
-        Title: "Custom",
-        EntityType: "inspections",
-        FilterJson: JSON.stringify({ Status: "Done" }),
-      }),
-    ]);
-    await pressButton(tree, "pencil");
+  it("reset calls ensureDefaultCards and reloads", async () => {
+    repo.ensureDefaultCards.mockResolvedValue(undefined);
+    const tree = await renderManager([cardOf()]);
+    repo.getAllCards.mockClear();
+    await pressButton(tree, "Reset Defaults");
+    expect(repo.ensureDefaultCards).toHaveBeenCalledWith(1);
+    expect(repo.getAllCards).toHaveBeenCalled();
+  });
+
+  it("does not render a Custom Card button", async () => {
+    const tree = await renderManager([cardOf()]);
     const strings = collectStrings(tree.toJSON());
-    expect(strings).toContain("Status");
-    const valueInputs = tree.root.findAll((node) => {
-      const props = node.props as { placeholder?: string };
-      return props && props.placeholder === "value";
-    });
-    expect((valueInputs[0].props as { value?: string }).value).toBe("Done");
+    expect(strings).not.toContain("Custom Card");
   });
 
-  it("creates a breakdown card by picking a form field", async () => {
-    repo.createCard.mockResolvedValue(5);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Count");
-    await pressButton(tree, "Breakdown");
-    await pressButton(tree, "Foundation Condition");
-    const titleInputs = tree.root.findAll((node) => {
-      const props = node.props as { label?: string };
-      return props && props.label === "Title";
+  it("does not render a pencil edit affordance on cards", async () => {
+    const tree = await renderManager([cardOf()]);
+    const pencils = tree.root.findAll((node) => {
+      const props = node.props as { icon?: string };
+      return props && props.icon === "pencil";
     });
-    expect((titleInputs[0].props as { value?: string }).value).toBe("Foundation Condition");
-    await pressButton(tree, "Save");
-    expect(repo.createCard).toHaveBeenCalledWith(
-      expect.objectContaining({
-        Title: "Foundation Condition",
-        EntityType: "inspections",
-        CountMode: "count",
-        DistinctColumn: null,
-        BreakdownField: "foundation_cond",
-      })
-    );
+    expect(pencils.length).toBe(0);
   });
 
-  it("requires a field before saving a breakdown card", async () => {
+  it("Add Card button opens the smart field picker dialog", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Count");
-    await pressButton(tree, "Breakdown");
-    await pressButton(tree, "Save");
+    await pressButton(tree, "Add Card");
     const strings = collectStrings(tree.toJSON());
-    expect(strings.join(" ")).toContain("Select a field to group by.");
-    expect(repo.createCard).not.toHaveBeenCalled();
+    expect(strings).toContain("Pole Status");
+    expect(strings).toContain("Camera Count");
+    expect(strings).toContain("Dropdown");
+    expect(strings).toContain("Number");
   });
 
-  it("edit loads an existing breakdown card's field into the picker", async () => {
-    repo.updateCard.mockResolvedValue(undefined);
-    const tree = await renderManager([
-      cardOf({
-        CardID: 7,
-        CardKey: "foundation_breakdown",
-        Title: "Foundation Condition",
-        EntityType: "inspections",
-        CountMode: "count",
-        BreakdownField: "foundation_cond",
-      }),
-    ]);
-    await pressButton(tree, "pencil");
-    const strings = collectStrings(tree.toJSON());
-    expect(strings).toContain("Foundation Condition");
-    await pressButton(tree, "Save");
-    expect(repo.updateCard).toHaveBeenCalledWith(
-      expect.objectContaining({
-        CardID: 7,
-        BreakdownField: "foundation_cond",
-      })
-    );
-  });
-
-  it("wraps the editor form in a scrollable container", async () => {
+  it("Add Card button opens dialog titled 'Add Card'", async () => {
     const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    const scrollViews = tree.root.findAll((node) => {
-      const type = (node as unknown as { type?: unknown }).type;
-      if (typeof type !== "function") return false;
-      const typeFn = type as { displayName?: string; name?: string };
-      return typeFn.displayName === "ScrollView" || typeFn.name === "ScrollView";
+    await pressButton(tree, "Add Card");
+    const { dialog } = findDialogByTitle(tree, "Add Card");
+    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
+  });
+
+  it("picker lists device fields with their device type", async () => {
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    const deviceItems = tree.root.findAll((node) => {
+      const props = node.props as { title?: string };
+      return props && (props.title === "Camera Presence" || props.title === "Switch State");
     });
-    expect(scrollViews.length).toBeGreaterThan(0);
+    expect(deviceItems.length).toBe(2);
+    expect((deviceItems[0].props as { description?: string }).description).toBe("Camera");
+    expect((deviceItems[1].props as { description?: string }).description).toBe("Switch");
+  });
+
+  it("field picker shows empty state when no fields are available", async () => {
+    smartGen.getAvailableFields.mockResolvedValue([]);
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    const strings = collectStrings(tree.toJSON());
+    expect(strings.join(" ")).toContain("All available fields have cards configured.");
+  });
+
+  it("selecting a field in the picker creates cards and closes the dialog", async () => {
+    repo.getAllCards.mockResolvedValue([]);
+    const tree = await renderManager([]);
+    await pressButton(tree, "Add Card");
+    await pressButton(tree, "Pole Status");
+    expect(smartGen.addSmartCardsForField).toHaveBeenCalledWith(1, "pole_status");
   });
 
   function findDialogByTitle(
@@ -608,89 +346,4 @@ describe("DashboardCardManager", () => {
     });
     return { dialog, cancelButton };
   }
-
-  it("adds a Cancel button to the entity picker dialog", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Inspections");
-    const { dialog, cancelButton } = findDialogByTitle(tree, "Select Entity");
-    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
-    expect(cancelButton).toBeDefined();
-    await TestRenderer.act(async () => {
-      (cancelButton!.props as { onPress?: () => void }).onPress?.();
-      await flushPromises();
-    });
-    const { dialog: closed } = findDialogByTitle(tree, "Select Entity");
-    expect((closed.props as { visible?: boolean }).visible).toBe(false);
-  });
-
-  it("adds a Cancel button to the counter picker dialog", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Total");
-    const { dialog, cancelButton } = findDialogByTitle(tree, "Select Counter");
-    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
-    expect(cancelButton).toBeDefined();
-    await TestRenderer.act(async () => {
-      (cancelButton!.props as { onPress?: () => void }).onPress?.();
-      await flushPromises();
-    });
-    const { dialog: closed } = findDialogByTitle(tree, "Select Counter");
-    expect((closed.props as { visible?: boolean }).visible).toBe(false);
-  });
-
-  it("adds a Cancel button to the count mode picker dialog", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Custom Card");
-    await pressButton(tree, "Count");
-    const { dialog, cancelButton } = findDialogByTitle(tree, "Select Count Mode");
-    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
-    expect(cancelButton).toBeDefined();
-    await TestRenderer.act(async () => {
-      (cancelButton!.props as { onPress?: () => void }).onPress?.();
-      await flushPromises();
-    });
-    const { dialog: closed } = findDialogByTitle(tree, "Select Count Mode");
-    expect((closed.props as { visible?: boolean }).visible).toBe(false);
-  });
-
-  it("Add Card button opens the smart field picker dialog", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
-    const strings = collectStrings(tree.toJSON());
-    expect(strings).toContain("Pole Status");
-    expect(strings).toContain("Camera Count");
-    expect(strings).toContain("Dropdown");
-    expect(strings).toContain("Number");
-  });
-
-  it("Add Card button opens dialog titled 'Add Card'", async () => {
-    const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
-    const { dialog } = findDialogByTitle(tree, "Add Card");
-    expect((dialog.props as { visible?: boolean }).visible).toBe(true);
-  });
-
-  it("field picker shows empty state when no fields are available", async () => {
-    smartGen.getAvailableFields.mockResolvedValue([]);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
-    const strings = collectStrings(tree.toJSON());
-    expect(strings.join(" ")).toContain("All available fields have cards configured.");
-  });
-
-  it("selecting a field in the picker creates cards and closes the dialog", async () => {
-    repo.getAllCards.mockResolvedValue([]);
-    const tree = await renderManager([]);
-    await pressButton(tree, "Add Card");
-    await pressButton(tree, "Pole Status");
-    expect(smartGen.addSmartCardsForField).toHaveBeenCalledWith(1, "pole_status");
-  });
-
-  it("Add Card and Custom Card are distinct buttons", async () => {
-    const tree = await renderManager([]);
-    const strings = collectStrings(tree.toJSON());
-    expect(strings).toContain("Add Card");
-    expect(strings).toContain("Custom Card");
-  });
 });
