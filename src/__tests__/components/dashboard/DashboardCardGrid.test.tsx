@@ -21,6 +21,8 @@ function cardWithCount(overrides: Partial<CardWithCount> = {}): CardWithCount {
     CountMode: "count",
     DistinctColumn: null,
     BreakdownField: null,
+    SectionLabel: null,
+    AggregateField: null,
     SortOrder: 0,
     Enabled: 1,
     IsDefault: 1,
@@ -177,5 +179,55 @@ describe("DashboardCardGrid", () => {
     });
     const strings = collectStrings(tree!.toJSON());
     expect(strings.join(" ")).toContain("No data");
+  });
+
+  it("renders section headers for grouped default cards", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "total_inspection_done", Title: "Inspection Done", SectionLabel: "Total", count: 8 }),
+      cardWithCount({ CardID: 2, CardKey: "total_camera_count", Title: "Camera Count", SectionLabel: "Total", count: 17 }),
+      cardWithCount({ CardID: 3, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: "Today's", count: 2 }),
+      cardWithCount({ CardID: 4, CardKey: "today_camera_count", Title: "Camera Count", SectionLabel: "Today's", count: 5 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).toContain("Total");
+    expect(strings).toContain("Today's");
+    expect(strings.indexOf("Total")).toBeLessThan(strings.indexOf("Inspection Done"));
+    expect(strings.indexOf("Today's")).toBeGreaterThan(strings.indexOf("Inspection Done"));
+  });
+
+  it("renders no section headers for cards with null SectionLabel", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, Title: "Total Poles", count: 12 }),
+      cardWithCount({ CardID: 2, CardKey: "total_cameras", Title: "Total Cameras", count: 40 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).not.toContain("Total");
+    expect(strings).not.toContain("Today's");
+  });
+
+  it("does not pair the last card of one section with the first of the next", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "total_camera_count", Title: "Camera Count", SectionLabel: "Total", count: 17 }),
+      cardWithCount({ CardID: 2, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: "Today's", count: 2 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).toContain("Total");
+    expect(strings).toContain("Today's");
+    expect(strings.indexOf("Today's")).toBeGreaterThan(strings.indexOf("Camera Count"));
   });
 });

@@ -11,6 +11,9 @@ export interface DashboardCardSeed {
   CountMode: "count" | "distinct";
   DistinctColumn?: string;
   FilterJson?: string;
+  BreakdownField?: string;
+  SectionLabel?: string;
+  AggregateField?: string;
   SortOrder: number;
 }
 
@@ -23,6 +26,15 @@ export const DEFAULT_DASHBOARD_CARDS: DashboardCardSeed[] = [
   { CardKey: "today_cameras",          Title: "Today's Cameras",          Icon: "cctv",               Color: "#6F42C1", EntityType: "cameras",     CounterType: "today", CountMode: "count",   SortOrder: 5 },
 ];
 
+export const DEFAULT_SECTIONED_CARDS: DashboardCardSeed[] = [
+  { CardKey: "total_inspection_done", Title: "Inspection Done", Icon: "clipboard-text",     Color: "#0B5ED7", EntityType: "inspections", CounterType: "total", CountMode: "count",   FilterJson: JSON.stringify({ Status: "Completed" }), SectionLabel: "Total",   SortOrder: 0 },
+  { CardKey: "total_pole_status",     Title: "Pole Status",     Icon: "transmission-tower", Color: "#198754", EntityType: "inspections", CounterType: "total", CountMode: "count",   BreakdownField: "pole_avail", SectionLabel: "Total",   SortOrder: 1 },
+  { CardKey: "total_camera_count",    Title: "Camera Count",     Icon: "cctv",               Color: "#6F42C1", EntityType: "inspections", CounterType: "total", CountMode: "count",   AggregateField: "camera_count", SectionLabel: "Total",   SortOrder: 2 },
+  { CardKey: "today_inspection_done", Title: "Inspection Done",  Icon: "clipboard-text",     Color: "#0B5ED7", EntityType: "inspections", CounterType: "today", CountMode: "count",   FilterJson: JSON.stringify({ Status: "Completed" }), SectionLabel: "Today's", SortOrder: 3 },
+  { CardKey: "today_pole_status",     Title: "Pole Status",      Icon: "transmission-tower", Color: "#DC3545", EntityType: "inspections", CounterType: "today", CountMode: "count",   BreakdownField: "pole_avail", SectionLabel: "Today's", SortOrder: 4 },
+  { CardKey: "today_camera_count",    Title: "Camera Count",      Icon: "cctv",               Color: "#6F42C1", EntityType: "inspections", CounterType: "today", CountMode: "count",   AggregateField: "camera_count", SectionLabel: "Today's", SortOrder: 5 },
+];
+
 export async function seedDashboardCards(): Promise<void> {
   const db = await getDatabase();
 
@@ -31,7 +43,7 @@ export async function seedDashboardCards(): Promise<void> {
   );
   const existingKeys = new Set(existing.map((r) => r.CardKey));
 
-  const missing = DEFAULT_DASHBOARD_CARDS.filter((c) => !existingKeys.has(c.CardKey));
+  const missing = DEFAULT_SECTIONED_CARDS.filter((c) => !existingKeys.has(c.CardKey));
   if (missing.length === 0) {
     logger.info("✅ Dashboard cards already seeded.");
     return;
@@ -43,8 +55,8 @@ export async function seedDashboardCards(): Promise<void> {
     for (const card of missing) {
       await db.runAsync(
         `INSERT INTO DashboardCards
-         (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, SortOrder, Enabled, IsDefault)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+         (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, SortOrder, Enabled, IsDefault)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
         [
           1,
           card.CardKey,
@@ -56,6 +68,9 @@ export async function seedDashboardCards(): Promise<void> {
           card.FilterJson ?? null,
           card.CountMode,
           card.DistinctColumn ?? null,
+          card.BreakdownField ?? null,
+          card.SectionLabel ?? null,
+          card.AggregateField ?? null,
           card.SortOrder,
         ]
       );

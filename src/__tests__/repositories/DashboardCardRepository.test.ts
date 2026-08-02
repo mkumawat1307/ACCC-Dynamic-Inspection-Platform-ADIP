@@ -45,6 +45,8 @@ function rowOf(card: DashboardCard): Record<string, unknown> {
     CountMode: card.CountMode,
     DistinctColumn: card.DistinctColumn ?? null,
     BreakdownField: card.BreakdownField ?? null,
+    SectionLabel: card.SectionLabel ?? null,
+    AggregateField: card.AggregateField ?? null,
     SortOrder: card.SortOrder,
     Enabled: card.Enabled,
     IsDefault: card.IsDefault,
@@ -117,7 +119,7 @@ describe("DashboardCardRepository", () => {
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     await DashboardCardRepository.createCard(baseCard({ SortOrder: undefined as unknown as number }));
     const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
-    expect(params[11]).toBe(8);
+    expect(params[13]).toBe(8);
   });
 
   it("createCard falls back to 0 when max SortOrder is null", async () => {
@@ -125,7 +127,7 @@ describe("DashboardCardRepository", () => {
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     await DashboardCardRepository.createCard(baseCard({ SortOrder: undefined as unknown as number }));
     const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
-    expect(params[11]).toBe(0);
+    expect(params[13]).toBe(0);
   });
 
   it("updateCard persists changes with parameterized values", async () => {
@@ -178,7 +180,7 @@ describe("DashboardCardRepository", () => {
   });
 
   describe("ensureDefaultCards", () => {
-    it("inserts all six defaults when none exist", async () => {
+    it("inserts all six sectioned defaults when none exist", async () => {
       mockDb.getAllAsync.mockResolvedValue([]);
       mockDb.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
@@ -186,17 +188,17 @@ describe("DashboardCardRepository", () => {
       expect(mockDb.runAsync).toHaveBeenCalledTimes(6);
       const allParams = (mockDb.runAsync as jest.Mock).mock.calls.map((c) => c[1]);
       const keys = allParams.map((p) => p[1]);
-      expect(keys).toEqual(["total_inspections", "total_poles", "total_cameras", "today_inspections_done", "today_poles", "today_cameras"]);
+      expect(keys).toEqual(["total_inspection_done", "total_pole_status", "total_camera_count", "today_inspection_done", "today_pole_status", "today_camera_count"]);
     });
 
-    it("is idempotent when all defaults exist", async () => {
+    it("is idempotent when all sectioned defaults exist", async () => {
       mockDb.getAllAsync.mockResolvedValue([
-        { CardKey: "total_inspections" },
-        { CardKey: "total_poles" },
-        { CardKey: "total_cameras" },
-        { CardKey: "today_inspections_done" },
-        { CardKey: "today_poles" },
-        { CardKey: "today_cameras" },
+        { CardKey: "total_inspection_done" },
+        { CardKey: "total_pole_status" },
+        { CardKey: "total_camera_count" },
+        { CardKey: "today_inspection_done" },
+        { CardKey: "today_pole_status" },
+        { CardKey: "today_camera_count" },
       ]);
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
       await DashboardCardRepository.ensureDefaultCards(1);
@@ -205,19 +207,19 @@ describe("DashboardCardRepository", () => {
 
     it("does not re-enable or overwrite an existing default", async () => {
       mockDb.getAllAsync.mockResolvedValue([
-        { CardKey: "total_inspections" },
-        { CardKey: "total_poles" },
-        { CardKey: "total_cameras" },
-        { CardKey: "today_inspections_done" },
-        { CardKey: "today_poles" },
-        { CardKey: "today_cameras" },
+        { CardKey: "total_inspection_done" },
+        { CardKey: "total_pole_status" },
+        { CardKey: "total_camera_count" },
+        { CardKey: "today_inspection_done" },
+        { CardKey: "today_pole_status" },
+        { CardKey: "today_camera_count" },
       ]);
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
       await DashboardCardRepository.ensureDefaultCards(1);
       expect(mockDb.runAsync).not.toHaveBeenCalled();
     });
 
-    it("re-inserts only the deleted default keys", async () => {
+    it("re-inserts only the deleted legacy key when the project has legacy cards", async () => {
       mockDb.getAllAsync.mockResolvedValue([
         { CardKey: "total_inspections" },
         { CardKey: "total_poles" },
@@ -229,8 +231,26 @@ describe("DashboardCardRepository", () => {
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
       await DashboardCardRepository.ensureDefaultCards(1);
       expect(mockDb.runAsync).toHaveBeenCalledTimes(1);
-      const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       expect(params[1]).toBe("total_cameras");
+      expect(params[10]).toBeNull();
+      expect(params[11]).toBeNull();
+      expect(params[12]).toBeNull();
+      expect(sql.match(/\?/g)).toHaveLength(14);
+    });
+
+    it("does not inject legacy cards into a sectioned project", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        { CardKey: "total_inspection_done" },
+        { CardKey: "total_pole_status" },
+        { CardKey: "total_camera_count" },
+        { CardKey: "today_inspection_done" },
+        { CardKey: "today_pole_status" },
+        { CardKey: "today_camera_count" },
+      ]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.ensureDefaultCards(1);
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
     });
   });
 
@@ -252,7 +272,7 @@ describe("DashboardCardRepository", () => {
       );
       const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       expect(params[10]).toBe("foundation_cond");
-      expect(params[11]).toBe(0);
+      expect(params[13]).toBe(0);
     });
 
     it("updateCard persists BreakdownField", async () => {
@@ -316,6 +336,21 @@ describe("DashboardCardRepository", () => {
       expect(mockDb.withTransactionAsync).not.toHaveBeenCalled();
     });
 
+    it("migrateDefaultCards is a no-op for a sectioned project", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        { CardKey: "total_inspection_done" },
+        { CardKey: "total_pole_status" },
+        { CardKey: "total_camera_count" },
+        { CardKey: "today_inspection_done" },
+        { CardKey: "today_pole_status" },
+        { CardKey: "today_camera_count" },
+      ]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.migrateDefaultCards(1);
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
+      expect(mockDb.withTransactionAsync).not.toHaveBeenCalled();
+    });
+
     it("preserves admin-edited titles and Enabled state on existing defaults", async () => {
       mockDb.getAllAsync
         .mockResolvedValueOnce([
@@ -339,6 +374,54 @@ describe("DashboardCardRepository", () => {
         expect(params).toHaveLength(3);
       }
       expect(updates[0][0]).not.toContain("Enabled");
+    });
+  });
+
+  describe("SectionLabel & AggregateField", () => {
+    it("maps SectionLabel and AggregateField from a row", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        rowOf(baseCard({ CardID: 3, SectionLabel: "Total", AggregateField: "camera_count" })),
+      ]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const cards = await DashboardCardRepository.getAllCards(1);
+      expect(cards[0].SectionLabel).toBe("Total");
+      expect(cards[0].AggregateField).toBe("camera_count");
+    });
+
+    it("createCard persists SectionLabel and AggregateField", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ max: 3 });
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.createCard(
+        baseCard({ SectionLabel: "Today's", AggregateField: "camera_count" })
+      );
+      const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(params[11]).toBe("Today's");
+      expect(params[12]).toBe("camera_count");
+      expect(params[13]).toBe(0);
+    });
+
+    it("createCard INSERT columns, placeholders, and params all match", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ max: 3 });
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.createCard(baseCard());
+      const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      const columns = sql.match(/\(([^)]*)\)\s*VALUES/)![1].split(",").map((s: string) => s.trim());
+      const placeholders = (sql.match(/\?/g) ?? []).length;
+      expect(columns.length).toBe(16);
+      expect(placeholders).toBe(16);
+      expect(params).toHaveLength(16);
+    });
+
+    it("updateCard does NOT write SectionLabel or AggregateField", async () => {
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.updateCard(
+        baseCard({ CardID: 5, SectionLabel: "Total", AggregateField: "camera_count" })
+      );
+      const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(sql).not.toContain("SectionLabel");
+      expect(sql).not.toContain("AggregateField");
+      expect(params).not.toContain("Total");
+      expect(params).not.toContain("camera_count");
     });
   });
 });

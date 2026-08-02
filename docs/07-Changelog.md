@@ -37,6 +37,12 @@ Patch → Bug fixes
 - Dynamic Dashboard Statistic Cards: the hardcoded stat sections on the Project Dashboard are replaced with a configurable card engine. Per-project `DashboardCards` table with four auto-seeded defaults (Total Poles, Total Cameras, Today's Poles, Today's Cameras). A new Dashboard Settings screen (`app/projects/dashboard-settings.tsx`) lets admins add/edit/delete/reorder/enable/disable cards, choose icon + color, entity (Inspections/Cameras/Switches/Devices), counter type (Total/Today's), count mode (Count/`COUNT(DISTINCT ...)`), and per-entity allowlist-validated filters serialized to `FilterJson`. Backed by `DashboardCardRepository` (CRUD + `ensureDefaultCards` that re-seeds deleted defaults without touching edited/disabled ones), `StatisticCountService` (generic parameterized `SELECT COUNT(*)` engine with entity + counter-type registries), and `DashboardService` (compose). Two registry extension points documented in the plan: new counter types add one `COUNTER_TYPES` entry; new entities add one `COUNT_ENTITIES` entry.
 - Dashboard cards: 6-card default set (Total Inspections, Today's Inspections Done added); Breakdown card type grouping inspections by any inspection-form field (Add/Edit Card → Breakdown → pick field), rendered as per-value rows.
 - Existing projects auto-upgrade to the new defaults and gain the `BreakdownField` column on next open (idempotent migrations in `migrateProjectSchema`).
+- New projects seed a sectioned 6-card default dashboard: two labeled groups ("Total", "Today's"), each with Inspection Done (count of `Status = Completed`), Pole Status (`pole_avail` Yes/No breakdown), and Camera Count (SUM of `camera_count`). Backed by new nullable `DashboardCards` columns `SectionLabel` and `AggregateField`; the dashboard renders section headers and `StatisticCountService` gained a `fieldCard` SUM engine for numeric aggregate fields. Set-aware reconciliation (`selectDefaultSet`) keeps existing projects on their current cards and only seeds the sectioned set for fresh projects.
+- Manage Cards dialog: the Add/Edit card form is now scrollable and every nested picker dialog (entity, counter, count mode, distinct column, group-by field, filter column) has a Cancel button that closes the picker without applying.
+
+### Fixed
+
+- `DashboardCardRepository.createCard` INSERT column/placeholder mismatch (14 columns / 15 placeholders) that real SQLite would reject — now 16 columns / 16 placeholders including `SectionLabel` and `AggregateField`.
 
 ### Fixed
 
