@@ -2,8 +2,13 @@ import React from "react";
 import TestRenderer from "react-test-renderer";
 import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
 import { DashboardService, CardWithCount } from "@/src/database/repositories/DashboardService";
+import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
+import useDashboardAutoRefresh from "@/src/hooks/useDashboardAutoRefresh";
 
 jest.mock("@/src/database/repositories/DashboardService");
+jest.mock("@/src/hooks/useDashboardAutoRefresh");
+
+const mockedHook = useDashboardAutoRefresh as jest.MockedFunction<typeof useDashboardAutoRefresh>;
 
 const mockedService = DashboardService as jest.Mocked<typeof DashboardService>;
 
@@ -57,6 +62,8 @@ async function flushPromises(): Promise<void> {
 describe("DashboardCardGrid", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedHook.mockReturnValue(0);
+    InspectionDataBus.__reset();
   });
 
   it("renders a card's title and count", async () => {
@@ -229,5 +236,45 @@ describe("DashboardCardGrid", () => {
     expect(strings).toContain("Total");
     expect(strings).toContain("Today's");
     expect(strings.indexOf("Today's")).toBeGreaterThan(strings.indexOf("Camera Count"));
+  });
+
+  it("reloads when the auto-refresh hook bumps its key (bus-triggered)", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, Title: "Total Poles", count: 12 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    expect(mockedService.getEnabledCardsWithCounts).toHaveBeenCalledTimes(1);
+
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, Title: "Total Poles", count: 99 }),
+    ]);
+    mockedHook.mockReturnValue(1);
+    await TestRenderer.act(async () => {
+      tree.update(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).toContain("99");
+    expect(mockedService.getEnabledCardsWithCounts).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reload when autoKey stays the same (non-matching project event)", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, Title: "Total Poles", count: 12 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    await TestRenderer.act(async () => {
+      tree.update(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    expect(mockedService.getEnabledCardsWithCounts).toHaveBeenCalledTimes(1);
   });
 });

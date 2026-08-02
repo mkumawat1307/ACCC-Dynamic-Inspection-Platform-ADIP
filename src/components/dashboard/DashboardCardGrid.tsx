@@ -5,15 +5,18 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { DashboardService, CardWithCount } from "@/src/database/repositories/DashboardService";
 import StatCard from "@/src/components/StatCard";
 import StatBreakdownCard from "@/src/components/dashboard/StatBreakdownCard";
+import useDashboardAutoRefresh from "@/src/hooks/useDashboardAutoRefresh";
 
 interface Props {
   projectId: number;
   reloadKey?: number;
+  focused?: boolean;
 }
 
-export default function DashboardCardGrid({ projectId, reloadKey = 0 }: Props) {
+export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = true }: Props) {
   const [cards, setCards] = useState<CardWithCount[]>([]);
   const [loading, setLoading] = useState(true);
+  const autoKey = useDashboardAutoRefresh(projectId, focused);
 
   async function load() {
     setLoading(true);
@@ -24,7 +27,7 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0 }: Props) {
 
   useEffect(() => {
     load();
-  }, [projectId, reloadKey]);
+  }, [projectId, reloadKey, autoKey]);
 
   if (loading) {
     return (
