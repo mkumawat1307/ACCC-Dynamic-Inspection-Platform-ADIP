@@ -112,6 +112,17 @@ describe("DashboardCardGrid", () => {
     expect(strings.join(" ")).toContain("No dashboard cards configured.");
   });
 
+  it("shows the Manage Cards hint with real curly quotes", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings.join(" ")).toContain("Use \u201CManage Cards\u201D to add statistic cards.");
+  });
+
   it("shows an ActivityIndicator while loading", () => {
     mockedService.getEnabledCardsWithCounts.mockReturnValue(new Promise(() => {}));
     let tree: ReturnType<typeof TestRenderer.create>;

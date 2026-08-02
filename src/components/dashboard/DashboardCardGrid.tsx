@@ -6,6 +6,7 @@ import { DashboardService, CardWithCount } from "@/src/database/repositories/Das
 import StatCard from "@/src/components/StatCard";
 import StatBreakdownCard from "@/src/components/dashboard/StatBreakdownCard";
 import useDashboardAutoRefresh from "@/src/hooks/useDashboardAutoRefresh";
+import { COLORS, SPACING } from "@/src/constants/ui";
 
 interface Props {
   projectId: number;
@@ -44,7 +45,7 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
     return (
       <View style={styles.centered}>
         <Text style={styles.emptyTitle}>No dashboard cards configured.</Text>
-        <Text style={styles.emptyHint}>Use \u201CManage Cards\u201D to add statistic cards.</Text>
+        <Text style={styles.emptyHint}>Use “Manage Cards” to add statistic cards.</Text>
       </View>
     );
   }
@@ -112,35 +113,40 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
     }
   }
 
-  return <View>{rows}</View>;
+  return <View style={styles.list}>{rows}</View>;
 }
 
 const styles = StyleSheet.create({
+  list: {
+    gap: SPACING.md,
+  },
+
   statRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    gap: SPACING.md,
   },
 
   sectionHeader: {
     fontWeight: "700",
     fontSize: 15,
-    marginTop: 12,
-    marginBottom: 6,
-    color: "#333",
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.sm,
+    color: COLORS.textPrimary,
   },
 
   centered: {
     alignItems: "center",
-    paddingVertical: 16,
+    paddingVertical: SPACING.lg,
   },
 
   emptyTitle: {
     fontWeight: "700",
-    marginBottom: 4,
+    marginBottom: SPACING.xs,
+    color: COLORS.textPrimary,
   },
 
   emptyHint: {
-    color: "#666",
+    color: COLORS.textSecondary,
     fontSize: 12,
   },
 });
