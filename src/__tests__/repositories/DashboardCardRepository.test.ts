@@ -23,6 +23,7 @@ function baseCard(overrides: Partial<DashboardCard> = {}): DashboardCard {
     CounterType: "total",
     FilterJson: null,
     CountMode: "count",
+    CardMode: "entitycount",
     DistinctColumn: null,
     SortOrder: 0,
     Enabled: 1,
@@ -47,6 +48,7 @@ function rowOf(card: DashboardCard): Record<string, unknown> {
     BreakdownField: card.BreakdownField ?? null,
     SectionLabel: card.SectionLabel ?? null,
     AggregateField: card.AggregateField ?? null,
+    CardMode: card.CardMode,
     SortOrder: card.SortOrder,
     Enabled: card.Enabled,
     IsDefault: card.IsDefault,
@@ -119,7 +121,7 @@ describe("DashboardCardRepository", () => {
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     await DashboardCardRepository.createCard(baseCard({ SortOrder: undefined as unknown as number }));
     const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
-    expect(params[13]).toBe(8);
+    expect(params[14]).toBe(8);
   });
 
   it("createCard falls back to 0 when max SortOrder is null", async () => {
@@ -127,7 +129,7 @@ describe("DashboardCardRepository", () => {
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     await DashboardCardRepository.createCard(baseCard({ SortOrder: undefined as unknown as number }));
     const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
-    expect(params[13]).toBe(0);
+    expect(params[14]).toBe(0);
   });
 
   it("updateCard persists changes with parameterized values", async () => {
@@ -236,7 +238,7 @@ describe("DashboardCardRepository", () => {
       expect(params[10]).toBeNull();
       expect(params[11]).toBeNull();
       expect(params[12]).toBeNull();
-      expect(sql.match(/\?/g)).toHaveLength(14);
+      expect(sql.match(/\?/g)).toHaveLength(15);
     });
 
     it("does not inject legacy cards into a sectioned project", async () => {
@@ -272,7 +274,7 @@ describe("DashboardCardRepository", () => {
       );
       const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       expect(params[10]).toBe("foundation_cond");
-      expect(params[13]).toBe(0);
+      expect(params[14]).toBe(0);
     });
 
     it("updateCard persists BreakdownField", async () => {
@@ -397,7 +399,7 @@ describe("DashboardCardRepository", () => {
       const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       expect(params[11]).toBe("Today's");
       expect(params[12]).toBe("camera_count");
-      expect(params[13]).toBe(0);
+      expect(params[14]).toBe(0);
     });
 
     it("createCard INSERT columns, placeholders, and params all match", async () => {
@@ -407,9 +409,9 @@ describe("DashboardCardRepository", () => {
       const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       const columns = sql.match(/\(([^)]*)\)\s*VALUES/)![1].split(",").map((s: string) => s.trim());
       const placeholders = (sql.match(/\?/g) ?? []).length;
-      expect(columns.length).toBe(16);
-      expect(placeholders).toBe(16);
-      expect(params).toHaveLength(16);
+      expect(columns.length).toBe(17);
+      expect(placeholders).toBe(17);
+      expect(params).toHaveLength(17);
     });
 
     it("updateCard does NOT write SectionLabel or AggregateField", async () => {
@@ -422,6 +424,54 @@ describe("DashboardCardRepository", () => {
       expect(sql).not.toContain("AggregateField");
       expect(params).not.toContain("Total");
       expect(params).not.toContain("camera_count");
+    });
+  });
+
+  describe("CardMode", () => {
+    it("createCard persists CardMode and round-trips via getAllCards", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ max: 3 });
+      mockDb.getAllAsync.mockResolvedValue([rowOf(baseCard({ CardID: 9, CardMode: "dropdown" }))]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.createCard(baseCard({ CardMode: "dropdown" }));
+      const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(params[13]).toBe("dropdown");
+      const cards = await DashboardCardRepository.getAllCards(1);
+      expect(cards[0].CardMode).toBe("dropdown");
+    });
+
+    it("mapRow defaults a missing CardMode to entitycount", async () => {
+      const row = rowOf(baseCard());
+      delete row.CardMode;
+      mockDb.getAllAsync.mockResolvedValue([row]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const cards = await DashboardCardRepository.getAllCards(1);
+      expect(cards[0].CardMode).toBe("entitycount");
+    });
+
+    it("mapRow defaults an empty CardMode to entitycount", async () => {
+      const row = rowOf(baseCard());
+      row.CardMode = "";
+      mockDb.getAllAsync.mockResolvedValue([row]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const cards = await DashboardCardRepository.getAllCards(1);
+      expect(cards[0].CardMode).toBe("entitycount");
+    });
+
+    it("updateCard writes CardMode", async () => {
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.updateCard(baseCard({ CardID: 5, CardMode: "datebreakdown" }));
+      const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(sql).toContain("CardMode = ?");
+      expect(params).toContain("datebreakdown");
+    });
+
+    it("ensureDefaultCards inserts CardMode from the seed for missing defaults", async () => {
+      mockDb.getAllAsync.mockResolvedValue([]);
+      mockDb.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.ensureDefaultCards(1);
+      const allParams = (mockDb.runAsync as jest.Mock).mock.calls.map((c) => c[1]);
+      expect(allParams.map((p) => p[13])).toEqual(["entitycount", "dropdown", "sum", "entitycount", "dropdown", "sum"]);
     });
   });
 });

@@ -1,3 +1,5 @@
+export type CardModeValue = "entitycount" | "dropdown" | "sum" | "fieldcount" | "datebreakdown";
+
 export interface DashboardCard {
   CardID?: number;
   ProjectID: number;
@@ -9,6 +11,7 @@ export interface DashboardCard {
   CounterType: string;
   FilterJson?: string | null;
   CountMode: "count" | "distinct";
+  CardMode: CardModeValue;
   DistinctColumn?: string | null;
   BreakdownField?: string | null;
   SectionLabel?: string | null;
