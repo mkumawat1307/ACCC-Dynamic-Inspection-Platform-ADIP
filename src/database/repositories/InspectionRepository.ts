@@ -4,6 +4,7 @@ import { getDatabase } from "../db";
 import { logger } from "@/src/utils/logger";
 import { InspectionSection, InspectionField } from "./InspectionTypes";
 import { deleteInspectionData } from "./inspectionDataHelper";
+import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 
 export class InspectionRepository {
 static async getSections(templateId?: number): Promise<InspectionSection[]> {
@@ -132,7 +133,9 @@ static async createInspection(
       "Draft",
     ]
   );
-return result.lastInsertRowId as number;
+  const newId = result.lastInsertRowId as number;
+  InspectionDataBus.emitInspectionsChanged(projectId);
+  return newId;
 }
 
 static async saveFieldValue(
@@ -193,6 +196,9 @@ static async saveFieldValue(
       [inspectionId, fieldId, value]
     );
   }
+
+  const projectId = await this.getInspectionProjectId(inspectionId);
+  InspectionDataBus.emitInspectionsChanged(projectId ?? 0);
 }
 
 static async updateInspectionPoleId(
@@ -209,8 +215,11 @@ static async updateInspectionPoleId(
       UpdatedAt = CURRENT_TIMESTAMP
     WHERE InspectionID = ?
     `,
-    [poleId, inspectionId]
+     [poleId, inspectionId]
   );
+
+  const projectId = await this.getInspectionProjectId(inspectionId);
+  InspectionDataBus.emitInspectionsChanged(projectId ?? 0);
 }
 
 static async getInspectionValues(
@@ -316,8 +325,11 @@ static async updateInspectionStatus(
       UpdatedAt = CURRENT_TIMESTAMP
     WHERE InspectionID = ?
     `,
-    [status, inspectionId]
+         [status, inspectionId]
   );
+
+  const projectId = await this.getInspectionProjectId(inspectionId);
+  InspectionDataBus.emitInspectionsChanged(projectId ?? 0);
 }
 
 static async getInspectionByPoleId(
@@ -382,21 +394,28 @@ static async deleteInspection(
   inspectionId: number
 ) {
   const db = await getDatabase();
+  const projectId = (await this.getInspectionProjectId(inspectionId)) ?? 0;
 
   await db.withTransactionAsync(async () => {
     await deleteInspectionData(db, inspectionId);
   });
+
+  InspectionDataBus.emitInspectionsChanged(projectId);
 }
 
 static async deleteMultipleInspections(
   inspectionIds: number[]
 ) {
   const db = await getDatabase();
+  const firstId = inspectionIds[0];
+  const projectId = firstId == null ? 0 : ((await this.getInspectionProjectId(firstId)) ?? 0);
 
   await db.withTransactionAsync(async () => {
     for (const id of inspectionIds) {
       await deleteInspectionData(db, id);
     }
   });
+
+  InspectionDataBus.emitInspectionsChanged(projectId);
 }
 }
