@@ -69,6 +69,7 @@ jest.mock("@/src/database/seeds/dashboard-cards.seed", () => ({
 jest.mock("@/src/database/repositories/DashboardCardRepository", () => ({
   DashboardCardRepository: {
     ensureDefaultCards: jest.fn().mockResolvedValue(undefined),
+    migrateDefaultCards: jest.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -219,6 +220,30 @@ describe("schema.ts createSchema", () => {
 
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     (DashboardCardRepository.ensureDefaultCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await expect(migrateProjectSchema()).resolves.toBeUndefined();
+  });
+
+  it("migrateProjectSchema adds the BreakdownField column idempotently", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
+    await migrateProjectSchema();
+
+    expect(mockExecAsync).toHaveBeenCalledWith(
+      expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN BreakdownField TEXT")
+    );
+    expect(DashboardCardRepository.migrateDefaultCards).toHaveBeenCalledWith(1);
+  });
+
+  it("migrateProjectSchema does not throw when migrateDefaultCards fails", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+    (DashboardCardRepository.migrateDefaultCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
 
     const { migrateProjectSchema } = require("@/src/database/schema");
     await expect(migrateProjectSchema()).resolves.toBeUndefined();
