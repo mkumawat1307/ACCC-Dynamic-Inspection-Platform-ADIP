@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { StyleSheet, View, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import {
   Card,
   Text,
@@ -23,6 +23,7 @@ export default function ProjectDashboard() {
   const router = useRouter();
   const { project: contextProject } = useInspection();
   const [statReloadKey, setStatReloadKey] = useState(0);
+  const isFocused = useIsFocused();
 
 const [loading, setLoading] = useState(true);
 
@@ -138,7 +139,7 @@ return (
     <Card style={styles.card}>
     <Card.Title title="Statistics" />
     <Card.Content>
-        <DashboardCardGrid projectId={project.ProjectID} reloadKey={statReloadKey} />
+        <DashboardCardGrid projectId={project.ProjectID} reloadKey={statReloadKey} focused={isFocused} />
     </Card.Content>
     </Card>
     <View style={styles.manageRow}>
