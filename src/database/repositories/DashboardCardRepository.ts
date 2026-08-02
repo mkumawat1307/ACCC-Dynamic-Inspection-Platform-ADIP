@@ -5,7 +5,7 @@ import { DEFAULT_DASHBOARD_CARDS } from "../seeds/dashboard-cards.seed";
 const CARD_COLUMNS = `
   CardID, ProjectID, CardKey, Title, Icon, Color,
   EntityType, CounterType, FilterJson, CountMode, DistinctColumn,
-  SortOrder, Enabled, IsDefault, CreatedAt, UpdatedAt
+  BreakdownField, SortOrder, Enabled, IsDefault, CreatedAt, UpdatedAt
 `;
 
 function mapRow(row: Record<string, unknown>): DashboardCard {
@@ -21,6 +21,7 @@ function mapRow(row: Record<string, unknown>): DashboardCard {
     FilterJson: (row.FilterJson as string) ?? null,
     CountMode: row.CountMode === "distinct" ? "distinct" : "count",
     DistinctColumn: (row.DistinctColumn as string) ?? null,
+    BreakdownField: (row.BreakdownField as string) ?? null,
     SortOrder: row.SortOrder as number,
     Enabled: row.Enabled as number,
     IsDefault: row.IsDefault as number,
@@ -79,8 +80,8 @@ export class DashboardCardRepository {
 
     const result = await db.runAsync(
       `INSERT INTO DashboardCards
-       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, SortOrder, Enabled, IsDefault)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SortOrder, Enabled, IsDefault)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         card.ProjectID,
         card.CardKey,
@@ -92,6 +93,7 @@ export class DashboardCardRepository {
         card.FilterJson ?? null,
         card.CountMode,
         card.DistinctColumn ?? null,
+        card.BreakdownField ?? null,
         sortOrder,
         card.Enabled,
         card.IsDefault,
@@ -106,7 +108,7 @@ export class DashboardCardRepository {
     await db.runAsync(
       `UPDATE DashboardCards
        SET Title = ?, Icon = ?, Color = ?, EntityType = ?, CounterType = ?,
-           FilterJson = ?, CountMode = ?, DistinctColumn = ?, SortOrder = ?,
+           FilterJson = ?, CountMode = ?, DistinctColumn = ?, BreakdownField = ?, SortOrder = ?,
            Enabled = ?, UpdatedAt = CURRENT_TIMESTAMP
        WHERE CardID = ?`,
       [
@@ -118,6 +120,7 @@ export class DashboardCardRepository {
         card.FilterJson ?? null,
         card.CountMode,
         card.DistinctColumn ?? null,
+        card.BreakdownField ?? null,
         card.SortOrder,
         card.Enabled,
         card.CardID!,
