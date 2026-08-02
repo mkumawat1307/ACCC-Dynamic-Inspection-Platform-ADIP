@@ -8,6 +8,7 @@ jest.mock("@/src/database/seeds/repeatable-groups.seed");
 jest.mock("@/src/database/seeds/repeatable-group-fields.seed");
 jest.mock("@/src/database/seeds/device-options.seed");
 jest.mock("@/src/database/seeds/device-field-definitions.seed");
+jest.mock("@/src/database/seeds/dashboard-cards.seed");
 
 jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///mock/documents/",
@@ -71,12 +72,14 @@ describe("ProjectDBManager", () => {
 
   describe("createProjectDb", () => {
     it("creates project directory and seeds database", async () => {
+      const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
       const { createProjectDb } = require("@/src/database/helpers/ProjectDBManager");
       await createProjectDb("TestProject", "/mock/documents/Projects/TestProject/inspection.db");
 
       expect(FileSystem.makeDirectoryAsync).toHaveBeenCalled();
       expect(setActiveProject).toHaveBeenCalled();
       expect(createProjectSchema).toHaveBeenCalled();
+      expect(seedDashboardCards).toHaveBeenCalled();
       expect(clearActiveProject).toHaveBeenCalled();
     });
   });

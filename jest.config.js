@@ -96,6 +96,30 @@ module.exports = {
       functions: 80,
       branches: 70,
     },
+    "src/database/repositories/DashboardCardRepository.ts": {
+      lines: 80,
+      statements: 80,
+      functions: 80,
+      branches: 70,
+    },
+    "src/database/repositories/StatisticCountService.ts": {
+      lines: 80,
+      statements: 80,
+      functions: 80,
+      branches: 70,
+    },
+    "src/database/repositories/DashboardService.ts": {
+      lines: 80,
+      statements: 80,
+      functions: 80,
+      branches: 70,
+    },
+    "src/components/dashboard/DashboardCardManager.tsx": {
+      lines: 80,
+      statements: 80,
+      functions: 80,
+      branches: 70,
+    },
     "src/database/DatabaseService.ts": {
       lines: 80,
       statements: 80,

@@ -21,6 +21,7 @@ const PRIMARY_KEYS: Record<string, string> = {
   FieldOptions: "OptionID",
   RepeatableGroups: "GroupID",
   RepeatableGroupFields: "GroupFieldID",
+  DashboardCards: "CardID",
   Projects: "ProjectID",
   Divisions: "DivisionID",
   Districts: "DistrictID",

@@ -1,6 +1,4 @@
-export function getCurrentInspectionDate(): string {
-  const date = new Date();
-
+export function formatInspectionDate(date: Date): string {
   const months = [
     "Jan",
     "Feb",
@@ -21,6 +19,14 @@ export function getCurrentInspectionDate(): string {
   const year = date.getFullYear();
 
   return `${day}-${month}-${year}`;
+}
+
+export function getTodayDateString(): string {
+  return formatInspectionDate(new Date());
+}
+
+export function getCurrentInspectionDate(): string {
+  return formatInspectionDate(new Date());
 }
 
 const MONTHS = [

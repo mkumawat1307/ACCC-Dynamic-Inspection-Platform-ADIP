@@ -129,8 +129,10 @@ describe("InspectionRepository", () => {
   });
 
   describe("saveFieldValue", () => {
-    it("inserts when no existing value", async () => {
-      mockDb.getFirstAsync.mockResolvedValue(null);
+    it("inserts when parent rows exist and no existing value", async () => {
+      mockDb.getFirstAsync
+        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
+        .mockResolvedValueOnce(null);
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
       await InspectionRepository.saveFieldValue(1, 1, "11kV");
       expect(mockDb.runAsync).toHaveBeenCalledWith(
@@ -140,13 +142,33 @@ describe("InspectionRepository", () => {
     });
 
     it("updates when existing value found", async () => {
-      mockDb.getFirstAsync.mockResolvedValue({ ValueID: 5 });
+      mockDb.getFirstAsync
+        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
+        .mockResolvedValueOnce({ ValueID: 5 });
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
       await InspectionRepository.saveFieldValue(1, 1, "22kV");
       expect(mockDb.runAsync).toHaveBeenCalledWith(
         expect.stringContaining("UPDATE InspectionValues"),
         ["22kV", 5]
       );
+    });
+
+    it("skips the write when the inspection does not exist", async () => {
+      mockDb.getFirstAsync.mockResolvedValueOnce({ hasInspection: null, hasField: 1 });
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+      await expect(
+        InspectionRepository.saveFieldValue(999, 1, "11kV")
+      ).resolves.toBeUndefined();
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
+    });
+
+    it("skips the write when the field does not exist", async () => {
+      mockDb.getFirstAsync.mockResolvedValueOnce({ hasInspection: 1, hasField: null });
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+      await expect(
+        InspectionRepository.saveFieldValue(1, 999, "11kV")
+      ).resolves.toBeUndefined();
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
     });
   });
 

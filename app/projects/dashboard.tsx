@@ -3,21 +3,18 @@ import React, { useEffect, useState } from "react";
 import { StyleSheet, View, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   Card,
   Text,
   ActivityIndicator,
   Appbar,
-  Menu,
-  Divider,
 } from "react-native-paper";
-import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
-import StatCard from "@/src/components/StatCard";
 import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
+import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
 
-import DeleteProjectDialog from "./components/DeleteProjectDialog";
 export default function ProjectDashboard() {
   const { projectId, projectData: projectDataJson } = useLocalSearchParams<{
     projectId: string;
@@ -25,18 +22,20 @@ export default function ProjectDashboard() {
   }>();
   const router = useRouter();
   const { project: contextProject } = useInspection();
+  const [statReloadKey, setStatReloadKey] = useState(0);
 
 const [loading, setLoading] = useState(true);
 
 const [project, setProject] = useState<Project | null>(null);
-const [menuVisible, setMenuVisible] = useState(false);
-const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
-const openMenu = () => setMenuVisible(true);
-
-const closeMenu = () => setMenuVisible(false);
 useEffect(() => {
   loadProject();
 }, []);
+
+useFocusEffect(
+  React.useCallback(() => {
+    setStatReloadKey((k) => k + 1);
+  }, [])
+);
 
 async function loadProject() {
   if (!projectId) return;
@@ -103,38 +102,6 @@ return (
     <Appbar.BackAction onPress={() => router.back()} />
 
     <Appbar.Content title="Project Dashboard" />
-
-    <Menu
-    visible={menuVisible}
-    onDismiss={closeMenu}
-    anchor={
-        <Appbar.Action
-        icon="dots-vertical"
-        onPress={openMenu}
-        />
-    }
-    >
-    <Menu.Item
-        leadingIcon="pencil"
-        title="Edit Project"
-        onPress={() => {
-        closeMenu();
-
-        // TODO
-        }}
-    />
-
-    <Divider />
-
-    <Menu.Item
-        leadingIcon="delete"
-        title="Delete Project"
-        onPress={() => {
-            closeMenu();
-            setDeleteDialogVisible(true);
-        }}
-    />
-    </Menu>
     </Appbar.Header>
 
     <ScrollView
@@ -169,84 +136,27 @@ return (
         </Card.Content>
         </Card>
     <Card style={styles.card}>
-    <Card.Title title="Inspection Summary" />
-
+    <Card.Title title="Statistics" />
     <Card.Content>
-        <View style={styles.statRow}>
-        <StatCard
-            title="Total"
-            value={25}
-            icon="clipboard-list"
-        />
-
-        <StatCard
-            title="Completed"
-            value={18}
-            icon="check-circle"
-        />
-        </View>
-
-        <View style={styles.statRow}>
-        <StatCard
-            title="Draft"
-            value={7}
-            icon="file-document-edit"
-        />
-
-        <StatCard
-            title="Pending"
-            value={0}
-            icon="clock-outline"
-        />
-        </View>
+        <DashboardCardGrid projectId={project.ProjectID} reloadKey={statReloadKey} />
     </Card.Content>
     </Card>
-    <Card style={styles.card}>
-    <Card.Title title="Asset Summary" />
-
-    <Card.Content>
-        <View style={styles.statRow}>
-        <StatCard
-            title="Poles"
-            value={20}
-            icon="transmission-tower"
-        />
-
-        <StatCard
-            title="Cameras"
-            value={40}
-            icon="cctv"
-        />
-        </View>
-    </Card.Content>
-    </Card>
-    <Card style={styles.card}>
-    <Card.Title title="Today's Progress" />
-
-    <Card.Content>
-        <View style={styles.statRow}>
-        <StatCard
-            title="Inspection"
-            value={15}
-            icon="clipboard-check"
-        />
-
-        <StatCard
-            title="Poles"
-            value={10}
-            icon="map-marker"
-        />
-        </View>
-
-        <View style={styles.statRow}>
-        <StatCard
-            title="Cameras"
-            value={30}
-            icon="camera"
-        />
-        </View>
-    </Card.Content>
-    </Card>
+    <View style={styles.manageRow}>
+    <DashboardActionCard
+        title="Manage Cards"
+        subtitle="Add, edit, reorder or disable dashboard cards"
+        icon="tune-variant"
+        compact
+        onPress={() =>
+          router.push({
+            pathname: "/projects/dashboard-settings",
+            params: {
+              projectId: project.ProjectID.toString(),
+            },
+          })
+        }
+    />
+    </View>
 
 <View style={styles.actionGrid}>
   <View style={styles.actionRow}>
@@ -315,16 +225,6 @@ return (
 </View>
 
     </ScrollView>
-
-    <DeleteProjectDialog
-      visible={deleteDialogVisible}
-      projectName={project.ProjectName}
-      onDismiss={() => setDeleteDialogVisible(false)}
-      onDeleted={async () => {
-        await ProjectRepository.deleteProject(project.ProjectID);
-        router.back();
-      }}
-    />
    </SafeAreaView>
     
 );
@@ -377,6 +277,9 @@ statRow: {
 },
 actionGrid: {
   marginBottom: 14,
+},
+manageRow: {
+  marginBottom: 2,
 },
 actionRow: {
   flexDirection: "row",

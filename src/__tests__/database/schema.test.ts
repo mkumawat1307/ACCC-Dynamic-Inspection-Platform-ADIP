@@ -59,6 +59,18 @@ jest.mock("@/src/database/tables/device-records.table", () => ({
 jest.mock("@/src/database/tables/project-device-types.table", () => ({
   createProjectDeviceTypesTable: "CREATE TABLE ProjectDeviceTypes...",
 }));
+jest.mock("@/src/database/tables/dashboard-cards.table", () => ({
+  createDashboardCardsTable: "CREATE TABLE DashboardCards...",
+}));
+jest.mock("@/src/database/seeds/dashboard-cards.seed", () => ({
+  seedDashboardCards: jest.fn().mockResolvedValue(undefined),
+  DEFAULT_DASHBOARD_CARDS: [],
+}));
+jest.mock("@/src/database/repositories/DashboardCardRepository", () => ({
+  DashboardCardRepository: {
+    ensureDefaultCards: jest.fn().mockResolvedValue(undefined),
+  },
+}));
 
 const mockExecAsync = jest.fn().mockResolvedValue(undefined);
 const mockGetAllAsync = jest.fn().mockResolvedValue([]);
@@ -99,6 +111,15 @@ describe("schema.ts createSchema", () => {
     expect(mockExecAsync).toHaveBeenCalled();
   });
 
+  it("createProjectSchema creates the DashboardCards table", async () => {
+    const { createProjectSchema } = require("@/src/database/schema");
+    const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
+
+    await createProjectSchema();
+
+    expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
+  });
+
   it("createSchema detects global DB and calls createGlobalSchema", async () => {
     mockGetAllAsync.mockResolvedValueOnce([{ name: "Divisions" }]);
 
@@ -121,23 +142,33 @@ describe("schema.ts createSchema", () => {
     );
   });
 
-  it("migrateProjectSchema returns early when remarks section exists", async () => {
+  it("migrateProjectSchema creates DashboardCards table even when remarks section already exists", async () => {
     mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
 
     const { migrateProjectSchema } = require("@/src/database/schema");
+    const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
     await migrateProjectSchema();
 
     expect(mockRunAsync).not.toHaveBeenCalled();
+    expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
+    expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
   });
 
-  it("migrateProjectSchema returns early when categorization section is missing", async () => {
+  it("migrateProjectSchema creates DashboardCards table when categorization section is missing", async () => {
     mockGetFirstAsync.mockResolvedValueOnce(null);
     mockGetFirstAsync.mockResolvedValueOnce(null);
 
     const { migrateProjectSchema } = require("@/src/database/schema");
+    const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
     await migrateProjectSchema();
 
     expect(mockRunAsync).not.toHaveBeenCalled();
+    expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
+    expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
   });
 
   it("migrateProjectSchema splits remarks into its own section", async () => {
@@ -146,6 +177,9 @@ describe("schema.ts createSchema", () => {
       .mockResolvedValueOnce({ SectionID: 9, TemplateID: 1, DisplayOrder: 8 });
 
     const { migrateProjectSchema } = require("@/src/database/schema");
+    const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
     await migrateProjectSchema();
 
     expect(mockRunAsync).toHaveBeenCalledTimes(3);
@@ -161,5 +195,32 @@ describe("schema.ts createSchema", () => {
       expect.stringContaining("UPDATE InspectionSections SET SectionName = 'Categorization'"),
       [9]
     );
+    expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
+    expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
+  });
+
+  it("migrateProjectSchema creates DashboardCards table and ensures defaults", async () => {
+    mockGetFirstAsync
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ SectionID: 9, TemplateID: 1, DisplayOrder: 8 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
+    await migrateProjectSchema();
+
+    expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
+    expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
+  });
+
+  it("migrateProjectSchema does not throw when ensureDefaultCards fails", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+    (DashboardCardRepository.ensureDefaultCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await expect(migrateProjectSchema()).resolves.toBeUndefined();
   });
 });

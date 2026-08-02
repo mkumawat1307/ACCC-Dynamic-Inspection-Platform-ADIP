@@ -7,12 +7,14 @@ interface StatCardProps {
   title: string;
   value: number | string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  color?: string;
 }
 
 export default function StatCard({
   title,
   value,
   icon,
+  color = "#0B5ED7",
 }: StatCardProps) {
   return (
     <Card style={styles.card}>
@@ -21,6 +23,7 @@ export default function StatCard({
           <MaterialCommunityIcons
             name={icon}
             size={28}
+            color={color}
           />
         </View>
 

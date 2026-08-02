@@ -27,6 +27,7 @@ const fixture: ReportTable = {
     { cells: ["P001", "3"], isDeviceRow: true },
     { cells: ["P002", "1"], isDeviceRow: true },
   ],
+  inspectionCount: 2,
 };
 
 function collectStrings(node: unknown, out: string[] = []): string[] {

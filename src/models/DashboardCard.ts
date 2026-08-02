@@ -1,0 +1,18 @@
+export interface DashboardCard {
+  CardID?: number;
+  ProjectID: number;
+  CardKey: string;
+  Title: string;
+  Icon: string;
+  Color: string;
+  EntityType: string;
+  CounterType: string;
+  FilterJson?: string | null;
+  CountMode: "count" | "distinct";
+  DistinctColumn?: string | null;
+  SortOrder: number;
+  Enabled: number;
+  IsDefault: number;
+  CreatedAt?: string;
+  UpdatedAt?: string;
+}

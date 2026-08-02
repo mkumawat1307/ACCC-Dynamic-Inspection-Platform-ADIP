@@ -139,6 +139,62 @@ describe("buildReportTable", () => {
       { cells: ["P001", "12.9716", "77.5946", "2", "IP", "photo1.jpg"], isDeviceRow: true },
       { cells: ["P001", "12.9716", "77.5946", "", "PTZ", ""], isDeviceRow: true },
     ]);
+    expect(table.inspectionCount).toBe(1);
+  });
+
+  it("counts inspections separately from emitted rows (device rows only)", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([
+        { InspectionID: 1, Status: "Completed" },
+        { InspectionID: 2, Status: "Completed" },
+        { InspectionID: 3, Status: "Completed" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+        { InspectionID: 2, FieldID: 1, FieldValue: "P002" },
+        { InspectionID: 3, FieldID: 1, FieldValue: "P003" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "IP" }) },
+        { InspectionID: 2, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "PTZ" }) },
+        { InspectionID: 3, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "IP" }) },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
+
+    expect(table.rows).toHaveLength(3);
+    expect(table.rows.every((r: { isDeviceRow: boolean }) => r.isDeviceRow)).toBe(true);
+    expect(table.inspectionCount).toBe(3);
+  });
+
+  it("getReportCounts returns inspection, row, and column counts", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([
+        { InspectionID: 1, Status: "Completed" },
+        { InspectionID: 2, Status: "Completed" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+        { InspectionID: 2, FieldID: 1, FieldValue: "P002" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "IP" }) },
+        { InspectionID: 2, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "PTZ" }) },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const { getReportCounts } = require("@/src/utils/exportData");
+    const counts = await getReportCounts(1);
+
+    expect(counts.inspectionCount).toBe(2);
+    expect(counts.rowCount).toBe(2);
+    expect(counts.columnCount).toBe(6);
   });
 
   it("aligns device rows by index across device sections", async () => {

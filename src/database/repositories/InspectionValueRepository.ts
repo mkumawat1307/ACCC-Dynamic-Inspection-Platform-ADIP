@@ -1,5 +1,6 @@
 //frontend\src\database\repositories\InspectionValueRepository.ts
 import { getDatabase } from "../db";
+import { logger } from "@/src/utils/logger";
 import { InspectionValue } from "@/src/models/InspectionValue";
 
 export default class InspectionValueRepository {
@@ -14,6 +15,23 @@ export default class InspectionValueRepository {
   ): Promise<void> {
 
     const db = await getDatabase();
+
+    const parents =
+      await db.getFirstAsync<{ hasInspection: number | null; hasField: number | null }>(
+        `
+        SELECT
+          (SELECT 1 FROM Inspections WHERE InspectionID = ?) AS hasInspection,
+          (SELECT 1 FROM InspectionFields WHERE FieldID = ?) AS hasField;
+        `,
+        [inspectionId, fieldId]
+      );
+
+    if (!parents?.hasInspection || !parents?.hasField) {
+      logger.warn(
+        `[InspectionValueRepository.saveValue] skipped write: inspection ${inspectionId} or field ${fieldId} does not exist`
+      );
+      return;
+    }
 
     const existing =
       await db.getFirstAsync<{ ValueID: number }>(
