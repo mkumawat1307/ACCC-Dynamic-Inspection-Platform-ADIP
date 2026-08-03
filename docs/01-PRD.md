@@ -9,16 +9,16 @@
 | Item | Value |
 |------|-------|
 | Project Name | ACCC Dynamic Inspection Platform (ADIP) |
-| Current Module | ACCC Pole Inspection |
-| Version | 1.9.0 |
+| Current Module | Infrastructure Inspection Platform |
+| Version | 1.9.1 |
 | Status | Active Development |
 | Product Owner | Manish Kumawat |
 | Technical Architect | Project Documentation |
 | Platform | Android |
 | Framework | React Native (Expo) |
-| Database | SQLite |
-| Architecture | Offline-First, Configuration-Driven |
-| Last Updated | July 2026 |
+| Database | SQLite (dual-database: global + per-project) |
+| Architecture | Offline-First, Configuration-Driven, Per-Project Isolation |
+| Last Updated | August 2026 |
 
 ---
 
@@ -30,7 +30,7 @@ The first implementation focuses on pole inspections, including cameras, switche
 
 Rather than creating separate applications for every inspection type, ADIP is designed as a reusable inspection platform where inspection templates and form structures can evolve while preserving existing inspection data.
 
-The application is optimized for field engineers who often work in locations without reliable internet connectivity. All inspection data is stored locally and can be reviewed, edited, exported, and synchronized in future versions.
+The application is optimized for field engineers who often work in locations without reliable internet connectivity. All inspection data is stored locally and can be reviewed, edited, exported, and shared.
 
 ---
 
@@ -70,6 +70,8 @@ The platform aims to:
 - Improve inspection accuracy and consistency.
 - Reduce report preparation time.
 - Provide a scalable foundation for future inspection modules.
+- Support dynamic dashboard statistics per project.
+- Enable admin-configurable inspection forms without code changes.
 
 ---
 
@@ -77,14 +79,13 @@ The platform aims to:
 
 ### Included in Current Scope
 
-- Dashboard
-- Project selection
-- New inspection
-- Edit inspection
-- Search inspections
-- Offline SQLite database
+- Dashboard (Smart Dashboard with configurable cards)
+- Project selection, creation, editing, deletion, cloning
+- New inspection, edit inspection
+- Search inspections (by Pole ID, Division, District, Block)
+- Offline SQLite database (dual-database architecture)
 - GPS capture
-- Photo capture
+- Photo capture with watermark burn-in
 - Auto-save
 - Dynamic inspection sections
 - Dynamic field rendering
@@ -92,21 +93,26 @@ The platform aims to:
 - Inspection history
 - Duplicate Pole ID detection
 - Device options admin panel (Camera/Switch dropdowns configurable from Settings)
-- Template import/export (JSON)
-- Project edit and delete
-- Project-wise CSV export
+- Device types admin panel (custom device type management)
+- Template import/export (JSON v2.0 — replace-in-place)
+- Project-wise CSV/Excel/PDF export
 - Drill-down admin flow (Sections → Fields → Options)
-- DB-driven camera/switch dropdown options (fallback to hardcoded if DB empty)
-- Simplified settings screen
+- DB-driven camera/switch dropdown options
+- Dashboard card management (add/edit/delete/reorder/enable/disable cards)
+- Smart Card Generator (auto-creates cards from inspection form fields)
+- Inspection data bus (auto-refresh dashboard on data changes)
+- Single-inspection export (PDF/Excel/CSV)
+- Reports screen with live banded table preview
+- Per-project database isolation
+- Inspector name field on projects
 
 ### Planned for Future Releases
 
 - Cloud synchronization
 - User authentication
 - Role-based access
-- PDF report generation
-- Excel export
-- Backup and restore
+- Photo reports
+- Analytics dashboard (project/district statistics)
 - AI-assisted inspection
 - OCR improvements
 
@@ -138,8 +144,9 @@ Responsible for:
 - Managing projects
 - Managing templates
 - Configuring sections and fields
-- Configuring camera and switch device options
+- Configuring device types and device options
 - Importing and exporting inspection templates
+- Managing dashboard cards
 - Maintaining application settings
 
 # 7. User Roles & Personas
@@ -191,6 +198,7 @@ Supervisors review completed inspections and ensure inspection quality before re
 - Review observations
 - Check inspection completeness
 - Monitor inspection progress
+- Export reports
 
 ---
 
@@ -202,15 +210,17 @@ Administrators manage the inspection platform and maintain inspection configurat
 
 ### Responsibilities
 
-- Manage projects (create, edit, delete)
+- Manage projects (create, edit, delete, clone)
 - Manage districts
 - Configure inspection templates
 - Configure sections (create, edit, reorder)
 - Configure fields (create, edit, reorder)
 - Configure dropdown options (create, edit, reorder)
+- Configure device types and device field definitions
 - Configure camera and switch device options
 - Import and export inspection templates
-- Export project-wise inspection data as CSV
+- Manage dashboard cards
+- Export project-wise inspection data as CSV/Excel/PDF
 - Maintain application settings
 
 ---
@@ -225,13 +235,12 @@ The system shall provide the following core functionality.
 
 The application shall provide a dashboard displaying:
 
-- Total inspections
-- Completed inspections
-- Draft inspections
-- Project statistics
-- Camera statistics
-- Switch statistics
+- Configurable statistic cards (Total, Today's, breakdown, sum, field count, date breakdown)
+- Smart Card Generator (auto-creates cards from inspection form fields)
 - Recent inspections
+- Quick actions (New Inspection, Reports, Settings)
+- Project information
+- Auto-refresh on data changes, app foreground, midnight, and 60s interval
 
 ---
 
@@ -241,8 +250,10 @@ The application shall allow users to:
 
 - Select Project
 - Select District
-- Select Division
-- Select Block (if applicable)
+- Create new projects
+- Edit existing projects
+- Clone projects (with all inspection data)
+- Delete projects (with confirmation warning)
 
 ---
 
@@ -253,10 +264,10 @@ The system shall allow users to:
 - Create inspection
 - Edit inspection
 - Delete inspection
-- Search inspection
+- Search inspection (by Pole ID, Division, District, Block)
 - Filter inspection
 - View inspection details
-- Duplicate inspection (future enhancement)
+- Export single inspection (PDF/Excel/CSV)
 
 ---
 
@@ -343,6 +354,7 @@ Each photograph shall support:
 - Pole ID watermark
 - District watermark
 - Date and time watermark
+- Green watermark (#76FF03) burned into gallery photos
 
 Future versions may support OCR and annotation.
 
@@ -355,6 +367,7 @@ Users shall be able to search inspections using:
 - Pole ID
 - Project
 - District
+- Block
 - Date
 - Status
 
@@ -364,12 +377,13 @@ Users shall be able to search inspections using:
 
 The system shall support:
 
-- Inspection summary
+- Inspection summary with live banded table preview
 - Project-wise CSV export
-- Excel export (future)
-- PDF export (future)
-- Photo reports
-- Audit reports
+- Project-wise Excel export (xlsx)
+- Project-wise PDF export
+- Single-inspection export (PDF/Excel/CSV)
+- Photo reports (future)
+- Analytics dashboard (future)
 
 Report templates shall be configurable in future versions.
 
@@ -388,29 +402,78 @@ Options are stored in the DeviceOptions database table and are DB-driven rather 
 
 ---
 
-## FR-13 Template Import/Export
+## FR-13 Device Types Administration
+
+The application shall allow administrators to manage custom device types from the Settings screen.
+
+Each device type shall have:
+
+- A unique name
+- Configurable fields (text, dropdown, number, date, checkbox)
+- Dropdown options for dropdown-type fields
+- An "Enable in Inspection" toggle
+- Field definitions stored in DeviceFieldDefinitions table
+- Device instance data stored in DeviceRecords table (JSON)
+- Per-project device type tracking via ProjectDeviceTypes table
+
+---
+
+## FR-14 Template Import/Export
 
 The application shall support exporting the complete inspection template (sections, fields, and dropdown options) as a JSON file from Settings → Export Template.
 
 The application shall support importing an inspection template from a JSON file from Settings → Import Template.
 
+v2.0 features:
+
+- Export all templates, sections, fields, options, custom device types, device options, and project device type mappings
+- Import replaces the form in-place (deactivate + add) while preserving existing inspection data
+- v1.0 backward compatibility (normalizes legacy single-template files)
+- Reset-to-Default preserves per-inspection DeviceRecords
+
 This allows administrators to transfer template configurations between devices or create backups.
 
 ---
 
-## FR-14 Project Edit and Delete
+## FR-15 Project Edit and Delete
 
 The application shall allow users to edit project details (name, district, division, client, description) from the home screen via an Edit button on each project card.
 
 The application shall allow users to delete a project via a Delete button. Deletion shall show a warning dialog listing what will be removed (project, inspections, photos, device data) and require confirmation before proceeding.
 
+The application shall allow users to clone a project (copy all settings and inspection data to a new project).
+
 ---
 
-## FR-15 Project-wise CSV Export
+## FR-16 Project-wise Export
 
-The application shall allow users to export inspection data for a specific project as a CSV file from the project dashboard.
+The application shall allow users to export inspection data for a specific project from the Reports screen in CSV, Excel (xlsx), or PDF format.
 
-The CSV shall include inspection fields, device data, and GPS coordinates. The exported file shall be shareable via device sharing options.
+The export shall include inspection fields, device data, and GPS coordinates. The exported file shall be shareable via device sharing options.
+
+---
+
+## FR-17 Smart Dashboard
+
+The application shall provide a configurable dashboard with:
+
+- Auto-generated cards from inspection form fields (SmartCardGenerator)
+- Manual card creation (entity count, dropdown breakdown, sum, field count, date breakdown)
+- Card enable/disable and reorder
+- Auto-refresh on inspection data changes, app foreground, midnight, and 60s interval
+- Project-isolated refresh (no cross-project refresh)
+
+---
+
+## FR-18 Per-Project Database Isolation
+
+The application shall store each project's data in an isolated SQLite database file.
+
+- Global DB (accc_global.db) stores only Projects, Divisions, Districts, Blocks
+- Each project gets its own inspection.db with full schema and seed data
+- Photos stored in project folder
+- Exports stored in project folder
+- Changes in one project shall never impact another project
 
 ---
 
@@ -446,19 +509,19 @@ The current version of the platform consists of the following primary modules.
 
 ## Dashboard
 
-Provides an overview of inspection activity and key statistics.
+Provides an overview of inspection activity and key statistics with configurable Smart Dashboard cards.
 
 ---
 
 ## Projects
 
-Maintains the list of available projects. Supports creating, editing, and deleting projects.
+Maintains the list of available projects. Supports creating, editing, deleting, and cloning projects.
 
 ---
 
 ## Districts
 
-Maintains district-level configuration.
+Maintains district-level configuration in the global database.
 
 ---
 
@@ -471,6 +534,7 @@ Core module responsible for:
 - Auto-save
 - Validation
 - Dynamic rendering
+- Device sections
 
 ---
 
@@ -481,13 +545,30 @@ Responsible for:
 - Camera integration
 - Image storage
 - Photo preview
+- Watermark burn-in
 - Metadata management
+
+---
+
+## Reports Module
+
+Responsible for:
+
+- Live banded table preview
+- CSV export
+- Excel export (xlsx)
+- PDF export
+- Single-inspection export
+- Project-wide export
 
 ---
 
 ## Database Module
 
 Provides offline data persistence using SQLite through the Repository Pattern.
+
+- Global DB: Projects, Divisions, Districts, Blocks
+- Per-project DB: Templates, Sections, Fields, Values, Devices, Photos, DashboardCards
 
 ---
 
@@ -499,20 +580,12 @@ Current implementation includes:
 
 - Sections management (drill-down: list, create, edit, reorder)
 - Fields management (drill-down: list, create, edit, reorder)
-- Dropdown options management (drill-down: list, create, edit, reorder)
-- Camera options management (type, status, make, SI, SD card)
-- Switch options management (type, status, make, SI)
-- Export template (JSON)
-- Import template (JSON)
-
----
-
-## Export Module
-
-Responsible for:
-
-- Project-wise CSV export
-- Shareable inspection data
+- Options management (drill-down: list, create, edit, reorder)
+- Device types management (create, edit, delete, field management)
+- Device options management (Camera/Switch dropdown configuration)
+- Dashboard card management
+- Template import/export (JSON v2.0)
+- Reset to default
 
 ---
 
@@ -534,7 +607,8 @@ The application shall provide a fast and responsive user experience.
 - Field changes should be saved automatically within 500 milliseconds.
 - Search results should appear within 1 second.
 - Scrolling should remain smooth even with large inspection datasets.
-- Camera Open and Save pthoto with all watermarks within 2 second.
+- Camera Open and Save photo with all watermarks within 2 seconds.
+
 ---
 
 ## 11.2 Reliability
@@ -548,6 +622,7 @@ The application shall continue functioning even under adverse conditions.
 - Auto-save shall minimize data loss.
 - Database corruption shall be minimized through transaction-based operations.
 - Graceful handling of unexpected errors.
+- Sequential SQLite connection model to avoid Android-native handle corruption.
 
 ---
 
@@ -576,6 +651,7 @@ The codebase shall be modular and easy to maintain.
 - DB-driven device options (not hardcoded).
 - Centralized validation.
 - Clear folder structure.
+- Single SQLite connection (sequential open/close).
 
 ---
 
@@ -606,22 +682,31 @@ The application shall use SQLite as the primary local database.
 ### Design Principles
 
 - Offline-first architecture.
+- Dual-database model (global + per-project).
+- Per-project isolation (no cross-DB joins).
 - Normalized database structure.
 - Repository Pattern.
 - Transaction support.
 - Foreign key constraints.
 - Auto-generated primary keys.
+- Sequential open/close connection model.
 
-### Current Core Tables (18 Tables)
+### Current Tables
+
+#### Global DB (4 tables)
 
 - Projects
+- Divisions
 - Districts
 - Blocks
-- Inspections
+
+#### Project DB (20+ tables per project)
+
 - InspectionTemplates
-- InspectionSections
+- InspectionSections (with IsDefault flag)
 - InspectionFields
 - FieldOptions
+- Inspections
 - InspectionValues
 - RepeatableGroups
 - RepeatableGroupFields
@@ -630,30 +715,40 @@ The application shall use SQLite as the primary local database.
 - Cameras
 - Switches
 - Photos
-- Divisions
 - DeviceOptions
-
-### DeviceOptions Table
-
-Stores configurable dropdown options for camera and switch device fields.
-
-Fields:
-
-- OptionID (INTEGER PRIMARY KEY)
-- DeviceType (TEXT — 'Camera' or 'Switch')
-- FieldName (TEXT — e.g., 'CameraType', 'SwitchMake')
-- OptionLabel (TEXT — display label)
-- OptionValue (TEXT — stored value)
-- DisplayOrder (INTEGER)
-- IsActive (INTEGER — 1 = active, 0 = inactive)
+- DeviceFieldDefinitions
+- DeviceRecords
+- ProjectDeviceTypes
+- DashboardCards
 
 ### InspectionSections.IsDefault Column
 
-INTEGER column (migration adds it, default 0). Marks the original 10 built-in sections as IsDefault=1. Only default sections appear in inspection forms. Custom admin sections are stored in the database but hidden from inspection forms.
+INTEGER column (migration adds it, default 0). Marks the original built-in sections as IsDefault=1. Only default sections appear in inspection forms. Custom admin sections are stored in the database but hidden from inspection forms.
 
 ### Inspections.SectionsSnapshot Column
 
 TEXT column (migration adds it). Originally used to snapshot section configuration at inspection creation time. Now deprecated — section configuration is read live from the database.
+
+### DashboardCards Table
+
+Stores configurable dashboard statistic cards per project.
+
+Fields include:
+
+- CardID (INTEGER PRIMARY KEY AUTOINCREMENT)
+- ProjectID (INTEGER — FK to project)
+- CardKey (TEXT — unique key like total_poles, today_poles)
+- CardLabel (TEXT — display label)
+- CardMode (TEXT — entitycount, dropdown, sum, fieldcount, datebreakdown)
+- EntityType (TEXT — Inspections, Cameras, Switches, Devices)
+- CounterType (TEXT — total, today)
+- BreakdownField (TEXT — field key for breakdown/sum cards)
+- AggregateField (TEXT — numeric field key for SUM cards)
+- SectionLabel (TEXT — section header for grouped cards)
+- DeviceType (TEXT — device type for device cards)
+- FilterJson (TEXT — JSON-serialized filters)
+- DisplayOrder (INTEGER)
+- IsActive (INTEGER — 1 = active, 0 = disabled)
 
 Future tables may be added as the platform evolves, while preserving backward compatibility where practical.
 
@@ -663,7 +758,7 @@ Future tables may be added as the platform evolves, while preserving backward co
 
 The Dynamic Inspection Engine is the core of the platform.
 
-Instead of hardcoding inspection screens, the application builds inspection forms from database configuration.
+Instead of hardcoding forms, the application constructs inspection screens using configuration stored in SQLite.
 
 ### Responsibilities
 
@@ -675,6 +770,7 @@ Instead of hardcoding inspection screens, the application builds inspection form
 - Save values automatically.
 - Support configurable display order.
 - Support DB-driven device options for camera and switch dropdowns.
+- Support dynamic device types (Camera, Switch, and future types).
 - Support future inspection templates.
 
 ### Benefits
@@ -705,8 +801,9 @@ The application shall support:
 - Capturing photos.
 - Recording GPS coordinates (subject to device availability).
 - Auto-save.
-- Exporting inspection data as CSV.
+- Exporting inspection data as CSV/Excel/PDF.
 - Importing/exporting templates as JSON.
+- Configuring dashboard cards.
 
 ### Future Synchronization
 
@@ -787,6 +884,7 @@ The platform shall maintain consistent and accurate inspection records.
 - Foreign key relationships shall be maintained.
 - Auto-save shall preserve intermediate changes.
 - Soft deletion may be considered for future versions where audit history is required.
+- Per-project isolation prevents cross-contamination.
 
 ---
 
@@ -803,6 +901,7 @@ The application shall include logging to assist development and troubleshooting.
 - GPS acquisition.
 - Camera operations.
 - Error events.
+- Dashboard auto-refresh events.
 
 Debug logging should be disabled or reduced for production releases.
 
@@ -826,6 +925,8 @@ Potential future enhancements include:
 
 These enhancements should build upon the existing modular and configuration-driven architecture rather than requiring a complete redesign.
 
+---
+
 # 21. Acceptance Criteria
 
 The following acceptance criteria define when the product and its features are considered complete.
@@ -836,11 +937,11 @@ The following acceptance criteria define when the product and its features are c
 
 The Dashboard shall:
 
-- Display total inspections.
-- Display completed inspections.
-- Display draft inspections.
-- Display project statistics.
+- Display configurable statistic cards.
+- Support Smart Card Generator (auto-create from form fields).
+- Support manual card creation (entity count, breakdown, sum, etc.).
 - Display recent inspections.
+- Auto-refresh on data changes.
 
 ---
 
@@ -867,6 +968,7 @@ The inspection engine shall:
 - Support field ordering.
 - Support validation rules.
 - Support configurable field visibility.
+- Filter sections by IsDefault=1 for inspection forms.
 
 ---
 
@@ -903,6 +1005,8 @@ Users shall be able to:
 - Delete unwanted photos.
 - Store photos with inspection records.
 - Associate photos with inspection components.
+- View watermarked photos in gallery.
+- View photos in app Download folder.
 
 ---
 
@@ -924,6 +1028,7 @@ Users shall be able to search inspections using:
 - Pole ID.
 - Project.
 - District.
+- Block.
 - Date.
 - Inspection status.
 
@@ -943,6 +1048,7 @@ The application shall:
 - Preserve relationships.
 - Automatically save user input.
 - Recover from unexpected application closure without losing previously saved information.
+- Maintain per-project data isolation.
 
 ---
 
@@ -957,32 +1063,57 @@ Administrators shall be able to:
 
 ---
 
-## AC-12 Template Import/Export
+## AC-12 Device Types Administration
 
 Administrators shall be able to:
 
-- Export the complete inspection template (sections, fields, options) as JSON.
-- Import an inspection template from JSON.
-- Imported templates are stored in the database.
+- Create, edit, and delete device types.
+- Manage device field definitions per type.
+- Configure dropdown options for device fields.
+- Enable/disable device types per project.
+- Delete device types (deactivates fields, options, section, records).
 
 ---
 
-## AC-13 Project Management
+## AC-13 Template Import/Export
+
+Administrators shall be able to:
+
+- Export the complete inspection template (sections, fields, options, device types, device options, project device type mappings) as JSON.
+- Import an inspection template from JSON.
+- Imported templates are stored in the database.
+- Import replaces the form in-place while preserving existing inspection data.
+
+---
+
+## AC-14 Project Management
 
 Users shall be able to:
 
 - Edit existing projects from the home screen.
 - Delete projects with confirmation warning dialog.
+- Clone projects (copy all settings and inspection data).
 - Deleted projects remove all associated inspections, photos, and device data.
 
 ---
 
-## AC-14 Project-wise CSV Export
+## AC-15 Project-wise Export
 
 Users shall be able to:
 
-- Export inspection data for a specific project as CSV.
-- Share the exported CSV file via device sharing options.
+- Export inspection data for a specific project as CSV, Excel, or PDF.
+- Share the exported file via device sharing options.
+
+---
+
+## AC-16 Smart Dashboard
+
+Users shall be able to:
+
+- View auto-generated dashboard cards from inspection form fields.
+- Manually add custom dashboard cards.
+- Enable/disable and reorder dashboard cards.
+- Dashboard auto-refreshes when inspection data changes.
 
 ---
 
@@ -1009,6 +1140,7 @@ The following Key Performance Indicators (KPIs) will be used to evaluate project
 - Fast application performance.
 - Minimal crashes.
 - Reliable database storage.
+- No cross-project data leakage.
 
 ---
 
@@ -1021,8 +1153,7 @@ The following Key Performance Indicators (KPIs) will be used to evaluate project
 - Large image storage requirements.
 - GPS inaccuracies.
 - Device hardware limitations.
-
----
+- expo-sqlite Android connection bugs (mitigated by sequential open/close model).
 
 ## Operational Risks
 
@@ -1030,8 +1161,6 @@ The following Key Performance Indicators (KPIs) will be used to evaluate project
 - Incorrect user input.
 - Damaged mobile devices.
 - Battery depletion during field work.
-
----
 
 ## Project Risks
 
@@ -1053,18 +1182,21 @@ To reduce identified risks, the project shall adopt the following strategies.
 - Validation.
 - Confirmation dialogs.
 - Backup support (future).
+- Per-project database isolation.
 
 ### Performance
 
 - Lazy loading.
 - Efficient database queries.
 - Image optimization.
+- Single SQLite connection.
 
 ### Reliability
 
 - Offline-first architecture.
 - Graceful error handling.
 - Logging and diagnostics.
+- Sequential DB model to avoid Android handle corruption.
 
 ---
 
@@ -1091,6 +1223,7 @@ Current constraints include:
 - Local SQLite database.
 - Expo framework limitations.
 - Mobile device hardware limitations.
+- Sequential SQLite connection model (single handle at a time).
 
 The platform should remain compatible with future architectural enhancements without requiring complete redevelopment.
 
@@ -1119,9 +1252,23 @@ Current dependencies include:
 - GPS
 - File System
 
+## UI Libraries
+
+- React Native Paper
+- React Native Element Dropdown
+- React Native WebView
+
 ## Libraries
 
-Dependencies shall remain documented within the project repository and updated as the application evolves.
+- expo-router (navigation)
+- expo-sqlite (database)
+- expo-location (GPS)
+- expo-image-picker (camera)
+- expo-media-library (gallery)
+- expo-sharing (file sharing)
+- expo-document-picker (template import)
+- xlsx (Excel export)
+- react-native-view-shot (watermark burn-in)
 
 ---
 
@@ -1131,57 +1278,68 @@ The project shall follow an incremental release approach.
 
 ### Version 0.x
 
-Development
-
-Internal testing
-
-Feature implementation
-
----
+- Development
+- Internal testing
+- Feature implementation
 
 ### Version 1.0
 
-Initial production release
-
-Pole Inspection
-
-Offline operation
-
-Photo capture
-
-GPS
-
-Dynamic inspection forms
-
----
+- Initial production release
+- Pole Inspection
+- Offline operation
+- Photo capture
+- GPS
+- Dynamic inspection forms
 
 ### Version 1.5
 
-Administration panel with DB-driven device options
+- Administration Panel v2
+- DB-driven device options
+- Template import/export
+- Project edit/delete
+- Project-wise CSV export
+- Drill-down admin flow
+- Simplified settings screen
 
-Template import/export
+### Version 1.8
 
-Project edit/delete
+- Per-Project Database Isolation
+- ProjectDBManager
+- Per-project photos and exports
+- TemplateSyncHelper removed
 
-Project-wise CSV export
+### Version 1.8.1
 
-Drill-down admin flow (Sections → Fields → Options)
+- App renamed to "ACCC Dynamic Inspection Platform"
+- Bundle ID changed to com.accc.dynamicinspection
+- Android folder regenerated
 
-Simplified settings screen
+### Version 1.9.0
 
----
+- Reports & Export v2
+- Unified export service
+- CSV/Excel/PDF export
+- Single-inspection export
+- Legacy export removed
+
+### Version 1.9.1 (Unreleased)
+
+- Smart Dashboard with dynamic cards
+- SmartCardGenerator
+- DashboardCardManager
+- InspectionDataBus
+- useDashboardAutoRefresh
+- Template Transfer v2.0
+- Inspection List Block search
 
 ### Future Releases
 
-Additional inspection templates
-
-Cloud synchronization
-
-Role management
-
-Reporting enhancements
-
-AI-assisted inspection
+- Cloud synchronization
+- User authentication
+- Role-based access
+- Photo reports
+- Analytics dashboard
+- AI-assisted inspection
 
 ---
 
@@ -1215,19 +1373,12 @@ Status: Completed
 
 Administration Panel
 
-Device Options Admin Panel (DB-driven camera/switch options)
-
-Template Import/Export (JSON)
-
-Project Edit/Delete with warning dialog
-
-Project-wise CSV Export
-
-Drill-down Admin Flow (Sections → Fields → Options)
-
-Simplified Settings Screen
-
-Pole ID Lock Fix (SectionRenderer waits for DB load)
+- Template, Section, Field, Option CRUD
+- Device Types Admin
+- Device Options Admin
+- Template Import/Export
+- Project Edit/Delete/Clone
+- Project-wise CSV Export
 
 Status: Completed
 
@@ -1237,11 +1388,13 @@ Status: Completed
 
 Reporting
 
-PDF
+- Reports screen with live preview
+- CSV/Excel/PDF export
+- Single-inspection export
+- Photo Report (pending)
+- Analytics Dashboard (pending)
 
-Excel
-
-Dashboard Analytics
+Status: In Progress
 
 ---
 
@@ -1249,13 +1402,12 @@ Dashboard Analytics
 
 Cloud Platform
 
-Authentication
+- Authentication
+- Synchronization
+- Role-Based Access
+- Notifications
 
-Synchronization
-
-Role-Based Access
-
-Notifications
+Status: Planned
 
 ---
 
@@ -1263,13 +1415,12 @@ Notifications
 
 AI Platform
 
-OCR
+- OCR
+- Image Analysis
+- Inspection Recommendations
+- Predictive Maintenance
 
-Image Analysis
-
-Inspection Recommendations
-
-Predictive Maintenance
+Status: Planned
 
 ---
 
@@ -1286,10 +1437,18 @@ Predictive Maintenance
 | Template | Configuration defining an inspection form |
 | Section | Logical grouping of related inspection fields |
 | Field | Individual data entry element |
-| DeviceOptions | Database table storing configurable dropdown options for camera and switch device fields |
-| IsDefault | Column on InspectionSections marking the original built-in sections that appear in inspection forms |
+| DeviceOptions | Database table storing configurable dropdown options for device fields |
+| DeviceFieldDefinitions | Database table storing custom device type field schemas |
+| DeviceRecords | Database table storing device instance data per inspection (JSON) |
+| ProjectDeviceTypes | Database table tracking enabled device types per project |
+| DashboardCards | Database table storing configurable dashboard statistic cards |
+| IsDefault | Column on InspectionSections marking built-in sections that appear in inspection forms |
 | Repository Pattern | Data access abstraction layer |
 | Offline First | Application designed to operate without internet connectivity |
+| Smart Dashboard | Configurable dashboard with auto-generated and manual statistic cards |
+| CardMode | Dashboard card type: entitycount, dropdown, sum, fieldcount, datebreakdown |
+| InspectionDataBus | Pub/sub event bus for inspection data changes |
+| SmartCardGenerator | Service that auto-creates dashboard cards from inspection form fields |
 
 ---
 
@@ -1305,6 +1464,7 @@ This PRD should be read together with the following project documents:
 - 07-Changelog.md
 - 08-README.md
 - 09-Decisions.md
+- 10-DATABASE_ARCHITECTURE.md
 
 Together these documents provide the complete functional, technical, architectural, and operational definition of the ACCC Dynamic Inspection Platform.
 
@@ -1320,13 +1480,16 @@ Together these documents provide the complete functional, technical, architectur
 | Dynamic Forms | Template Engine |
 | Auto Save | Inspection Repository |
 | Search | Dashboard |
-| Reporting | Reporting Module |
+| Reporting | Reports Module |
 | Settings | Administration Module |
 | Device Options Admin | Settings Module |
+| Device Types Admin | Settings Module |
 | Template Import/Export | Settings Module |
-| Project Edit/Delete | Projects Module |
-| CSV Export | Export Module |
+| Project Edit/Delete/Clone | Projects Module |
+| CSV Export | Reports Module |
 | DB-Driven Device Options | DeviceOptions Repository |
+| Smart Dashboard | Dashboard Module |
+| Per-Project Isolation | Database Module |
 
 ---
 

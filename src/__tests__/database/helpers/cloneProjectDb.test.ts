@@ -182,4 +182,70 @@ describe("cloneProjectDb", () => {
 
     await dbModule.clearActiveProject();
   });
+
+  it("clones cleanly when the target DB already has DashboardCards rows with the same CardKeys (retry of a failed clone)", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const schemaModule = require("@/src/database/schema") as typeof import("@/src/database/schema");
+    const { cloneProjectDb } = require("@/src/database/helpers/ProjectDBManager") as typeof import("@/src/database/helpers/ProjectDBManager");
+
+    const dbA = await setupProject(PROJECT_A);
+    await dbA.runAsync(
+      `INSERT INTO DashboardCards
+       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, CountMode, CardMode, SectionLabel, SortOrder, Enabled, IsDefault)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [7, "total_pole_status", "Pole Availability", "transmission-tower", "#198754", "inspections", "total", "count", "dropdown", "Total Summary", 1, 1, 1]
+    );
+    await dbModule.clearActiveProject();
+
+    await dbModule.setActiveProject(PROJECT_B);
+    await schemaModule.createProjectSchema();
+    const dbB = await dbModule.getDatabase();
+    await dbB.runAsync(
+      `INSERT INTO DashboardCards
+       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, CountMode, CardMode, SectionLabel, SortOrder, Enabled, IsDefault)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [7, "total_pole_status", "Pole Availability", "transmission-tower", "#198754", "inspections", "total", "count", "dropdown", "Total Summary", 1, 1, 1]
+    );
+    await dbModule.clearActiveProject();
+
+    await cloneProjectDb(PROJECT_A, "Clone", PROJECT_B, 99);
+
+    await dbModule.setActiveProject(PROJECT_B);
+    const dbB2 = await dbModule.getDatabase();
+    const cards = await dbB2.getAllAsync<{ ProjectID: number; CardKey: string }>(
+      "SELECT ProjectID, CardKey FROM DashboardCards"
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0].ProjectID).toBe(99);
+    expect(cards[0].CardKey).toBe("total_pole_status");
+    await dbModule.clearActiveProject();
+  });
+
+  it("dedupes DashboardCards with duplicate CardKeys in the source when cloning", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { cloneProjectDb } = require("@/src/database/helpers/ProjectDBManager") as typeof import("@/src/database/helpers/ProjectDBManager");
+
+    const dbA = await setupProject(PROJECT_A);
+    for (let i = 0; i < 2; i++) {
+      await dbA.runAsync(
+        `INSERT INTO DashboardCards
+         (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, CountMode, CardMode, SectionLabel, SortOrder, Enabled, IsDefault)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [7, "total_pole_status", "Pole Availability", "transmission-tower", "#198754", "inspections", "total", "count", "dropdown", "Total Summary", 1, 1, 1]
+      );
+    }
+    await dbModule.clearActiveProject();
+
+    await cloneProjectDb(PROJECT_A, "Clone", PROJECT_B, 99);
+
+    await dbModule.setActiveProject(PROJECT_B);
+    const dbB = await dbModule.getDatabase();
+    const cards = await dbB.getAllAsync<{ ProjectID: number; CardKey: string }>(
+      "SELECT ProjectID, CardKey FROM DashboardCards"
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0].ProjectID).toBe(99);
+    expect(cards[0].CardKey).toBe("total_pole_status");
+    await dbModule.clearActiveProject();
+  });
 });

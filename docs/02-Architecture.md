@@ -471,7 +471,7 @@ Responsibilities
 
 Current repositories:
 
-- ProjectRepository (Project CRUD, including updateProject(), uses getGlobalDatabase)
+- ProjectRepository (Project CRUD, including cloneProject(), uses getGlobalDatabase)
 - InspectionRepository (Inspection CRUD, validation, sections, fields, values; getSections() filters by IsDefault=1, getAllSections() for admin)
 - InspectionFieldRepository (Field queries, option loading)
 - InspectionValueRepository (Save/load/delete field values)
@@ -481,7 +481,10 @@ Current repositories:
 - SwitchRepository (Switch CRUD with transactions)
 - PhotoRepository (Photo CRUD, create returns lastInsertRowId)
 - DistrictRepository (District queries, uses getGlobalDatabase)
-- DashboardRepository (Dashboard stats)
+- DashboardCardRepository (Dashboard card CRUD + ensureDefaultCards + migrateDefaultCards + migrateDeviceCards)
+- DashboardService (Aggregates dashboard cards with live counts using StatisticCountService)
+- StatisticCountService (Computes counts for dashboard cards: entity count, field count, sum, dropdown breakdown, date breakdown, device breakdown)
+- SmartCardGenerator (Auto-creates dashboard cards from inspection form field selection, classified into CardMode)
 - DeviceOptionsRepository (CRUD and reorder for DeviceOptions table)
 - TemplateRepository (Template CRUD + hasInspections check)
 - SectionRepository (Section CRUD + reorder + hasInspectionValues check)

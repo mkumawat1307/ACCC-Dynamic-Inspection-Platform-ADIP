@@ -4,7 +4,6 @@ import { logger } from "@/src/utils/logger";
 
 export interface ExportTarget {
   ids: number[];
-  poleId: string | null;
 }
 
 export type ExportFlowState =
@@ -36,7 +35,7 @@ export function useExportFlow(projectId: number, projectName: string) {
       lastFormat.current = format;
       setState({ phase: "exporting", format, target });
       try {
-        const result = await createExportFile(projectId, projectName, target.ids, target.poleId, format);
+        const result = await createExportFile(projectId, projectName, target.ids, format);
         if (!result) {
           setState({
             phase: "error",

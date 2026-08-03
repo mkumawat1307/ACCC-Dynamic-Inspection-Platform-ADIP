@@ -9,6 +9,8 @@ interface Props {
   subtitle: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   onPress: () => void;
+  borderColor?: string;
+  borderWidth?: number;
 }
 
 export default function DashboardActionCard({
@@ -16,9 +18,11 @@ export default function DashboardActionCard({
   subtitle,
   icon,
   onPress,
+  borderColor = "#D9D9D9",
+  borderWidth = 1,
 }: Props) {
   return (
-    <Card style={styles.card} onPress={onPress}>
+    <Card style={[styles.card, { borderColor, borderWidth }]} onPress={onPress}>
       <Card.Content style={styles.content}>
         <MaterialCommunityIcons name={icon} size={28} color={COLORS.primary} />
         <Text variant="titleSmall" style={styles.title}>
@@ -38,7 +42,7 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    paddingVertical: SPACING.lg,
+    paddingVertical: SPACING.md,
     alignItems: "center",
   },
 

@@ -373,12 +373,10 @@ export default function DeviceTypesScreen() {
         <FieldDialog
           visible={fieldDialogVisible}
           editingField={editingField !== null}
-          fieldName={fieldName}
           fieldLabel={fieldLabel}
           fieldType={fieldType}
           fieldRequired={fieldRequired}
           onDismiss={() => setFieldDialogVisible(false)}
-          onFieldNameChange={setFieldName}
           onFieldLabelChange={(text) => { setFieldLabel(text); if (!editingField) setFieldName(generateFieldName(text)); }}
           onFieldTypeChange={setFieldType}
           onFieldRequiredToggle={() => setFieldRequired(!fieldRequired)}

@@ -13,12 +13,10 @@ const FIELD_TYPES = [
 interface FieldDialogProps {
   visible: boolean;
   editingField: boolean;
-  fieldName: string;
   fieldLabel: string;
   fieldType: string;
   fieldRequired: boolean;
   onDismiss: () => void;
-  onFieldNameChange: (text: string) => void;
   onFieldLabelChange: (text: string) => void;
   onFieldTypeChange: (type: string) => void;
   onFieldRequiredToggle: () => void;
@@ -32,12 +30,10 @@ interface FieldDialogProps {
 export function FieldDialog({
   visible,
   editingField,
-  fieldName,
   fieldLabel,
   fieldType,
   fieldRequired,
   onDismiss,
-  onFieldNameChange,
   onFieldLabelChange,
   onFieldTypeChange,
   onFieldRequiredToggle,

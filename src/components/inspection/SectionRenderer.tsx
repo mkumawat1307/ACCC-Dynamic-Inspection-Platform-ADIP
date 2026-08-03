@@ -173,7 +173,6 @@ export default function SectionRenderer({
         {fields.map((field) => (
           <FieldRenderer
             key={field.FieldID}
-            fieldId={field.FieldID}
             fieldKey={field.FieldKey}
             fieldName={field.FieldName}
             fieldType={field.FieldType}

@@ -9,7 +9,7 @@
 ![Database](https://img.shields.io/badge/Database-SQLite-orange)
 ![Architecture](https://img.shields.io/badge/Architecture-Offline%20First-success)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
-![Version](https://img.shields.io/badge/Version-1.8.1-blue)
+![Version](https://img.shields.io/badge/Version-1.9.1-blue)
 
 ---
 
@@ -45,6 +45,7 @@ The platform aims to:
 - Generate professional reports.
 - Support configurable inspection templates.
 - Enable admin-configurable device options without code changes.
+- Provide a configurable Smart Dashboard per project.
 
 ---
 
@@ -52,9 +53,12 @@ The platform aims to:
 
 ## Dashboard
 
-- Inspection statistics
-- Recent inspections
+- Smart Dashboard with configurable statistic cards
+- Smart Card Generator (auto-creates cards from inspection form fields)
+- Dashboard Card Manager (add/edit/delete/reorder/enable/disable cards)
+- Auto-refresh on data changes, app foreground, midnight, and 60s interval
 - Search
+- Recent inspections
 - Project overview
 
 ---
@@ -69,6 +73,8 @@ The platform aims to:
 - Duplicate Pole Detection
 - Pole ID Lock (waits for DB before locking)
 - Section IsDefault Filtering (only default sections in inspections)
+- Block name shown on each inspection card
+- Search by Pole ID, Division, District, and Block
 
 ---
 
@@ -79,6 +85,7 @@ The platform aims to:
 - Dynamic Fields
 - Configurable Validation
 - Display Order
+- 10 field types
 
 ---
 
@@ -93,32 +100,50 @@ The platform aims to:
 - Section repeatable and visibility toggles
 - Section IsDefault toggle
 - Field required/visible/readOnly toggles
+- Device Types Management (create/edit/delete device types and their fields)
+- Device Options Management (Camera/Switch dropdown configuration)
+- Photos section locked (cannot be edited, reordered, or deleted)
+- Reset to Default button (restores original inspection form)
 
 ---
 
-## Device Options (Admin Configurable)
+## Device Types (Admin Configurable)
 
-- Camera type, status, make, model, IP options configurable from Settings
-- Switch type, status, make, model, IP options configurable from Settings
-- Options loaded from database (DeviceOptions table)
-- No code changes needed to modify dropdown values
+- Custom device type creation (Camera, Switch, and future types)
+- Per-type field management (text, dropdown, number, date, checkbox)
+- Dropdown options loaded from database (DeviceOptions table)
+- No code changes needed to add new device types
+- Per-project device type enable/disable toggle
+- Generic DeviceSection component renders any configured device type
 
 ---
 
 ## Template Import/Export
 
-- Export templates to JSON format
+- Export templates to JSON format (v2.0: includes device types, device options, project device type mappings)
 - Import templates from JSON files
-- Self-contained JSON with all template, section, field, and option data
+- Replace-in-place import (preserves existing inspection data)
+- v1.0 backward compatibility
 - Uses expo-document-picker and expo-sharing
 
 ---
 
 ## Project Management
 
-- Create, Edit, Delete projects
+- Create, Edit, Delete, Clone projects
 - Delete confirmation dialog with warning
-- Project-wise CSV Export from project dashboard
+- Project export from the Reports screen (CSV/Excel/PDF)
+
+---
+
+## Reports & Export
+
+- Reports screen with live banded table preview
+- Project-wide export: CSV, Excel (xlsx), PDF
+- Banded headers (section groups) across all three formats
+- Single-inspection export (PDF/Excel/CSV) from the Inspection List
+- Derived Latitude/Longitude, Status, and Photos-count columns
+- Device rows included in reports
 
 ---
 
@@ -133,12 +158,13 @@ The platform aims to:
 ## Photos
 
 - Camera Integration
-- Local Storage
+- Local Storage (in project folder)
 - Metadata
 - Green Watermark (Pole ID, District, GPS, Timestamp)
+- Watermark Burn-In (react-native-view-shot, on-screen)
 - Gallery Save
 - Download Folder Save
-- GPS Mandatory
+- GPS Mandatory for Photo Capture
 - Minimum 1 Photo Required
 
 ---
@@ -158,17 +184,23 @@ Future synchronization will upload inspection data to the cloud.
 | Layer | Technology |
 |---------|------------|
 | Framework | React Native |
-| Platform | Expo |
+| Platform | Expo SDK 54 |
 | Language | TypeScript |
-| Database | SQLite |
+| Database | SQLite (dual-database: global + per-project) |
 | Navigation | Expo Router |
 | State | React Context |
+| UI Library | React Native Paper |
+| Dropdown | React Native Element Dropdown |
 | Camera | Expo Image Picker |
 | Location | Expo Location |
 | Gallery | Expo Media Library |
 | Watermark | react-native-view-shot |
 | Document Picker | expo-document-picker |
 | Sharing | expo-sharing |
+| Spreadsheet (xlsx) | SheetJS (xlsx) |
+| PDF | expo-sharing (HTML-based) |
+| Build Tool | Gradle (Android) |
+| Package Manager | Yarn 1.22 |
 
 ---
 
@@ -178,22 +210,14 @@ The application follows a layered architecture.
 
 ```
 UI
-
 ↓
-
 Components
-
 ↓
-
 Context
-
 ↓
-
 Repositories
-
 ↓
-
-SQLite
+SQLite (Global DB or Project DB)
 ```
 
 ---
@@ -202,41 +226,78 @@ SQLite
 
 ```
 frontend/
-
-app/
-
-src/
-
-components/
-
-context/
-
-database/
-
-hooks/
-
-models/
-
-utils/
-
-assets/
+├── app/                          # Expo Router screens
+│   ├── _layout.tsx               # Root layout with InspectionProvider
+│   ├── index.tsx                 # Home screen — project list
+│   ├── +html.tsx                 # HTML root wrapper
+│   ├── projects/
+│   │   ├── new.tsx               # New/Edit project
+│   │   └── dashboard.tsx         # Per-project dashboard
+│   ├── projects/
+│   │   └── dashboard-settings.tsx # Dashboard card configuration
+│   ├── inspection/
+│   │   ├── new.tsx               # New inspection form
+│   │   ├── edit.tsx              # Edit inspection
+│   │   └── index.tsx             # Inspection list
+│   ├── reports/
+│   │   └── index.tsx             # Reports screen
+│   └── settings/
+│       ├── index.tsx             # Settings main screen
+│       ├── sections.tsx          # Section management
+│       ├── fields.tsx            # Field management
+│       ├── options.tsx           # Dropdown option management
+│       ├── device-types.tsx      # Device type management
+│       └── device-options.tsx    # Device option management
+├── src/
+│   ├── components/               # Reusable UI components
+│   │   ├── inspection/           # Inspection form components
+│   │   ├── dashboard/            # Dashboard components
+│   │   ├── reports/              # Report components
+│   │   └── projects/             # Project components
+│   ├── context/
+│   │   └── InspectionContext.tsx # Shared inspection state
+│   ├── database/
+│   │   ├── db.ts                 # SQLite connection manager (sequential open/close)
+│   │   ├── schema.ts             # DDL — global + project schema + migrations
+│   │   ├── seed.ts               # Seed orchestrator
+│   │   ├── DatabaseService.ts    # Startup initialization
+│   │   ├── tables/               # CREATE TABLE definitions
+│   │   ├── seeds/                # Idempotent seed data
+│   │   ├── repositories/         # Repository Pattern (20+ repos)
+│   │   └── helpers/
+│   │       └── ProjectDBManager.ts # Create/open/delete/clone project DBs
+│   ├── hooks/                    # Reusable React hooks
+│   ├── models/                   # TypeScript interfaces (8 models)
+│   ├── utils/                    # Utility functions
+│   └── constants/                # UI constants
+├── assets/                       # Images, fonts
+├── android/                      # Android native project
+├── docs/                         # Project documentation
+├── __mocks__/                    # Jest mocks
+├── package.json
+├── tsconfig.json
+├── app.json
+└── jest.config.js
 ```
 
 ---
 
 # Database
 
-Core tables (18):
+## Global DB (`accc_global.db`) — 4 tables
 
 - Projects
+- Divisions
 - Districts
 - Blocks
-- Divisions
-- Inspections
+
+## Project DB (`Projects/<ProjectName>/inspection.db`) — 20+ tables
+
 - InspectionTemplates
-- InspectionSections
+- InspectionSections (with IsDefault flag)
 - InspectionFields
 - FieldOptions
+- Inspections
 - InspectionValues
 - RepeatableGroups
 - RepeatableGroupFields
@@ -246,16 +307,42 @@ Core tables (18):
 - Switches
 - Photos
 - DeviceOptions
+- DeviceFieldDefinitions
+- DeviceRecords
+- ProjectDeviceTypes
+- DashboardCards
 
 ---
+
+# New Files (v1.9.1)
+
+- app/projects/dashboard-settings.tsx — Dashboard card configuration screen
+- src/components/dashboard/DashboardCardManager.tsx — Smart Add Card flow
+- src/components/dashboard/DashboardCardGrid.tsx — Grid with auto-refresh
+- src/components/dashboard/StatBreakdownCard.tsx — Breakdown rows card
+- src/database/repositories/SmartCardGenerator.ts — Auto-creates cards from form fields
+- src/database/repositories/StatisticCountService.ts — Generic count engine
+- src/database/repositories/DashboardService.ts — Composes card counts
+- src/database/repositories/DashboardCardRepository.ts — Dashboard card CRUD
+- src/database/tables/dashboard-cards.table.ts — DashboardCards table
+- src/database/seeds/dashboard-cards.seed.ts — Default cards
+- src/utils/InspectionDataBus.ts — Pub/sub event bus
+- src/hooks/useDashboardAutoRefresh.ts — Auto-refresh hook
+- src/hooks/useSectionCollapse.ts — Collapsed section state persistence
+- src/constants/ui.ts — Design tokens
+
+# New Files (v1.9.0)
+
+- app/reports/index.tsx — Reports screen
+- src/components/reports/ReportTablePreview.tsx — banded table preview
+- src/utils/exportData.ts — unified export service
 
 # New Files (v1.5)
 
 - app/settings/device-options.tsx — Device Options admin screen
 - src/database/repositories/DeviceOptionsRepository.ts — DeviceOptions CRUD
-- src/database/tables/device-options.table.ts — DeviceOptions table definition
+- src/database/tables/device-options.table.ts — DeviceOptions table
 - src/database/seeds/device-options.seed.ts — DeviceOptions seed data
-- src/utils/exportData.ts — CSV export utilities
 - src/utils/templateData.ts — Template JSON import/export utilities
 
 ---
@@ -264,57 +351,29 @@ Core tables (18):
 
 ```
 Dashboard
-
 ↓
-
 Project
-
 ↓
-
 New Inspection
-
 ↓
-
 General Information
-
 ↓
-
 Pole Structure
-
 ↓
-
 Junction Box
-
 ↓
-
 Earthing
-
 ↓
-
 Meter
-
 ↓
-
 Connectivity
-
 ↓
-
-Camera
-
+Camera / Switch / Custom Devices
 ↓
-
-Switch
-
-↓
-
 Remarks
-
 ↓
-
 Photos
-
 ↓
-
 Complete
 ```
 
@@ -337,6 +396,7 @@ The project documentation is located in the **docs/** folder.
 | 07-Changelog.md | Release History |
 | 08-README.md | Project Guide |
 | 09-Decisions.md | Architecture Decisions |
+| 10-DATABASE_ARCHITECTURE.md | Database Architecture |
 
 ---
 
@@ -345,7 +405,7 @@ The project documentation is located in the **docs/** folder.
 ## Prerequisites
 
 - Node.js
-- npm
+- Yarn 1.22
 - Expo CLI
 - Android Studio
 - Git
@@ -356,7 +416,7 @@ The project documentation is located in the **docs/** folder.
 
 ```bash
 git clone <repository-url>
-cd ACCC-Pole-Inspection-App
+cd "ACCC inspection"
 ```
 
 ---
@@ -364,7 +424,7 @@ cd ACCC-Pole-Inspection-App
 ## Install Dependencies
 
 ```bash
-npm install
+yarn install
 ```
 
 ---
@@ -372,7 +432,7 @@ npm install
 ## Start Development Server
 
 ```bash
-npx expo start
+yarn start
 ```
 
 ---
@@ -380,7 +440,7 @@ npx expo start
 ## Run Android
 
 ```bash
-npx expo run:android
+yarn android
 ```
 
 ---
@@ -396,6 +456,8 @@ npx expo run:android
 - Configuration-Driven Forms.
 - Auto Save.
 - No SQL inside UI components.
+- Sequential SQLite connection model (single handle).
+- Per-project database isolation.
 
 Refer to **03-Rules.md** for complete standards.
 
@@ -405,16 +467,19 @@ Refer to **03-Rules.md** for complete standards.
 
 Current Phase
 
-Administration Panel Complete (v1.4)
-Device Options DB-Driven + Template Import/Export + Project Management (v1.5)
-Per-Project Database Isolation (v1.8)
-App Rename + Bug Fixes (v1.8.1)
+- Administration Panel Complete (v1.4)
+- Device Options DB-Driven + Template Import/Export + Project Management (v1.5)
+- Per-Project Database Isolation (v1.8)
+- App Rename + Bug Fixes (v1.8.1)
+- Reports & Export v2 (v1.9.0)
+- Smart Dashboard (v1.9.1)
 
 Upcoming
 
-- Reporting (PDF + Excel)
 - Cloud Synchronization
 - AI Features
+- Analytics Dashboard
+- Photo Reports
 
 ---
 
@@ -422,7 +487,7 @@ Upcoming
 
 Current Version
 
-1.8.1
+1.9.1 (Unreleased)
 
 Status
 

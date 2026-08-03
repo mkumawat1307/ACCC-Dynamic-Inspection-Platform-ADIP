@@ -435,7 +435,6 @@ export async function createExportFile(
   projectId: number,
   projectName: string,
   inspectionIds: number[] | null,
-  poleId: string | null,
   format: ExportFormat
 ): Promise<ExportResult | null> {
   const startedAt = Date.now();
@@ -490,7 +489,7 @@ export async function openExportFile(result: ExportResult): Promise<boolean> {
 }
 
 export async function exportInspections(projectId: number, projectName: string, format: ExportFormat): Promise<boolean> {
-  const result = await createExportFile(projectId, projectName, null, null, format);
+  const result = await createExportFile(projectId, projectName, null, format);
   if (!result) return false;
   return shareExportFile(result);
 }
@@ -499,10 +498,9 @@ export async function exportInspection(
   projectId: number,
   projectName: string,
   inspectionId: number,
-  poleId: string,
   format: ExportFormat
 ): Promise<boolean> {
-  const result = await createExportFile(projectId, projectName, [inspectionId], poleId, format);
+  const result = await createExportFile(projectId, projectName, [inspectionId], format);
   if (!result) return false;
   return shareExportFile(result);
 }

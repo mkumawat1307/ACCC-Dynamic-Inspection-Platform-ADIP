@@ -153,7 +153,7 @@ export default function DashboardCardManager({ projectId }: Props) {
               <List.Item
                 title={card.Title}
                 description={`${entityLabel(card.EntityType)} · ${counterLabel(card.CounterType)}`}
-                left={(props) => (
+                left={() => (
                   <View style={styles.iconWrap}>
                     <MaterialCommunityIcons
                       name={card.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
@@ -162,7 +162,7 @@ export default function DashboardCardManager({ projectId }: Props) {
                     />
                   </View>
                 )}
-                right={(props) => (
+                right={() => (
                   <View style={styles.rowActions}>
                     <IconButton
                       icon="arrow-up"
@@ -209,7 +209,7 @@ export default function DashboardCardManager({ projectId }: Props) {
                     key={f.FieldKey}
                     title={f.FieldName}
                     description={pickerDescription(f)}
-                    left={(props) => (
+                    left={() => (
                       <View style={styles.iconWrap}>
                         <MaterialCommunityIcons
                           name={spec.icon as keyof typeof MaterialCommunityIcons.glyphMap}

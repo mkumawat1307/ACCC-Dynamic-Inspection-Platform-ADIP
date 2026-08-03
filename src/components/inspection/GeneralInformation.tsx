@@ -13,7 +13,7 @@ import { InspectionRepository } from "@/src/database/repositories/InspectionRepo
 import { InspectionField } from "@/src/database/repositories/InspectionTypes";
 import { getCurrentLocation } from "@/src/utils/location";
 
-const GeneralInformation = forwardRef((props, ref) => {
+const GeneralInformation = forwardRef((_props, ref) => {
 const {
   project: contextProject,
   inspectionDate,

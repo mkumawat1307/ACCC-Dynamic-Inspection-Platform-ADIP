@@ -2,7 +2,7 @@
 
 # Architecture Decision Records (ADR)
 
-Version: 1.3
+Version: 1.4
 
 Status: Active
 
@@ -458,6 +458,8 @@ When a decision changes:
 - Update Architecture.md.
 - Update Memory.md.
 - Update Changelog.md.
+- Update PRD.md.
+- Update Phases.md.
 
 ---
 
@@ -883,3 +885,130 @@ Negative:
 ---
 
 # End of Architecture Decision Records
+
+---
+
+# ADR-018
+
+## Title
+
+Smart Dashboard — Dynamic Configurable Statistic Cards
+
+### Status
+
+Accepted
+
+### Date
+
+August 2026
+
+### Context
+
+The project dashboard originally had hardcoded statistic sections (Total Poles, Total Cameras, etc.). As inspection templates evolved, the hardcoded stats became inflexible — new fields (camera_count, pole_avail) could not be surfaced without code changes, and different projects needed different dashboard configurations.
+
+### Decision
+
+Replace hardcoded dashboard stats with a configurable card engine backed by a per-project `DashboardCards` table.
+
+1. **`DashboardCards` table** — stores per-project card config with `CardMode` (entitycount/dropdown/sum/fieldcount/datebreakdown), `BreakdownField`, `AggregateField`, `SectionLabel`, `DeviceType`, `FilterJson`.
+2. **SmartCardGenerator** — discovers active form fields, classifies each field type into a card kind, and auto-creates Total + Today cards.
+3. **DashboardCardManager** — UI for adding/editing/deleting/reordering/enabling/disabling cards. Smart cards are non-editable (picker-only). Custom cards use a manual editor.
+4. **InspectionDataBus** — lightweight pub/sub that emits `inspectionsChanged` events with `projectId` payload after every repository mutation.
+5. **useDashboardAutoRefresh** — listens to bus (project-filtered), AppState foreground, midnight rollover, and 60s focused poll. Returns a reload key consumed by `DashboardCardGrid`.
+6. **StatisticCountService** — generic parameterized `SELECT COUNT(*)` engine with entity + counter-type registries.
+7. **DashboardService** — composes card counts into stat rows.
+8. **Section grouping** — cards can be grouped into "Total Summary" / "Today's Summary" sections with collapsible headers.
+
+### Consequences
+
+Positive:
+- Admins can configure dashboard cards per project without code changes.
+- New inspection form fields automatically surface as dashboard cards.
+- Project-isolated refresh prevents cross-project dashboard noise.
+- Smart cards are non-editable, preventing configuration drift.
+
+Negative:
+- Each project DB migration adds the `DashboardCards` table and columns (handled idempotently in `migrateProjectSchema`).
+- Smart cards require field-type classification logic (encapsulated in SmartCardGenerator).
+
+---
+
+# ADR-019
+
+## Title
+
+Device Types Admin — Generic Device Inspection Architecture
+
+### Status
+
+Accepted
+
+### Date
+
+July 2026
+
+### Context
+
+The original inspection form had hardcoded Camera and Switch sections. As the platform evolved, new device types (NVR, UPS, Solar, etc.) were planned, but each would require new hardcoded sections, fields, and components.
+
+### Decision
+
+Introduce a generic device type management system:
+
+1. **`DeviceFieldDefinitions` table** — stores the schema (field name, label, type, display order, required) for each device type.
+2. **`DeviceRecords` table** — stores per-inspection device instance data as JSON (`DeviceData` column).
+3. **`ProjectDeviceTypes` table** — tracks which device types are enabled for each project.
+4. **`DeviceSection` component** — renders device sections generically based on `DeviceFieldDefinitions`, replacing hardcoded `CameraSection`/`SwitchSection` for new device types.
+5. **Settings > Device Types screen** — admin UI for creating/editing/deleting device types and managing their fields.
+6. **Device options** — dropdown fields in device definitions link to `DeviceOptions` for configurable option lists.
+
+### Consequences
+
+Positive:
+- New device types require no new component code — only database configuration.
+- Device options remain DB-driven via DeviceOptions table.
+- Per-project device type enablement allows project-specific customization.
+
+Negative:
+- JSON storage in `DeviceRecords` loses relational queryability (acceptable for device instance data).
+- Generic rendering is slightly more complex than hardcoded sections.
+
+---
+
+# ADR-020
+
+## Title
+
+Template Transfer v2.0 — Replace-in-Place Import
+
+### Status
+
+Accepted
+
+### Date
+
+August 2026
+
+### Context
+
+Custom inspection forms (sections, fields, options, device types, device options) lived only in the local project DB, so they could not be moved between phones or reinstalls. The old import path was v1.0 (single template, no device data) and append-only — it could not replace a customized form cleanly.
+
+### Decision
+
+1. **v2.0 JSON transfer format** — exports ALL active templates, each with sections → fields → options, plus per-template `DeviceFieldDefinitions` and `DeviceOptions`, and the project's active `ProjectDeviceTypes`.
+2. **Replace-in-place import** — upserts templates by `TemplateName` (update existing + reactivate, or insert), deactivates stale sections, inserts fresh sections/fields/options, upserts device definitions/options by natural keys, bulk-deactivates device rows belonging to templates no longer active, and replaces `ProjectDeviceTypes`. Existing inspection records are untouched.
+3. **v1.0 backward compatibility** — legacy single-template files are normalized to the v2.0 shape.
+4. **Reset-to-Default preserves device records** — the previous reset wiped `DeviceRecords` while its confirmation text claimed "Existing inspection data will NOT be deleted." That destructive step was removed.
+5. **Error dialogs scoped to originating flow** — export failure shows only "Export Failed", import failure only "Import Failed".
+
+### Consequences
+
+Positive:
+- A fully customized form (including device configuration) can be shared via JSON and restored on another device.
+- Replace-in-place keeps the form clean without deleting inspection data.
+- Per-project isolation holds: import writes only to the active project DB.
+
+Negative:
+- v1.0 files lose device data on import by design (they never carried it).
+- The two-step pick + parse + confirm + apply flow adds a confirmation dialog before any DB write.
+

@@ -46,7 +46,7 @@ describe("dashboard-cards.seed", () => {
     expect(SECTION_LABEL_TOTAL).toBe("Total Summary");
     expect(SECTION_LABEL_TODAY).toBe("Today's Summary");
 
-    await seedDashboardCards();
+    await seedDashboardCards(1);
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
@@ -60,9 +60,9 @@ describe("dashboard-cards.seed", () => {
     );
     expect(cards.filter((c) => c.SectionLabel === "Total Summary")).toHaveLength(3);
     expect(cards.filter((c) => c.SectionLabel === "Today's Summary")).toHaveLength(3);
-    expect(cards.filter((c) => c.CardMode === "entitycount")).toHaveLength(4);
+    expect(cards.filter((c) => c.CardMode === "entitycount")).toHaveLength(2);
     expect(cards.filter((c) => c.CardMode === "dropdown")).toHaveLength(2);
-    expect(cards.filter((c) => c.CardMode === "sum")).toHaveLength(0);
+    expect(cards.filter((c) => c.CardMode === "sum")).toHaveLength(2);
     expect(DEFAULT_SECTIONED_CARDS).toHaveLength(6);
   });
 
@@ -70,8 +70,8 @@ describe("dashboard-cards.seed", () => {
     await openProject();
     const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
 
-    await seedDashboardCards();
-    await seedDashboardCards();
+    await seedDashboardCards(1);
+    await seedDashboardCards(1);
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
@@ -95,7 +95,7 @@ describe("dashboard-cards.seed", () => {
     );
 
     const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
-    await seedDashboardCards();
+    await seedDashboardCards(1);
 
     const cards = await db.getAllAsync<{ CardKey: string }>(
       "SELECT CardKey FROM DashboardCards"
@@ -110,7 +110,7 @@ describe("dashboard-cards.seed", () => {
   it("seeds today_inspection_done with a Completed filter, today counter, and Today's label", async () => {
     await openProject();
     const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
-    await seedDashboardCards();
+    await seedDashboardCards(1);
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
@@ -124,27 +124,29 @@ describe("dashboard-cards.seed", () => {
     expect(row!.SectionLabel).toBe("Today's Summary");
   });
 
-  it("seeds the Camera Count SUM and Pole Status breakdown defaults", async () => {
+  it("seeds the Camera Count SUM and Pole Availability breakdown defaults", async () => {
     await openProject();
     const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
-    await seedDashboardCards();
+    await seedDashboardCards(1);
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
-    const camera = await db.getFirstAsync<{ EntityType: string; FilterJson: string; CardMode: string; DeviceType: string; SectionLabel: string }>(
-      "SELECT EntityType, FilterJson, CardMode, DeviceType, SectionLabel FROM DashboardCards WHERE CardKey = 'total_camera_count'"
+    const camera = await db.getFirstAsync<{ EntityType: string; FilterJson: string; CardMode: string; DeviceType: string; AggregateField: string; SectionLabel: string }>(
+      "SELECT EntityType, FilterJson, CardMode, DeviceType, AggregateField, SectionLabel FROM DashboardCards WHERE CardKey = 'total_camera_count'"
     );
     expect(camera).not.toBeNull();
-    expect(camera!.EntityType).toBe("devices");
-    expect(camera!.FilterJson).toBe(JSON.stringify({ DeviceType: "Camera" }));
-    expect(camera!.CardMode).toBe("entitycount");
-    expect(camera!.DeviceType).toBe("Camera");
+    expect(camera!.EntityType).toBe("inspections");
+    expect(camera!.FilterJson).toBeNull();
+    expect(camera!.CardMode).toBe("sum");
+    expect(camera!.DeviceType).toBeNull();
+    expect(camera!.AggregateField).toBe("camera_count");
     expect(camera!.SectionLabel).toBe("Total Summary");
 
-    const pole = await db.getFirstAsync<{ BreakdownField: string; CardMode: string }>(
-      "SELECT BreakdownField, CardMode FROM DashboardCards WHERE CardKey = 'total_pole_status'"
+    const pole = await db.getFirstAsync<{ Title: string; BreakdownField: string; CardMode: string }>(
+      "SELECT Title, BreakdownField, CardMode FROM DashboardCards WHERE CardKey = 'total_pole_status'"
     );
     expect(pole).not.toBeNull();
+    expect(pole!.Title).toBe("Pole Availability");
     expect(pole!.BreakdownField).toBe("pole_avail");
     expect(pole!.CardMode).toBe("dropdown");
   });
@@ -152,7 +154,7 @@ describe("dashboard-cards.seed", () => {
   it("seeds every default card with an explicit CardMode", async () => {
     await openProject();
     const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
-    await seedDashboardCards();
+    await seedDashboardCards(1);
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
@@ -163,9 +165,28 @@ describe("dashboard-cards.seed", () => {
 
     expect(byKey["total_inspection_done"]).toBe("entitycount");
     expect(byKey["total_pole_status"]).toBe("dropdown");
-    expect(byKey["total_camera_count"]).toBe("entitycount");
+    expect(byKey["total_camera_count"]).toBe("sum");
     expect(byKey["today_inspection_done"]).toBe("entitycount");
     expect(byKey["today_pole_status"]).toBe("dropdown");
-    expect(byKey["today_camera_count"]).toBe("entitycount");
+    expect(byKey["today_camera_count"]).toBe("sum");
+  });
+
+  it("isolation — seeds default cards under the provided ProjectID, not a hardcoded 1", async () => {
+    await openProject();
+    const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
+
+    await seedDashboardCards(7);
+
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const db: SQLiteDatabase = await dbModule.getDatabase();
+    const forProject7 = await db.getAllAsync<{ CardKey: string }>(
+      "SELECT CardKey FROM DashboardCards WHERE ProjectID = 7"
+    );
+    const forProject1 = await db.getAllAsync<{ CardKey: string }>(
+      "SELECT CardKey FROM DashboardCards WHERE ProjectID = 1"
+    );
+
+    expect(forProject7).toHaveLength(6);
+    expect(forProject1).toHaveLength(0);
   });
 });

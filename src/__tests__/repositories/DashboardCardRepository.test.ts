@@ -497,7 +497,7 @@ describe("DashboardCardRepository", () => {
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
       await DashboardCardRepository.ensureDefaultCards(1);
       const allParams = (mockDb.runAsync as jest.Mock).mock.calls.map((c) => c[1]);
-      expect(allParams.map((p) => p[13])).toEqual(["entitycount", "dropdown", "entitycount", "entitycount", "dropdown", "entitycount"]);
+      expect(allParams.map((p) => p[13])).toEqual(["entitycount", "dropdown", "sum", "entitycount", "dropdown", "sum"]);
     });
   });
 
@@ -556,15 +556,19 @@ describe("DashboardCardRepository", () => {
   });
 
   describe("migrateDeviceCards", () => {
-    it("rewrites smart device cards, repoints camera cards, and renames legacy labels", async () => {
+    it("rewrites smart cards, repoints legacy cameras, rebinds field cameras, renames pole cards, and renames legacy labels", async () => {
       const db = createMockDb();
       (getDatabase as jest.Mock).mockResolvedValue(db);
       db.getAllAsync.mockResolvedValue([
         { CardID: 1, CardKey: "smart_dev_Camera_CameraStatus_total" },
         { CardID: 2, CardKey: "smart_dev_Switch_SwitchState_today" },
         { CardID: 3, CardKey: "total_camera_count" },
-        { CardID: 4, CardKey: "today_cameras" },
-        { CardID: 5, CardKey: "total_inspections" },
+        { CardID: 4, CardKey: "today_camera_count" },
+        { CardID: 5, CardKey: "total_cameras" },
+        { CardID: 6, CardKey: "today_cameras" },
+        { CardID: 7, CardKey: "total_pole_status" },
+        { CardID: 8, CardKey: "today_pole_status" },
+        { CardID: 9, CardKey: "total_inspections" },
       ]);
       db.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
@@ -578,9 +582,20 @@ describe("DashboardCardRepository", () => {
       expect(smart[0][1]).toEqual(["Camera", "CameraStatus", 1, 1]);
       expect(smart[1][1]).toEqual(["Switch", "SwitchState", 2, 1]);
 
-      const camera = calls.filter(([sql]) => sql.includes("FilterJson"));
-      expect(camera).toHaveLength(2);
-      expect(camera[0][1]).toEqual(['{"DeviceType":"Camera"}', 3, 1]);
+      const cameraRepoint = calls.filter(([sql]) => sql.includes("FilterJson = ?"));
+      expect(cameraRepoint).toHaveLength(2);
+      expect(cameraRepoint.map(([, p]) => p[1])).toEqual([5, 6]);
+      expect(cameraRepoint[0][1]).toEqual(['{"DeviceType":"Camera"}', 5, 1]);
+
+      const sumRebind = calls.filter(([sql]) => sql.includes("CardMode = ?"));
+      expect(sumRebind).toHaveLength(2);
+      expect(sumRebind[0][1]).toEqual(["inspections", "sum", "camera_count", 3, 1]);
+      expect(sumRebind[1][1]).toEqual(["inspections", "sum", "camera_count", 4, 1]);
+
+      const poleRename = calls.filter(([sql]) => sql.includes("SET Title = ?"));
+      expect(poleRename).toHaveLength(2);
+      expect(poleRename[0][1]).toEqual(["Pole Availability", 7, 1]);
+      expect(poleRename[1][1]).toEqual(["Pole Availability", 8, 1]);
 
       const renameTotal = calls.find(([sql, p]) => String(sql).includes("SectionLabel = ?") && p[0] === SECTION_LABEL_TOTAL);
       expect(renameTotal).toBeDefined();
@@ -590,7 +605,33 @@ describe("DashboardCardRepository", () => {
       expect(renameToday![1]).toEqual([SECTION_LABEL_TODAY, "Today's", 1]);
     });
 
-    it("is a no-op when no device cards or legacy labels exist", async () => {
+    it("rebinds field camera cards and renames pole cards even without smart or legacy camera cards", async () => {
+      const db = createMockDb();
+      (getDatabase as jest.Mock).mockResolvedValue(db);
+      db.getAllAsync.mockResolvedValue([
+        { CardID: 3, CardKey: "total_camera_count" },
+        { CardID: 4, CardKey: "today_camera_count" },
+        { CardID: 7, CardKey: "total_pole_status" },
+        { CardID: 8, CardKey: "today_pole_status" },
+        { CardID: 9, CardKey: "total_inspections" },
+      ]);
+      db.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
+      await DashboardCardRepository.migrateDeviceCards(1);
+
+      const calls = (db.runAsync as jest.Mock).mock.calls as Array<[string, unknown[]]>;
+      const sumRebind = calls.filter(([sql]) => sql.includes("CardMode = ?"));
+      expect(sumRebind).toHaveLength(2);
+      const poleRename = calls.filter(([sql]) => sql.includes("SET Title = ?"));
+      expect(poleRename).toHaveLength(2);
+      const smart = calls.filter(([sql]) => sql.includes("EntityType = 'devices'") && !sql.includes("FilterJson"));
+      expect(smart).toHaveLength(0);
+      const cameraRepoint = calls.filter(([sql]) => sql.includes("FilterJson = ?"));
+      expect(cameraRepoint).toHaveLength(0);
+    });
+
+    it("is a no-op when no device cards, camera cards, or pole cards exist", async () => {
       const db = createMockDb();
       (getDatabase as jest.Mock).mockResolvedValue(db);
       db.getAllAsync.mockResolvedValue([{ CardID: 1, CardKey: "total_inspections" }]);

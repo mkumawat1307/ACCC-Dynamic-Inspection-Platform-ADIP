@@ -54,10 +54,15 @@ Patch → Bug fixes
 - Project Dashboard UI refinement: consistent spacing, alignment, and grouping across the dashboard screen and its stat/action components via new design tokens (`src/constants/ui.ts`). Project Information is a compact aligned label/value grid, Statistics renders full-bleed with grouped stat cards, action tiles share one style, and the card-grid empty state no longer shows a literal `\u201C` escape.
 - Dashboard card sections are now a first-class grouping: summary sections are renamed to "Total Summary" / "Today's Summary", rendered bold/uppercase with a divider, and collapse per-project (state persisted in AsyncStorage, default expanded). Smart-added cards merge into the canonical sections; reorder arrows are locked at section boundaries; "Reset Defaults" now performs a full factory reset of the project's cards.
 - Device-type cards now count real data from `DeviceRecords` (`json_extract` of the `DeviceData` JSON), including the default camera cards and any migrated `smart_dev_*` cards, instead of the unused `Cameras`/`Switches` tables.
+- Default dashboard cards: `total_pole_status`/`today_pole_status` are now titled "Pole Availability" and `total_camera_count`/`today_camera_count` are now SUM cards counting `camera_count` instead of counting rows. Existing project DBs are migrated on open (title rename + SUM rebind), replacing the old field-based camera-count workaround.
+- Dropdown breakdown cards render a responsive 2-per-row card grid for up to 6 short options, falling back to a vertical list for larger option sets or longer labels.
+- The "Add Card" dropdown picker now hides fields already bound to an existing card (SUM or breakdown) so the same field cannot be added twice for a project.
+- The project dashboard's "Project Information" card now shows the project name as its first field, and the card title renders bold.
 
 ### Fixed
 
 - `DashboardCardRepository.createCard` INSERT column/placeholder mismatch (14 columns / 15 placeholders) that real SQLite would reject — now 16 columns / 16 placeholders including `SectionLabel` and `AggregateField`.
+- Cloning a project no longer fails with `UNIQUE constraint failed: DashboardCards.ProjectID, DashboardCards.CardKey` and no longer leaves orphaned projects: the clone now runs in a transaction, wipes any stale/partial target DB before copying, re-binds `DashboardCards` to the cloned project (de-duplicated by `CardKey`), always releases the active project handle, and cleans up the partial folder + orphaned project row on failure so retrying the same name succeeds.
 
 ### Fixed
 
@@ -442,30 +447,27 @@ Rewrote `db.ts` to use a sequential open/close model with a single `SQLiteDataba
 
 # Future Releases
 
-## Version 1.6.0
+## Version 2.0.0
 
-Planned
-
-### Added
-
-- PDF Reports
-- Excel Reports
-- Dashboard Analytics
-- Photo Reports
-
----
-
-## Version 1.7.0
-
-Planned
-
-### Added
+Cloud Platform + AI Features
 
 - Cloud Synchronization
 - Authentication
 - User Roles
 - Notifications
 - REST API Integration
+- OCR
+- AI Image Analysis
+- Predictive Maintenance
+
+---
+
+## Version 1.10.0
+
+Photo Reports + Analytics Dashboard
+
+- Photo Report generation
+- Analytics Dashboard with project/district statistics
 
 ---
 

@@ -110,18 +110,6 @@ class DeviceOptionsRepository {
     );
   }
 
-  async reorder(deviceType: string, fieldName: string, ids: number[]): Promise<void> {
-    const db = await getDatabase();
-    await db.withTransactionAsync(async () => {
-      for (let i = 0; i < ids.length; i++) {
-        await db.runAsync(
-          `UPDATE DeviceOptions SET DisplayOrder = ? WHERE OptionID = ?`,
-          [i + 1, ids[i]]
-        );
-      }
-    });
-  }
-
   async moveUp(id: number): Promise<void> {
     const db = await getDatabase();
     const current = await db.getFirstAsync<DeviceOption>(

@@ -13,6 +13,8 @@ export const COLORS = {
   textPrimary: "#333",
   textSecondary: "#666",
   textMuted: "#999",
+  summaryTotal: "#0B5ED7",
+  summaryToday: "#198754",
 } as const;
 
 export const RADIUS = {

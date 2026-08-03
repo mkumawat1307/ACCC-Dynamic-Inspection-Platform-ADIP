@@ -44,7 +44,7 @@ const [poleId, setPoleId] = useState("");
 
 const openProject = useCallback(async (p: Project) => {
   if (p.DBPath) {
-    await openProjectDb(p.DBPath);
+    await openProjectDb(p.DBPath, p.ProjectID);
   }
   setProject(p);
 }, []);

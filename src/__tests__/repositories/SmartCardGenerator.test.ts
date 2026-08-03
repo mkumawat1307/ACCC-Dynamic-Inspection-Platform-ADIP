@@ -380,17 +380,32 @@ describe("SmartCardGenerator - getDeviceFields", () => {
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
   });
 
-  it("queries active Camera/Switch fields with dropdown/switch/checkbox types", async () => {
+  it("queries active device fields with dropdown/switch/checkbox types for every device type", async () => {
     mockDb.getAllAsync.mockResolvedValueOnce([]);
 
     await SmartCardGenerator.getDeviceFields();
 
     const sql = mockDb.getAllAsync.mock.calls[0][0] as string;
     expect(sql).toContain("FROM DeviceFieldDefinitions");
-    expect(sql).toContain("DeviceType IN ('Camera', 'Switch')");
+    expect(sql).not.toContain("DeviceType IN");
     expect(sql).toContain("FieldType IN ('dropdown', 'switch', 'checkbox')");
     expect(sql).toContain("IsActive = 1");
     expect(sql).toContain("ORDER BY DeviceType, DisplayOrder");
+  });
+
+  it("regression — custom device types are included in the field picker with their columns", async () => {
+    mockDb.getAllAsync.mockResolvedValueOnce([
+      { FieldDefID: 20, DeviceType: "Gate", FieldName: "GateStatus", Label: "Gate Status", FieldType: "dropdown" },
+      { FieldDefID: 21, DeviceType: "Gate", FieldName: "GateLocked", Label: "Gate Locked", FieldType: "switch" },
+    ]);
+
+    const fields = await SmartCardGenerator.getDeviceFields();
+    expect(fields).toHaveLength(2);
+    expect(fields.map((f) => f.DeviceType)).toEqual(["Gate", "Gate"]);
+    expect(fields[0].FieldKey).toBe("dev_Gate_GateStatus");
+    expect(fields[0].DeviceColumn).toBe("GateStatus");
+    expect(fields[1].FieldKey).toBe("dev_Gate_GateLocked");
+    expect(fields[1].DeviceColumn).toBe("GateLocked");
   });
 
   it("maps device field rows to SmartFormField with dev_ keys and source device", async () => {
@@ -427,91 +442,85 @@ describe("SmartCardGenerator - getAvailableFields", () => {
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
   });
 
-  it("offers only fields with neither smart card present", async () => {
+  function cardRow(overrides: Record<string, unknown> = {}) {
+    return {
+      CardID: 1,
+      CardKey: "k1",
+      ProjectID: 1,
+      Title: "t",
+      Icon: "i",
+      Color: "c",
+      EntityType: "inspections",
+      CounterType: "total",
+      CountMode: "count",
+      CardMode: "entitycount",
+      BreakdownField: null,
+      AggregateField: null,
+      FilterJson: null,
+      DeviceType: null,
+      SectionLabel: "Total",
+      SortOrder: 1,
+      IsSystem: 0,
+      IsDisabled: 0,
+      ...overrides,
+    };
+  }
+
+  const DEFAULT_CARDS = [
+    cardRow({ CardKey: "k1", BreakdownField: "inspection_done" }),
+    cardRow({ CardKey: "k2", CardMode: "dropdown", BreakdownField: "pole_avail" }),
+    cardRow({ CardKey: "k3", CardMode: "sum", BreakdownField: null, AggregateField: "camera_count" }),
+  ];
+
+  const INSPECTION_FIELDS = [
+    { FieldID: 1, FieldKey: "pole_avail", FieldName: "Pole Availability", FieldType: "dropdown" },
+    { FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number" },
+    { FieldID: 3, FieldKey: "inspection_done", FieldName: "Inspection Done", FieldType: "dropdown" },
+    { FieldID: 4, FieldKey: "camera_status", FieldName: "Camera Status", FieldType: "text" },
+  ];
+
+  it("hides fields already covered by default cards (breakdown or SUM)", async () => {
     mockDb.getAllAsync
-      .mockResolvedValueOnce([
-        { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
-        { FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number" },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        { CardKey: "smart_pole_status_total", SortOrder: 0 },
-        { CardKey: "smart_pole_status_today", SortOrder: 1 },
-      ]);
+      .mockResolvedValueOnce(DEFAULT_CARDS)
+      .mockResolvedValueOnce(INSPECTION_FIELDS)
+      .mockResolvedValue([]);
 
     const available = await SmartCardGenerator.getAvailableFields(1);
-    expect(available).toHaveLength(1);
-    expect(available[0].FieldKey).toBe("camera_count");
+
+    const keys = available.map((f) => f.FieldKey);
+    expect(keys).not.toContain("inspection_done");
+    expect(keys).not.toContain("pole_avail");
+    expect(keys).not.toContain("camera_count");
+    expect(keys).toEqual(["camera_status"]);
   });
 
-  it("does not offer a field when only one card of its pair remains", async () => {
+  it("hides a SUM-covered field when a sum card exists for a project", async () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce([
-        { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
-        { FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number" },
+        cardRow({ CardID: 9, CardKey: "k9", ProjectID: 2, CardMode: "sum", BreakdownField: null, AggregateField: "camera_status" }),
       ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ CardKey: "smart_pole_status_total", SortOrder: 0 }]);
-
-    const available = await SmartCardGenerator.getAvailableFields(1);
-    expect(available).toHaveLength(1);
-    expect(available[0].FieldKey).toBe("camera_count");
-  });
-
-  it("filters out GPS fields", async () => {
-    mockDb.getAllAsync
       .mockResolvedValueOnce([
-        { FieldID: 1, FieldKey: "gps_coord", FieldName: "GPS", FieldType: "GPS" },
+        { FieldID: 4, FieldKey: "camera_status", FieldName: "Camera Status", FieldType: "number" },
       ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValue([]);
 
-    const available = await SmartCardGenerator.getAvailableFields(1);
+    const available = await SmartCardGenerator.getAvailableFields(2);
+
+    expect(available.map((f) => f.FieldKey)).not.toContain("camera_status");
     expect(available).toHaveLength(0);
   });
 
-  it("returns all valid fields when no smart cards exist", async () => {
+  it("shows a field again once its covering card is removed", async () => {
     mockDb.getAllAsync
-      .mockResolvedValueOnce([
-        { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
-        { FieldID: 2, FieldKey: "camera_count", FieldName: "Camera Count", FieldType: "number" },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(DEFAULT_CARDS.filter((c) => c.CardKey !== "k2"))
+      .mockResolvedValueOnce(INSPECTION_FIELDS)
+      .mockResolvedValue([]);
 
     const available = await SmartCardGenerator.getAvailableFields(1);
-    expect(available).toHaveLength(2);
-  });
 
-  it("combines inspection and device fields and dedups device cards by smart_dev keys", async () => {
-    mockDb.getAllAsync
-      .mockResolvedValueOnce([
-        { FieldID: 1, FieldKey: "pole_status", FieldName: "Pole Status", FieldType: "dropdown" },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        { FieldDefID: 10, DeviceType: "Camera", FieldName: "CameraStatus", Label: "Camera Status", FieldType: "dropdown" },
-        { FieldDefID: 11, DeviceType: "Switch", FieldName: "SwitchState", Label: "Switch State", FieldType: "dropdown" },
-      ])
-      .mockResolvedValueOnce([
-        { CardKey: "smart_dev_Camera_CameraStatus_total", SortOrder: 0 },
-        { CardKey: "smart_dev_Camera_CameraStatus_today", SortOrder: 1 },
-      ]);
-
-    const available = await SmartCardGenerator.getAvailableFields(1);
-    expect(available).toHaveLength(2);
-    expect(available[0].FieldKey).toBe("pole_status");
-    expect(available[0].source).toBe("inspection");
-    expect(available[1].FieldKey).toBe("dev_Switch_SwitchState");
-    expect(available[1].source).toBe("device");
-    expect(available[1].DeviceType).toBe("Switch");
+    const keys = available.map((f) => f.FieldKey);
+    expect(keys).toContain("pole_avail");
+    expect(keys).not.toContain("camera_count");
   });
 });
 

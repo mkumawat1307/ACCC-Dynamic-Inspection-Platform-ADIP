@@ -15,8 +15,6 @@ import { renderInput, DropdownOption } from "./renderFieldInput";
 
 export interface FieldRendererProps {
 
-  fieldId?: number;
-
   fieldKey?: string;
 
   fieldName: string;
@@ -52,8 +50,6 @@ export interface FieldRendererProps {
 }
 
 export default function FieldRenderer({
-
-  fieldId,
 
   fieldKey,
 

@@ -13,6 +13,8 @@ describe("ui design tokens", () => {
       textPrimary: "#333",
       textSecondary: "#666",
       textMuted: "#999",
+      summaryTotal: "#0B5ED7",
+      summaryToday: "#198754",
     });
   });
 

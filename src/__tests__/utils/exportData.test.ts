@@ -656,7 +656,7 @@ describe("exportInspection", () => {
       .mockResolvedValueOnce([]);
 
     const { exportInspection } = require("@/src/utils/exportData");
-    const result = await exportInspection(1, "TestProject", 1, "P001", "csv");
+    const result = await exportInspection(1, "TestProject", 1, "csv");
 
     expect(result).toBe(true);
     expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
@@ -673,7 +673,7 @@ describe("exportInspection", () => {
       .mockResolvedValueOnce([]);
 
     const { exportInspection } = require("@/src/utils/exportData");
-    const result = await exportInspection(1, "TestProject", 999, "NONE", "csv");
+    const result = await exportInspection(1, "TestProject", 999, "csv");
 
     expect(result).toBe(false);
   });
@@ -708,7 +708,7 @@ describe("createExportFile", () => {
       .mockResolvedValueOnce([]);
 
     const { createExportFile } = require("@/src/utils/exportData");
-    const result = await createExportFile(1, "TestProject", [1, 2], null, "csv");
+    const result = await createExportFile(1, "TestProject", [1, 2], "csv");
 
     expect(result).not.toBeNull();
     expect(result!.fileName).toMatch(/\.csv$/);
@@ -732,7 +732,7 @@ describe("createExportFile", () => {
       .mockResolvedValueOnce([]);
 
     const { createExportFile } = require("@/src/utils/exportData");
-    const result = await createExportFile(1, "TestProject", [1], null, "excel");
+    const result = await createExportFile(1, "TestProject", [1], "excel");
 
     expect(result).not.toBeNull();
     expect(result!.fileName).toMatch(/\.xlsx$/);
@@ -752,7 +752,7 @@ describe("createExportFile", () => {
       .mockResolvedValueOnce([]);
 
     const { createExportFile } = require("@/src/utils/exportData");
-    const result = await createExportFile(1, "TestProject", [1, 2], null, "csv");
+    const result = await createExportFile(1, "TestProject", [1, 2], "csv");
 
     expect(result).toBeNull();
     expect(FileSystem.writeAsStringAsync).not.toHaveBeenCalled();

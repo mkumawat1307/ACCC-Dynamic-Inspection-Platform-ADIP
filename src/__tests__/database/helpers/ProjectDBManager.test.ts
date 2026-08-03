@@ -74,12 +74,12 @@ describe("ProjectDBManager", () => {
     it("creates project directory and seeds database", async () => {
       const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
       const { createProjectDb } = require("@/src/database/helpers/ProjectDBManager");
-      await createProjectDb("TestProject", "/mock/documents/Projects/TestProject/inspection.db");
+      await createProjectDb("TestProject", "/mock/documents/Projects/TestProject/inspection.db", 2);
 
       expect(FileSystem.makeDirectoryAsync).toHaveBeenCalled();
       expect(setActiveProject).toHaveBeenCalled();
       expect(createProjectSchema).toHaveBeenCalled();
-      expect(seedDashboardCards).toHaveBeenCalled();
+      expect(seedDashboardCards).toHaveBeenCalledWith(2);
       expect(clearActiveProject).toHaveBeenCalled();
     });
   });
@@ -88,7 +88,7 @@ describe("ProjectDBManager", () => {
     it("opens when schema is valid", async () => {
       mockDb.getFirstAsync.mockResolvedValue({ cnt: 1 });
       const { openProjectDb } = require("@/src/database/helpers/ProjectDBManager");
-      await openProjectDb("/path/to/inspection.db");
+      await openProjectDb("/path/to/inspection.db", 3);
       expect(setActiveProject).toHaveBeenCalled();
       expect(clearActiveProject).not.toHaveBeenCalled();
     });

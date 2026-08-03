@@ -17,7 +17,7 @@ const { createExportFile, openExportFile, shareExportFile } = require("@/src/uti
 
 type Flow = ReturnType<typeof useExportFlow>;
 
-const target: ExportTarget = { ids: [1, 2], poleId: null };
+const target: ExportTarget = { ids: [1, 2] };
 
 function Host({ flowRef }: { flowRef: { current: Flow | null } }) {
   const flow = useExportFlow(1, "Project");
@@ -68,7 +68,7 @@ describe("useExportFlow", () => {
       flowRef.current!.runExport("excel");
     });
 
-    expect(createExportFile).toHaveBeenCalledWith(1, "Project", [1, 2], null, "excel");
+    expect(createExportFile).toHaveBeenCalledWith(1, "Project", [1, 2], "excel");
     expect(find(root, "phase")).toBe("success");
     expect(find(root, "fileName")).toBe("report.xlsx");
     expect(find(root, "rows")).toBe(4);
@@ -90,7 +90,7 @@ describe("useExportFlow", () => {
       flowRef.current!.retry();
     });
 
-    expect(createExportFile).toHaveBeenLastCalledWith(1, "Project", [1, 2], null, "csv");
+    expect(createExportFile).toHaveBeenLastCalledWith(1, "Project", [1, 2], "csv");
     expect(find(root, "phase")).toBe("success");
   });
 

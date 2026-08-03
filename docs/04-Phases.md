@@ -257,19 +257,13 @@ Generate professional inspection reports.
 
 ### Features
 
-Inspection Summary
-
-Excel Export
-
-PDF Export
-
-Photo Report
-
-Analytics Dashboard
-
-Project Statistics
-
-District Statistics
+- Reports screen with live banded table preview
+- Project-wide CSV export
+- Project-wide Excel export (xlsx)
+- Project-wide PDF export
+- Single-inspection export (PDF/Excel/CSV)
+- Photo Report (pending)
+- Analytics Dashboard / Project / District Statistics (pending)
 
 ### Progress (v1.9.0)
 
@@ -450,6 +444,27 @@ Status
 
 ---
 
+## Version 1.9.1
+
+Smart Dashboard + Template Transfer v2.0 + Inspection List Block Search
+
+Features:
+
+- SmartCardGenerator (auto-creates Total + Today cards from inspection form fields)
+- DashboardCardManager (Smart Add Card flow + Custom Card manual editor)
+- InspectionDataBus (pub/sub event bus)
+- useDashboardAutoRefresh hook
+- CardMode column on DashboardCards
+- Template Transfer v2.0 (replace-in-place import, v1.0 backward compatibility)
+- Inspection List Block search and display
+- Breakdown card type (group by any inspection form field)
+
+Status
+
+✅ Released (Unreleased)
+
+---
+
 ## Version 1.9.0
 
 Reports & Export v2 — Reports screen, project-wide CSV/Excel/PDF export, single-inspection export, legacy export removal
@@ -510,13 +525,63 @@ Status
 
 ---
 
-## Version 0.5
+## Version 1.4
 
-Reporting
+Administration Panel — Template, Section, Field, Option CRUD with reorder
 
 Status
 
-🟢 In Progress (CSV/Excel/PDF core in v1.9.0; Photo Report + analytics pending)
+✅ Released
+
+---
+
+## Version 1.3
+
+Watermark fixes (stale poleId/block, ViewShot on-screen)
+
+Status
+
+✅ Released
+
+---
+
+## Version 1.2
+
+Watermark burn-in, light black background, Download folder
+
+Status
+
+✅ Released
+
+---
+
+## Version 1.1
+
+GPS mandatory, green watermark, auto-save, numeric count input
+
+Status
+
+✅ Released
+
+---
+
+## Version 1.0
+
+Camera/Switch/Photo modules, dynamic forms, auto-save, GPS
+
+Status
+
+✅ Released
+
+---
+
+## Version 0.5
+
+Reporting (CSV/Excel/PDF core in v1.9.0; Photo Report + analytics pending)
+
+Status
+
+🟢 In Progress
 
 ---
 
@@ -547,6 +612,7 @@ Features
 - Template Import/Export
 - Project Management
 - CSV Export
+- Smart Dashboard
 
 Status
 
