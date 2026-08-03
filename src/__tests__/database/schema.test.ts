@@ -70,6 +70,7 @@ jest.mock("@/src/database/repositories/DashboardCardRepository", () => ({
   DashboardCardRepository: {
     ensureDefaultCards: jest.fn().mockResolvedValue(undefined),
     migrateDefaultCards: jest.fn().mockResolvedValue(undefined),
+    migrateDeviceCards: jest.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -237,6 +238,7 @@ describe("schema.ts createSchema", () => {
       expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN BreakdownField TEXT")
     );
     expect(DashboardCardRepository.migrateDefaultCards).toHaveBeenCalledWith(1);
+    expect(DashboardCardRepository.migrateDeviceCards).toHaveBeenCalledWith(1);
   });
 
   it("migrateProjectSchema does not throw when migrateDefaultCards fails", async () => {
@@ -244,6 +246,16 @@ describe("schema.ts createSchema", () => {
 
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
     (DashboardCardRepository.migrateDefaultCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await expect(migrateProjectSchema()).resolves.toBeUndefined();
+  });
+
+  it("migrateProjectSchema does not throw when migrateDeviceCards fails", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+    (DashboardCardRepository.migrateDeviceCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
 
     const { migrateProjectSchema } = require("@/src/database/schema");
     await expect(migrateProjectSchema()).resolves.toBeUndefined();
