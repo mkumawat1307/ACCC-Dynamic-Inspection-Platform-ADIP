@@ -100,7 +100,9 @@ Active Development
 
 ## Dashboard
 
-- Dashboard Screen
+- Dashboard Screen with Smart Dashboard auto-refresh
+- SmartCardGenerator (auto-creates Total + Today cards from inspection form field selection)
+- DashboardCardManager (Smart Add Card flow + Custom Card manual editor)
 - Search
 - Recent Inspections
 - Project-wise CSV Export (moved to Reports screen in v1.9.0)
@@ -458,7 +460,6 @@ These decisions should not be changed without Product Owner approval.
 
 Current known work items
 
-- Dashboard (Basic 30%)
 - Photo Reports
 - Cloud Synchronization
 
