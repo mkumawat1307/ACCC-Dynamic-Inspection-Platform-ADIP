@@ -496,7 +496,7 @@ describe("DashboardCardRepository", () => {
       const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
       await DashboardCardRepository.ensureDefaultCards(1);
       const allParams = (mockDb.runAsync as jest.Mock).mock.calls.map((c) => c[1]);
-      expect(allParams.map((p) => p[13])).toEqual(["entitycount", "dropdown", "sum", "entitycount", "dropdown", "sum"]);
+      expect(allParams.map((p) => p[13])).toEqual(["entitycount", "dropdown", "entitycount", "entitycount", "dropdown", "entitycount"]);
     });
   });
 });
