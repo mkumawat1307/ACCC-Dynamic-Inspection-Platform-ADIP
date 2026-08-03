@@ -86,15 +86,19 @@ export default function DashboardCardManager({ projectId }: Props) {
   const handleMove = async (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= cards.length) return;
+    const current = cards[index];
+    const neighbor = cards[target];
+    if ((current.SectionLabel ?? null) !== (neighbor.SectionLabel ?? null)) return;
     const next = [...cards];
     [next[index], next[target]] = [next[target], next[index]];
     const ids = next.map((c) => c.CardID as number);
     await DashboardCardRepository.reorderCards(projectId, ids);
+    await DashboardCardRepository.normalizeSections(projectId);
     load();
   };
 
   const handleResetDefaults = async () => {
-    await DashboardCardRepository.ensureDefaultCards(projectId);
+    await DashboardCardRepository.resetDefaultCards(projectId);
     load();
   };
 
@@ -162,12 +166,12 @@ export default function DashboardCardManager({ projectId }: Props) {
                   <View style={styles.rowActions}>
                     <IconButton
                       icon="arrow-up"
-                      disabled={index === 0}
+                      disabled={index === 0 || (cards[index - 1]?.SectionLabel ?? null) !== (card.SectionLabel ?? null)}
                       onPress={() => handleMove(index, -1)}
                     />
                     <IconButton
                       icon="arrow-down"
-                      disabled={index === cards.length - 1}
+                      disabled={index === cards.length - 1 || (cards[index + 1]?.SectionLabel ?? null) !== (card.SectionLabel ?? null)}
                       onPress={() => handleMove(index, 1)}
                     />
                     <IconButton icon="delete" onPress={() => confirmDelete(card)} />

@@ -137,6 +137,8 @@ async function pressButton(tree: ReturnType<typeof TestRenderer.create>, label: 
 describe("DashboardCardManager", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    repo.normalizeSections.mockResolvedValue(undefined);
+    repo.resetDefaultCards.mockResolvedValue(undefined);
     smartGen.getAvailableFields.mockResolvedValue(mockFields);
     smartGen.addSmartCardsForField.mockResolvedValue([1, 2]);
     smartGen.getSpec.mockReturnValue({
@@ -229,13 +231,58 @@ describe("DashboardCardManager", () => {
     expect(repo.reorderCards).toHaveBeenCalledWith(1, [2, 1]);
   });
 
-  it("reset calls ensureDefaultCards and reloads", async () => {
-    repo.ensureDefaultCards.mockResolvedValue(undefined);
+  it("reset calls resetDefaultCards and reloads", async () => {
     const tree = await renderManager([cardOf()]);
     repo.getAllCards.mockClear();
     await pressButton(tree, "Reset Defaults");
-    expect(repo.ensureDefaultCards).toHaveBeenCalledWith(1);
+    expect(repo.resetDefaultCards).toHaveBeenCalledWith(1);
     expect(repo.getAllCards).toHaveBeenCalled();
+  });
+
+  it("disables the reorder arrows at section boundaries", async () => {
+    repo.getAllCards.mockResolvedValue([
+      cardOf({ CardID: 1, CardKey: "total_a", Title: "Total A", SectionLabel: "Total Summary" }),
+      cardOf({ CardID: 2, CardKey: "today_a", Title: "Today A", SectionLabel: "Today's Summary" }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardManager projectId={1} />);
+      await flushPromises();
+    });
+    const upButtons = tree!.root.findAll((node) => {
+      const props = node.props as { icon?: string; disabled?: boolean };
+      return props && props.icon === "arrow-up";
+    });
+    const downButtons = tree!.root.findAll((node) => {
+      const props = node.props as { icon?: string; disabled?: boolean };
+      return props && props.icon === "arrow-down";
+    });
+    expect(upButtons[1].props.disabled).toBe(true);
+    expect(downButtons[0].props.disabled).toBe(true);
+    await TestRenderer.act(async () => { tree!.unmount(); });
+  });
+
+  it("does not move a card across a section boundary", async () => {
+    repo.reorderCards.mockResolvedValue(undefined);
+    repo.getAllCards.mockResolvedValue([
+      cardOf({ CardID: 1, CardKey: "total_a", Title: "Total A", SectionLabel: "Total Summary" }),
+      cardOf({ CardID: 2, CardKey: "today_a", Title: "Today A", SectionLabel: "Today's Summary" }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardManager projectId={1} />);
+      await flushPromises();
+    });
+    const downButtons = tree!.root.findAll((node) => {
+      const props = node.props as { icon?: string };
+      return props && props.icon === "arrow-down";
+    });
+    await TestRenderer.act(async () => {
+      (downButtons[0].props as { onPress?: () => void }).onPress?.();
+      await flushPromises();
+    });
+    expect(repo.reorderCards).not.toHaveBeenCalled();
+    await TestRenderer.act(async () => { tree!.unmount(); });
   });
 
   it("does not render a Custom Card button", async () => {
