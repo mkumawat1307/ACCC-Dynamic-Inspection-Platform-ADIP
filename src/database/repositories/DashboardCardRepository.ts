@@ -5,7 +5,7 @@ import { DEFAULT_DASHBOARD_CARDS, DEFAULT_SECTIONED_CARDS, DashboardCardSeed } f
 const CARD_COLUMNS = `
   CardID, ProjectID, CardKey, Title, Icon, Color,
   EntityType, CounterType, FilterJson, CountMode, DistinctColumn,
-  BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault, CreatedAt, UpdatedAt
+  BreakdownField, SectionLabel, AggregateField, DeviceType, CardMode, SortOrder, Enabled, IsDefault, CreatedAt, UpdatedAt
 `;
 
 function mapRow(row: Record<string, unknown>): DashboardCard {
@@ -24,6 +24,7 @@ function mapRow(row: Record<string, unknown>): DashboardCard {
     BreakdownField: (row.BreakdownField as string) ?? null,
     SectionLabel: (row.SectionLabel as string) ?? null,
     AggregateField: (row.AggregateField as string) ?? null,
+    DeviceType: (row.DeviceType as string) ?? null,
     CardMode: ((row.CardMode as string) || "entitycount") as CardModeValue,
     SortOrder: row.SortOrder as number,
     Enabled: row.Enabled as number,
@@ -90,8 +91,8 @@ export class DashboardCardRepository {
 
     const result = await db.runAsync(
       `INSERT INTO DashboardCards
-       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault, DeviceType)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         card.ProjectID,
         card.CardKey,
@@ -110,6 +111,7 @@ export class DashboardCardRepository {
         sortOrder,
         card.Enabled,
         card.IsDefault,
+        card.DeviceType ?? null,
       ]
     );
 
@@ -191,8 +193,8 @@ export class DashboardCardRepository {
       for (const card of missing) {
         await db.runAsync(
           `INSERT INTO DashboardCards
-           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault, DeviceType)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
           [
             projectId,
             card.CardKey,
@@ -209,6 +211,7 @@ export class DashboardCardRepository {
             card.AggregateField ?? null,
             card.CardMode,
             card.SortOrder,
+            card.DeviceType ?? null,
           ]
         );
       }
@@ -236,8 +239,8 @@ export class DashboardCardRepository {
       for (const card of missing) {
         await db.runAsync(
           `INSERT INTO DashboardCards
-           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault, DeviceType)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
           [
             projectId,
             card.CardKey,
@@ -254,6 +257,7 @@ export class DashboardCardRepository {
             card.AggregateField ?? null,
             card.CardMode,
             card.SortOrder,
+            card.DeviceType ?? null,
           ]
         );
       }

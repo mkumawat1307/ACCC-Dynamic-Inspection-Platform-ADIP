@@ -48,6 +48,7 @@ function rowOf(card: DashboardCard): Record<string, unknown> {
     BreakdownField: card.BreakdownField ?? null,
     SectionLabel: card.SectionLabel ?? null,
     AggregateField: card.AggregateField ?? null,
+    DeviceType: card.DeviceType ?? null,
     CardMode: card.CardMode,
     SortOrder: card.SortOrder,
     Enabled: card.Enabled,
@@ -238,7 +239,7 @@ describe("DashboardCardRepository", () => {
       expect(params[10]).toBeNull();
       expect(params[11]).toBeNull();
       expect(params[12]).toBeNull();
-      expect(sql.match(/\?/g)).toHaveLength(15);
+      expect(sql.match(/\?/g)).toHaveLength(16);
     });
 
     it("does not inject legacy cards into a sectioned project", async () => {
@@ -409,9 +410,9 @@ describe("DashboardCardRepository", () => {
       const [sql, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
       const columns = sql.match(/\(([^)]*)\)\s*VALUES/)![1].split(",").map((s: string) => s.trim());
       const placeholders = (sql.match(/\?/g) ?? []).length;
-      expect(columns.length).toBe(17);
-      expect(placeholders).toBe(17);
-      expect(params).toHaveLength(17);
+      expect(columns.length).toBe(18);
+      expect(placeholders).toBe(18);
+      expect(params).toHaveLength(18);
     });
 
     it("updateCard does NOT write SectionLabel or AggregateField", async () => {
@@ -424,6 +425,30 @@ describe("DashboardCardRepository", () => {
       expect(sql).not.toContain("AggregateField");
       expect(params).not.toContain("Total");
       expect(params).not.toContain("camera_count");
+    });
+
+    it("maps DeviceType from a row", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        rowOf(baseCard({ CardID: 3, DeviceType: "Camera" })),
+      ]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const cards = await DashboardCardRepository.getAllCards(1);
+      expect(cards[0].DeviceType).toBe("Camera");
+    });
+
+    it("mapRow defaults a missing DeviceType to null", async () => {
+      mockDb.getAllAsync.mockResolvedValue([rowOf(baseCard({ CardID: 3 }))]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const cards = await DashboardCardRepository.getAllCards(1);
+      expect(cards[0].DeviceType).toBeNull();
+    });
+
+    it("createCard persists DeviceType", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ max: 3 });
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      await DashboardCardRepository.createCard(baseCard({ DeviceType: "Switch" }));
+      const [, params] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(params[17]).toBe("Switch");
     });
   });
 
