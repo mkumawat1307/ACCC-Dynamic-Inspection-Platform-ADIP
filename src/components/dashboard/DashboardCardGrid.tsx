@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View, Text } from "react-native";
+import { StyleSheet, View, Text, Pressable } from "react-native";
 import { ActivityIndicator } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { DashboardService, CardWithCount } from "@/src/database/repositories/DashboardService";
 import StatCard from "@/src/components/StatCard";
 import StatBreakdownCard from "@/src/components/dashboard/StatBreakdownCard";
 import useDashboardAutoRefresh from "@/src/hooks/useDashboardAutoRefresh";
+import useSectionCollapse from "@/src/hooks/useSectionCollapse";
+import { SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "@/src/database/seeds/dashboard-cards.seed";
 import { COLORS, SPACING } from "@/src/constants/ui";
 
 interface Props {
@@ -21,6 +23,7 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
   const [cards, setCards] = useState<CardWithCount[]>([]);
   const [loading, setLoading] = useState(true);
   const autoKey = useDashboardAutoRefresh(projectId, focused);
+  const { isCollapsed, toggle } = useSectionCollapse(projectId);
 
   async function load() {
     setLoading(true);
@@ -59,11 +62,33 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
     if (section !== currentSection) {
       currentSection = section;
       if (section) {
+        const collapsible = section === SECTION_LABEL_TOTAL || section === SECTION_LABEL_TODAY;
+        const collapsed = collapsible && isCollapsed(section);
         rows.push(
-          <Text key={`section-${section}-${i}`} style={styles.sectionHeader}>
-            {section}
-          </Text>
+          <View key={`section-${section}-${i}`} style={styles.sectionBlock}>
+            <Pressable
+              style={styles.sectionHeaderButton}
+              onPress={() => toggle(section)}
+              disabled={!collapsible}
+            >
+              <Text style={styles.sectionHeader}>{section}</Text>
+              {collapsible ? (
+                <MaterialCommunityIcons
+                  name={collapsed ? "chevron-down" : "chevron-up"}
+                  size={20}
+                  color={COLORS.textSecondary}
+                />
+              ) : null}
+            </Pressable>
+            <View style={styles.sectionDivider} />
+          </View>
         );
+        if (collapsed) {
+          while (i + 1 < cards.length && (cards[i + 1].SectionLabel ?? null) === section) {
+            i++;
+          }
+          continue;
+        }
       }
     }
 
@@ -126,12 +151,28 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
 
+  sectionBlock: {
+    marginTop: SPACING.lg,
+  },
+
+  sectionHeaderButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: SPACING.sm,
+  },
+
   sectionHeader: {
     fontWeight: "700",
     fontSize: 15,
-    marginTop: SPACING.lg,
-    marginBottom: SPACING.sm,
     color: COLORS.textPrimary,
+    textTransform: "uppercase",
+  },
+
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "#E0E0E0",
+    marginBottom: SPACING.sm,
   },
 
   centered: {
