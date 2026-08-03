@@ -303,11 +303,17 @@ export async function migrateProjectSchema() {
         logger.info("[schema] migrateProjectSchema — CardMode backfill failed (non-fatal):", e);
     }
 
-    try {
-        await DashboardCardRepository.migrateDefaultCards(1);
-    } catch (e) {
-        logger.info("[schema] migrateProjectSchema — migrateDefaultCards failed (non-fatal):", e);
-    }
+      try {
+          await DashboardCardRepository.migrateDefaultCards(1);
+      } catch (e) {
+          logger.info("[schema] migrateProjectSchema \u2014 migrateDefaultCards failed (non-fatal):", e);
+      }
+
+      try {
+          await DashboardCardRepository.migrateDeviceCards(1);
+      } catch (e) {
+          logger.info("[schema] migrateProjectSchema \u2014 migrateDeviceCards failed (non-fatal):", e);
+      }
 
     logger.info("✅ [schema] migrateProjectSchema() — END");
 }
