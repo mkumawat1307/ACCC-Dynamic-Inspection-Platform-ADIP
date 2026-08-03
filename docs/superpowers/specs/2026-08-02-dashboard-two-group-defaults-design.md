@@ -2,6 +2,8 @@
 
 ## Purpose
 
+**Status: ✅ Completed**
+
 Change the factory-default dashboard cards for **newly created projects** so the dashboard
 shows two labeled sections — **Total** and **Today's** — each with three cards (per the
 product requirements doc):

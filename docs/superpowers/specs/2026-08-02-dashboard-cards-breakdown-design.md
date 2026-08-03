@@ -2,6 +2,8 @@
 
 ## Purpose
 
+**Status: ✅ Completed**
+
 Two related capabilities for the Project Dashboard's configurable stat cards:
 
 1. **New 6-card default set** — replace the current 4 default cards (Total Poles, Total Cameras, Today's Poles, Today's Cameras) with a 6-card set that also counts inspections and today's completed inspections.
