@@ -2,6 +2,7 @@ jest.mock("@/src/database/db");
 
 import { getDatabase } from "@/src/database/db";
 import { DashboardCard } from "@/src/models/DashboardCard";
+import { SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "@/src/database/seeds/dashboard-cards.seed";
 
 function createMockDb() {
   return {
@@ -497,6 +498,108 @@ describe("DashboardCardRepository", () => {
       await DashboardCardRepository.ensureDefaultCards(1);
       const allParams = (mockDb.runAsync as jest.Mock).mock.calls.map((c) => c[1]);
       expect(allParams.map((p) => p[13])).toEqual(["entitycount", "dropdown", "entitycount", "entitycount", "dropdown", "entitycount"]);
+    });
+  });
+
+  describe("normalizeSections", () => {
+    it("renumbers into total, today, custom-alphabetical, then uncategorized order", async () => {
+      const db = createMockDb();
+      (getDatabase as jest.Mock).mockResolvedValue(db);
+      db.getAllAsync.mockResolvedValue([
+        rowOf(baseCard({ CardID: 3, CardKey: "smart_x_today", SectionLabel: SECTION_LABEL_TODAY, SortOrder: 0 })),
+        rowOf(baseCard({ CardID: 1, CardKey: "default_total", SectionLabel: SECTION_LABEL_TOTAL, SortOrder: 1 })),
+        rowOf(baseCard({ CardID: 5, CardKey: "bare", SectionLabel: null, SortOrder: 2 })),
+        rowOf(baseCard({ CardID: 2, CardKey: "smart_y_total", SectionLabel: SECTION_LABEL_TOTAL, SortOrder: 3 })),
+        rowOf(baseCard({ CardID: 4, CardKey: "zzz_custom", SectionLabel: "ZZZ", SortOrder: 4 })),
+        rowOf(baseCard({ CardID: 6, CardKey: "aaa_custom", SectionLabel: "AAA", SortOrder: 5 })),
+      ]);
+      db.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
+      await DashboardCardRepository.normalizeSections(1);
+
+      expect(db.runAsync).toHaveBeenCalledTimes(6);
+      const updates = (db.runAsync as jest.Mock).mock.calls.map((c) => c[1]);
+      expect(updates.map((p) => p[0])).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(updates.map((p) => p[1])).toEqual([1, 2, 3, 6, 4, 5]);
+      expect(updates[0][2]).toBe(1);
+    });
+  });
+
+  describe("resetDefaultCards", () => {
+    it("deletes all cards and re-inserts the canonical sectioned set, then normalizes", async () => {
+      const db = createMockDb();
+      (getDatabase as jest.Mock).mockResolvedValue(db);
+      const inserted: Record<string, unknown>[] = [];
+      db.getAllAsync.mockResolvedValue(inserted);
+      db.runAsync.mockImplementation(async (sql: string, params: unknown[]) => {
+        if (String(sql).includes("DELETE FROM DashboardCards")) {
+          return { lastInsertRowId: 0, changes: 1 };
+        }
+        if (String(sql).includes("INSERT INTO DashboardCards")) {
+          inserted.push(rowOf(baseCard({ CardID: inserted.length + 1, CardKey: String(params[1]), SectionLabel: (params[11] as string) ?? null })));
+        }
+        return { lastInsertRowId: 42, changes: 1 };
+      });
+      db.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const { DEFAULT_SECTIONED_CARDS } = require("@/src/database/seeds/dashboard-cards.seed");
+
+      await DashboardCardRepository.resetDefaultCards(1);
+
+      const calls = (db.runAsync as jest.Mock).mock.calls.map((c) => String(c[0]));
+      expect(calls.filter((s) => s.includes("DELETE FROM DashboardCards WHERE ProjectID = ?"))).toHaveLength(1);
+      expect(calls.filter((s) => s.includes("INSERT INTO DashboardCards"))).toHaveLength(DEFAULT_SECTIONED_CARDS.length);
+      expect(inserted).toHaveLength(DEFAULT_SECTIONED_CARDS.length);
+      expect(db.getAllAsync).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("migrateDeviceCards", () => {
+    it("rewrites smart device cards, repoints camera cards, and renames legacy labels", async () => {
+      const db = createMockDb();
+      (getDatabase as jest.Mock).mockResolvedValue(db);
+      db.getAllAsync.mockResolvedValue([
+        { CardID: 1, CardKey: "smart_dev_Camera_CameraStatus_total" },
+        { CardID: 2, CardKey: "smart_dev_Switch_SwitchState_today" },
+        { CardID: 3, CardKey: "total_camera_count" },
+        { CardID: 4, CardKey: "today_cameras" },
+        { CardID: 5, CardKey: "total_inspections" },
+      ]);
+      db.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+      const { SECTION_LABEL_TOTAL, SECTION_LABEL_TODAY } = require("@/src/database/seeds/dashboard-cards.seed");
+
+      await DashboardCardRepository.migrateDeviceCards(1);
+
+      const calls = (db.runAsync as jest.Mock).mock.calls as Array<[string, unknown[]]>;
+      const smart = calls.filter(([sql]) => sql.includes("EntityType = 'devices'") && !sql.includes("FilterJson"));
+      expect(smart).toHaveLength(2);
+      expect(smart[0][1]).toEqual(["Camera", "CameraStatus", 1, 1]);
+      expect(smart[1][1]).toEqual(["Switch", "SwitchState", 2, 1]);
+
+      const camera = calls.filter(([sql]) => sql.includes("FilterJson"));
+      expect(camera).toHaveLength(2);
+      expect(camera[0][1]).toEqual(['{"DeviceType":"Camera"}', 3, 1]);
+
+      const renameTotal = calls.find(([sql, p]) => String(sql).includes("SectionLabel = ?") && p[0] === SECTION_LABEL_TOTAL);
+      expect(renameTotal).toBeDefined();
+      expect(renameTotal![1]).toEqual([SECTION_LABEL_TOTAL, "Total", 1]);
+      const renameToday = calls.find(([sql, p]) => String(sql).includes("SectionLabel = ?") && p[0] === SECTION_LABEL_TODAY);
+      expect(renameToday).toBeDefined();
+      expect(renameToday![1]).toEqual([SECTION_LABEL_TODAY, "Today's", 1]);
+    });
+
+    it("is a no-op when no device cards or legacy labels exist", async () => {
+      const db = createMockDb();
+      (getDatabase as jest.Mock).mockResolvedValue(db);
+      db.getAllAsync.mockResolvedValue([{ CardID: 1, CardKey: "total_inspections" }]);
+      const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
+      await DashboardCardRepository.migrateDeviceCards(1);
+
+      expect(db.runAsync).not.toHaveBeenCalled();
+      expect(db.withTransactionAsync).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,6 +1,6 @@
 import { getDatabase } from "../db";
 import { CardModeValue, DashboardCard } from "@/src/models/DashboardCard";
-import { DEFAULT_DASHBOARD_CARDS, DEFAULT_SECTIONED_CARDS, DashboardCardSeed } from "../seeds/dashboard-cards.seed";
+import { DEFAULT_DASHBOARD_CARDS, DEFAULT_SECTIONED_CARDS, DashboardCardSeed, SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "../seeds/dashboard-cards.seed";
 
 const CARD_COLUMNS = `
   CardID, ProjectID, CardKey, Title, Icon, Color,
@@ -275,6 +275,127 @@ export class DashboardCardRepository {
           [config.SortOrder, config.DistinctColumn ?? null, row.CardID]
         );
       }
+    });
+  }
+
+  static async normalizeSections(projectId: number): Promise<void> {
+    const db = await getDatabase();
+    const cards = await this.getAllCards(projectId);
+
+    const rank = (label: string | null): number => {
+      if (label === SECTION_LABEL_TOTAL) return 0;
+      if (label === SECTION_LABEL_TODAY) return 1;
+      if (label) return 2;
+      return 3;
+    };
+
+    const sorted = cards
+      .map((card, index) => ({ card, index }))
+      .sort((a, b) => {
+        const ra = rank(a.card.SectionLabel ?? null);
+        const rb = rank(b.card.SectionLabel ?? null);
+        if (ra !== rb) return ra - rb;
+        if (ra === 2) {
+          const la = a.card.SectionLabel ?? "";
+          const lb = b.card.SectionLabel ?? "";
+          const cmp = la.localeCompare(lb);
+          if (cmp !== 0) return cmp;
+        }
+        return a.index - b.index;
+      });
+
+    await db.withTransactionAsync(async () => {
+      for (let i = 0; i < sorted.length; i++) {
+        await db.runAsync(
+          `UPDATE DashboardCards
+           SET SortOrder = ?, UpdatedAt = CURRENT_TIMESTAMP
+           WHERE CardID = ? AND ProjectID = ?`,
+          [i, sorted[i].card.CardID!, projectId]
+        );
+      }
+    });
+  }
+
+  static async resetDefaultCards(projectId: number): Promise<void> {
+    const db = await getDatabase();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(`DELETE FROM DashboardCards WHERE ProjectID = ?`, [projectId]);
+      for (const card of DEFAULT_SECTIONED_CARDS) {
+        await db.runAsync(
+          `INSERT INTO DashboardCards
+           (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault, DeviceType)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
+          [
+            projectId,
+            card.CardKey,
+            card.Title,
+            card.Icon,
+            card.Color,
+            card.EntityType,
+            card.CounterType,
+            card.FilterJson ?? null,
+            card.CountMode,
+            card.DistinctColumn ?? null,
+            card.BreakdownField ?? null,
+            card.SectionLabel ?? null,
+            card.AggregateField ?? null,
+            card.CardMode,
+            card.SortOrder,
+            card.DeviceType ?? null,
+          ]
+        );
+      }
+    });
+    await this.normalizeSections(projectId);
+  }
+
+  static async migrateDeviceCards(projectId: number): Promise<void> {
+    const db = await getDatabase();
+
+    const existing = await db.getAllAsync<{ CardID: number; CardKey: string }>(
+      `SELECT CardID, CardKey FROM DashboardCards WHERE ProjectID = ?`,
+      [projectId]
+    );
+
+    const smartCards = existing.filter((row) => row.CardKey.startsWith("smart_dev_"));
+    const cameraKeys = new Set(["total_cameras", "today_cameras", "total_camera_count", "today_camera_count"]);
+    const cameraCards = existing.filter((row) => cameraKeys.has(row.CardKey));
+
+    if (smartCards.length === 0 && cameraCards.length === 0) return;
+
+    await db.withTransactionAsync(async () => {
+      for (const row of smartCards) {
+        const key = row.CardKey.replace(/_(total|today)$/, "");
+        const parts = key.split("_");
+        const deviceType = parts[2];
+        const fieldName = parts.slice(3).join("_");
+        if (!deviceType || !fieldName) continue;
+        await db.runAsync(
+          `UPDATE DashboardCards
+           SET EntityType = 'devices', DeviceType = ?, BreakdownField = ?, UpdatedAt = CURRENT_TIMESTAMP
+           WHERE CardID = ? AND ProjectID = ?`,
+          [deviceType, fieldName, row.CardID, projectId]
+        );
+      }
+
+      for (const row of cameraCards) {
+        await db.runAsync(
+          `UPDATE DashboardCards
+           SET EntityType = 'devices', DeviceType = 'Camera', CardMode = 'entitycount',
+               FilterJson = ?, AggregateField = NULL, UpdatedAt = CURRENT_TIMESTAMP
+           WHERE CardID = ? AND ProjectID = ?`,
+          ['{"DeviceType":"Camera"}', row.CardID, projectId]
+        );
+      }
+
+      await db.runAsync(
+        `UPDATE DashboardCards SET SectionLabel = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionLabel = ? AND ProjectID = ?`,
+        [SECTION_LABEL_TOTAL, "Total", projectId]
+      );
+      await db.runAsync(
+        `UPDATE DashboardCards SET SectionLabel = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionLabel = ? AND ProjectID = ?`,
+        [SECTION_LABEL_TODAY, "Today's", projectId]
+      );
     });
   }
 }
