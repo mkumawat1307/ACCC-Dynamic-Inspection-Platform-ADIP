@@ -62,7 +62,7 @@ export const COUNT_ENTITIES: Record<string, CountEntityConfig> = {
     table: "DeviceRecords",
     alias: "r",
     joins: "JOIN Inspections i ON r.InspectionID = i.InspectionID",
-    projectClause: "i.ProjectID = ?",
+    projectClause: "i.ProjectID = ? AND r.IsActive = 1",
     filterableColumns: ["DeviceType", "DeviceLabel"],
     distinctableColumns: ["r.RecordID"],
     deviceColumns: [],
@@ -317,11 +317,37 @@ export class StatisticCountService {
     try {
       if (!card.BreakdownField) return [];
 
-      const entity = COUNT_ENTITIES[card.EntityType];
-      if (!entity || !entity.deviceColumns.includes(card.BreakdownField)) return [];
-
       const counter = COUNTER_TYPES[card.CounterType];
       if (!counter) return [];
+
+      if (card.EntityType === "devices") {
+        const fieldName = card.BreakdownField;
+        if (!card.DeviceType || !/^[A-Za-z0-9_]+$/.test(fieldName)) return [];
+
+        const params: (string | number)[] = [projectId];
+        const time = counter.buildTimeClause("r");
+        if (time.clause) params.push(...time.params);
+
+        const jsonExpr = `json_extract(r.DeviceData, '$.${fieldName}')`;
+        const sql = `SELECT ${jsonExpr} AS label, COUNT(*) AS count
+           FROM DeviceRecords r
+           JOIN Inspections i ON r.InspectionID = i.InspectionID
+           WHERE i.ProjectID = ? AND r.IsActive = 1
+           ${time.clause}
+           AND r.DeviceType = ?
+           AND ${jsonExpr} IS NOT NULL AND ${jsonExpr} != ''
+           GROUP BY ${jsonExpr}
+           ORDER BY count DESC, label ASC`;
+
+        params.push(card.DeviceType);
+
+        const db = await getDatabase();
+        const rows = await db.getAllAsync<{ label: string | null; count: number }>(sql, params);
+        return rows.map((row) => ({ label: row.label ?? "(Not set)", count: row.count }));
+      }
+
+      const entity = COUNT_ENTITIES[card.EntityType];
+      if (!entity || !entity.deviceColumns.includes(card.BreakdownField)) return [];
 
       const params: (string | number)[] = [projectId];
 
