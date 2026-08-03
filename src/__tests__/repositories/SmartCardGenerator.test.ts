@@ -2,6 +2,7 @@ jest.mock("@/src/database/db");
 
 import { getDatabase } from "@/src/database/db";
 import { SmartCardGenerator, SmartFormField } from "@/src/database/repositories/SmartCardGenerator";
+import { SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "@/src/database/seeds/dashboard-cards.seed";
 
 function createMockDb() {
   return {
@@ -113,14 +114,14 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards[0].CardMode).toBe("dropdown");
     expect(cards[0].BreakdownField).toBe("pole_status");
     expect(cards[0].AggregateField).toBeNull();
-    expect(cards[0].SectionLabel).toBe("Total");
+    expect(cards[0].SectionLabel).toBe(SECTION_LABEL_TOTAL);
     expect(cards[0].SortOrder).toBe(10);
     expect(cards[0].IsDefault).toBe(0);
     expect(cards[0].Enabled).toBe(1);
 
     expect(cards[1].CardKey).toBe("smart_pole_status_today");
     expect(cards[1].CounterType).toBe("today");
-    expect(cards[1].SectionLabel).toBe("Today's");
+    expect(cards[1].SectionLabel).toBe(SECTION_LABEL_TODAY);
     expect(cards[1].CardMode).toBe("dropdown");
     expect(cards[1].BreakdownField).toBe("pole_status");
     expect(cards[1].SortOrder).toBe(11);
@@ -138,12 +139,12 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards[0].BreakdownField).toBeNull();
     expect(cards[0].AggregateField).toBe("camera_count");
     expect(cards[0].CounterType).toBe("total");
-    expect(cards[0].SectionLabel).toBe("Total");
+    expect(cards[0].SectionLabel).toBe(SECTION_LABEL_TOTAL);
 
     expect(cards[1].CardMode).toBe("sum");
     expect(cards[1].AggregateField).toBe("camera_count");
     expect(cards[1].CounterType).toBe("today");
-    expect(cards[1].SectionLabel).toBe("Today's");
+    expect(cards[1].SectionLabel).toBe(SECTION_LABEL_TODAY);
   });
 
   it("generates two fieldcount cards for a text field", () => {
@@ -155,8 +156,8 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards[0].CardMode).toBe("fieldcount");
     expect(cards[0].BreakdownField).toBe("block");
     expect(cards[0].AggregateField).toBeNull();
-    expect(cards[0].SectionLabel).toBe("Total");
-    expect(cards[1].SectionLabel).toBe("Today's");
+    expect(cards[0].SectionLabel).toBe(SECTION_LABEL_TOTAL);
+    expect(cards[1].SectionLabel).toBe(SECTION_LABEL_TODAY);
   });
 
   it("returns empty array for the remarks field (excluded)", () => {
@@ -175,7 +176,7 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards).toHaveLength(2);
     expect(cards[0].CardMode).toBe("dropdown");
     expect(cards[0].BreakdownField).toBe("has_earth");
-    expect(cards[1].SectionLabel).toBe("Today's");
+    expect(cards[1].SectionLabel).toBe(SECTION_LABEL_TODAY);
   });
 
   it("generates two dropdown cards for a checkbox field", () => {
@@ -196,7 +197,7 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards).toHaveLength(2);
     expect(cards[0].CardMode).toBe("datebreakdown");
     expect(cards[0].BreakdownField).toBe("inspection_date");
-    expect(cards[1].SectionLabel).toBe("Today's");
+    expect(cards[1].SectionLabel).toBe(SECTION_LABEL_TODAY);
   });
 
   it("returns empty array for GPS field (skip)", () => {
@@ -280,12 +281,16 @@ describe("SmartCardGenerator - card generation", () => {
     expect(cards[0].CardKey).toBe("smart_dev_Camera_CameraStatus_total");
     expect(cards[1].CardKey).toBe("smart_dev_Camera_CameraStatus_today");
     expect(cards[0].CardMode).toBe("dropdown");
-    expect(cards[0].EntityType).toBe("cameras");
+    expect(cards[0].EntityType).toBe("devices");
     expect(cards[0].BreakdownField).toBe("CameraStatus");
     expect(cards[0].AggregateField).toBeNull();
     expect(cards[0].Title).toBe("Camera Status");
-    expect(cards[1].EntityType).toBe("cameras");
+    expect(cards[1].EntityType).toBe("devices");
     expect(cards[1].BreakdownField).toBe("CameraStatus");
+    expect(cards[0].DeviceType).toBe("Camera");
+    expect(cards[1].DeviceType).toBe("Camera");
+    expect(cards[0].SectionLabel).toBe(SECTION_LABEL_TOTAL);
+    expect(cards[1].SectionLabel).toBe(SECTION_LABEL_TODAY);
   });
 
   it("uses switches entity type for a Switch device field", () => {
@@ -299,7 +304,8 @@ describe("SmartCardGenerator - card generation", () => {
       1
     );
     expect(cards).toHaveLength(2);
-    expect(cards[0].EntityType).toBe("switches");
+    expect(cards[0].EntityType).toBe("devices");
+    expect(cards[0].DeviceType).toBe("Switch");
     expect(cards[0].CardKey).toBe("smart_dev_Switch_SwitchState_total");
   });
 });
@@ -547,7 +553,11 @@ describe("SmartCardGenerator - addSmartCardsForField", () => {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { CardKey: "smart_test_field_total", SortOrder: 0 },
+        { CardKey: "smart_test_field_today", SortOrder: 1 },
+      ]);
     mockDb.getFirstAsync.mockResolvedValue({ max: 5 });
 
     const ids = await SmartCardGenerator.addSmartCardsForField(1, "test_field");
@@ -559,6 +569,11 @@ describe("SmartCardGenerator - addSmartCardsForField", () => {
     expect(insertCalls).toHaveLength(2);
     const params = insertCalls.map((call) => (call[1] as unknown[])[1]);
     expect(params).toEqual(["smart_test_field_total", "smart_test_field_today"]);
+
+    const normalizeUpdates = mockDb.runAsync.mock.calls.filter((call) =>
+      String(call[0]).includes("UPDATE DashboardCards") && String(call[0]).includes("SortOrder = ?")
+    );
+    expect(normalizeUpdates).toHaveLength(2);
   });
 
   it("skips an existing partial card and creates only the missing one", async () => {
@@ -568,6 +583,7 @@ describe("SmartCardGenerator - addSmartCardsForField", () => {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ CardKey: "smart_test_field_total", SortOrder: 0 }])
       .mockResolvedValueOnce([{ CardKey: "smart_test_field_total", SortOrder: 0 }]);
     mockDb.getFirstAsync.mockResolvedValue({ max: 5 });
 
@@ -589,6 +605,10 @@ describe("SmartCardGenerator - addSmartCardsForField", () => {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { CardKey: "smart_test_field_total", SortOrder: 0 },
+        { CardKey: "smart_test_field_today", SortOrder: 1 },
+      ])
       .mockResolvedValueOnce([
         { CardKey: "smart_test_field_total", SortOrder: 0 },
         { CardKey: "smart_test_field_today", SortOrder: 1 },

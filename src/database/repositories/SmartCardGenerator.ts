@@ -1,6 +1,7 @@
 import { getDatabase } from "../db";
 import { CardModeValue, DashboardCard } from "@/src/models/DashboardCard";
 import { DashboardCardRepository } from "./DashboardCardRepository";
+import { SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "../seeds/dashboard-cards.seed";
 
 export interface SmartFormField {
   FieldID: number;
@@ -193,11 +194,7 @@ export class SmartCardGenerator {
     if (field.FieldKey === "remarks") return [];
     const isSum = kind === "sum";
     const isDevice = field.source === "device";
-    const entityType = isDevice
-      ? field.DeviceType === "Switch"
-        ? "switches"
-        : "cameras"
-      : "inspections";
+    const entityType = isDevice ? "devices" : "inspections";
     const targetField = isDevice ? field.DeviceColumn! : field.FieldKey;
     const keyBase = isDevice
       ? `smart_dev_${field.DeviceType}_${field.DeviceColumn}`
@@ -211,6 +208,7 @@ export class SmartCardGenerator {
       Icon: spec.icon,
       Color: spec.color,
       EntityType: entityType,
+      DeviceType: isDevice ? field.DeviceType : null,
       CounterType: "total",
       FilterJson: null,
       CountMode: "count",
@@ -218,7 +216,7 @@ export class SmartCardGenerator {
       CardMode: kind,
       BreakdownField: isSum ? null : targetField,
       AggregateField: isSum ? targetField : null,
-      SectionLabel: "Total",
+      SectionLabel: SECTION_LABEL_TOTAL,
       SortOrder: baseSortOrder,
       Enabled: 1,
       IsDefault: 0,
@@ -228,7 +226,7 @@ export class SmartCardGenerator {
       ...totalCard,
       CardKey: `${keyBase}_today`,
       CounterType: "today",
-      SectionLabel: "Today's",
+      SectionLabel: SECTION_LABEL_TODAY,
       SortOrder: baseSortOrder + 1,
     };
 
@@ -281,6 +279,7 @@ export class SmartCardGenerator {
       const id = await DashboardCardRepository.createCard(card);
       createdIds.push(id);
     }
+    await DashboardCardRepository.normalizeSections(projectId);
     return createdIds;
   }
 
