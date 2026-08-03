@@ -33,6 +33,7 @@ function cardOf(
     CountMode: "count",
     DistinctColumn: null,
     CardMode: "entitycount",
+    DeviceType: null,
     SortOrder: 0,
     Enabled: 1,
     IsDefault: 0,
@@ -101,6 +102,21 @@ describe("StatisticCountService", () => {
       const sql = normalizeSql(built!.sql);
       expect(sql).toContain("r.DeviceType = ?");
       expect(built!.params).toEqual(["Switch"]);
+    });
+
+    it("scopes devices counts to active records and device type", () => {
+      const card = cardOf({
+        EntityType: "devices",
+        CounterType: "total",
+        FilterJson: JSON.stringify({ DeviceType: "Camera" }),
+        CountMode: "count",
+      });
+      const built = StatisticCountService.buildCountSql(card)!;
+      const sql = normalizeSql(built.sql);
+      expect(sql).toContain("FROM DeviceRecords r");
+      expect(sql).toContain("WHERE i.ProjectID = ? AND r.IsActive = 1");
+      expect(sql).toContain("AND r.DeviceType = ?");
+      expect(built.params).toEqual(["Camera"]);
     });
 
     it("binds a CameraType filter for cameras", () => {
@@ -599,6 +615,40 @@ describe("StatisticCountService", () => {
       (getDatabase as jest.Mock).mockRejectedValue(new Error("db closed"));
       const result = await StatisticCountService.deviceBreakdownCard(1, deviceBreakdownCard());
       expect(result).toEqual([]);
+    });
+
+    it("deviceBreakdownCard json_extracts DeviceData for device-type cards", async () => {
+      mockDb.getAllAsync.mockResolvedValue([
+        { label: "Operational", count: 8 },
+        { label: "Fault", count: 2 },
+      ]);
+
+      const rows = await StatisticCountService.deviceBreakdownCard(
+        1,
+        cardOf({ EntityType: "devices", CounterType: "total", DeviceType: "Camera", BreakdownField: "CameraStatus" })
+      );
+
+      const [sql, params] = (mockDb.getAllAsync as jest.Mock).mock.calls[0];
+      const normalized = normalizeSql(String(sql));
+      expect(normalized).toContain("FROM DeviceRecords r");
+      expect(normalized).toContain("json_extract(r.DeviceData, '$.CameraStatus') AS label");
+      expect(normalized).toContain("AND r.DeviceType = ?");
+      expect(normalized).toContain("WHERE i.ProjectID = ? AND r.IsActive = 1");
+      expect(params).toEqual([1, "Camera"]);
+      expect(rows).toEqual([
+        { label: "Operational", count: 8 },
+        { label: "Fault", count: 2 },
+      ]);
+    });
+
+    it("deviceBreakdownCard rejects non-allowlisted field names without querying", async () => {
+      const rows = await StatisticCountService.deviceBreakdownCard(
+        1,
+        cardOf({ EntityType: "devices", CounterType: "total", DeviceType: "Camera", BreakdownField: "Bad Field; DROP TABLE" })
+      );
+
+      expect(rows).toEqual([]);
+      expect(mockDb.getAllAsync).not.toHaveBeenCalled();
     });
   });
 });
