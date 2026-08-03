@@ -65,6 +65,10 @@ InspectionRepository  ──emit──▶  InspectionDataBus (pub/sub, module-le
 | `src/__tests__/utils/InspectionDataBus.test.ts` | Bus unit tests |
 | `src/__tests__/hooks/useDashboardAutoRefresh.test.tsx` | Hook trigger tests (probe component, fake timers, mocked AppState) |
 | `src/__tests__/repositories/InspectionRepository.test.ts` | Asserts emits after each mutation |
+| `src/utils/SmartCardGenerator.ts` | Auto-creates Total + Today cards from a selected inspection form field |
+| `src/components/dashboard/DashboardCardManager.tsx` | Smart Add Card flow + Custom Card manual editor |
+| `src/__tests__/utils/SmartCardGenerator.test.ts` | Unit tests for SmartCardGenerator |
+| `src/__tests__/components/dashboard/DashboardCardManager.test.tsx` | Tests for Smart Add Card flow and Custom Card editor |
 
 ### Modified files
 
@@ -76,7 +80,7 @@ InspectionRepository  ──emit──▶  InspectionDataBus (pub/sub, module-le
 | `src/__tests__/components/dashboard/DashboardCardGrid.test.tsx` | Add bus-triggered reload case (mock bus + service) |
 | `docs/07-Changelog.md` | Entry |
 
-`DashboardCardManager` is unchanged.
+`DashboardCardManager` now supports the Smart Add Card flow: selecting a field from the inspection form auto-creates Total + Today cards via `SmartCardGenerator`, and the Custom Card option opens a manual editor.
 
 ## Event Bus (`InspectionDataBus`)
 
@@ -107,10 +111,12 @@ export const InspectionDataBus = {
 | `saveFieldValue` | after INSERT/UPDATE | `getInspectionProjectId(inspectionId)` |
 | `updateInspectionPoleId` | after UPDATE | `getInspectionProjectId(inspectionId)` |
 | `updateInspectionStatus` | after UPDATE | `getInspectionProjectId(inspectionId)` |
-| `deleteInspection` | after transaction | `getInspectionProjectId(inspectionId)` |
-| `deleteMultipleInspections` | after transaction | `getInspectionProjectId(inspectionId)` |
+| `deleteInspection` | after transaction | `getInspectionProjectId(inspectionId)` — resolved **before** the delete transaction, since the row is gone afterward |
+| `deleteMultipleInspections` | after transaction | `getInspectionProjectId(firstId)` — resolved **before** the delete transaction |
 
 - Emits happen **after** the write succeeds, so the dashboard always re-queries committed data.
+- For deletes, the projectId is resolved **before** the delete transaction (the row no longer exists after),
+  so the event still carries the correct projectId.
 - `getInspectionProjectId` returning `null` yields an emit with `projectId = 0`; the hook filters
   `0 !== projectId`, so no spurious reload.
 - Fire-and-forget: a failing write still throws before any emit (writes are not swallowed).
