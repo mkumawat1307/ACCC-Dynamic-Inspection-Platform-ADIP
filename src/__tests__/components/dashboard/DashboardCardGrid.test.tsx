@@ -6,13 +6,45 @@ import StatBreakdownCard from "@/src/components/dashboard/StatBreakdownCard";
 import { DashboardService, CardWithCount } from "@/src/database/repositories/DashboardService";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import useDashboardAutoRefresh from "@/src/hooks/useDashboardAutoRefresh";
+import useSectionCollapse from "@/src/hooks/useSectionCollapse";
+import { SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "@/src/database/seeds/dashboard-cards.seed";
 
 jest.mock("@/src/database/repositories/DashboardService");
 jest.mock("@/src/hooks/useDashboardAutoRefresh");
+jest.mock("@/src/hooks/useSectionCollapse", () => ({
+  __esModule: true,
+  default: jest.fn(),
+}));
 
 const mockedHook = useDashboardAutoRefresh as jest.MockedFunction<typeof useDashboardAutoRefresh>;
 
+const mockedCollapse = useSectionCollapse as jest.MockedFunction<typeof useSectionCollapse>;
+
 const mockedService = DashboardService as jest.Mocked<typeof DashboardService>;
+
+function findPressable(tree: ReturnType<typeof TestRenderer.create>): { props: { onPress: () => void } } {
+  let found: unknown;
+  tree.root.findAll((node) => {
+    const props = node.props as { onPress?: () => void; disabled?: boolean };
+    if (props && typeof props.onPress === "function" && typeof props.disabled === "boolean") {
+      found = node;
+    }
+    return false;
+  });
+  expect(found).toBeDefined();
+  return found as { props: { onPress: () => void } };
+}
+
+function findChevrons(tree: ReturnType<typeof TestRenderer.create>): { props: { name: string } }[] {
+  const chevrons: { props: { name: string } }[] = [];
+  tree.root.findAll((node) => {
+    if (typeof (node as unknown as { type?: unknown }).type !== "function") return false;
+    const name = (node.props as { name?: string }).name ?? "";
+    if (name === "chevron-up" || name === "chevron-down") chevrons.push(node as never);
+    return false;
+  });
+  return chevrons;
+}
 
 function cardWithCount(overrides: Partial<CardWithCount> = {}): CardWithCount {
   return {
@@ -66,6 +98,10 @@ describe("DashboardCardGrid", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedHook.mockReturnValue(0);
+    mockedCollapse.mockReturnValue({
+      isCollapsed: jest.fn().mockReturnValue(false),
+      toggle: jest.fn(),
+    });
     InspectionDataBus.__reset();
   });
 
@@ -243,10 +279,10 @@ describe("DashboardCardGrid", () => {
 
   it("renders section headers for grouped default cards", async () => {
     mockedService.getEnabledCardsWithCounts.mockResolvedValue([
-      cardWithCount({ CardID: 1, CardKey: "total_inspection_done", Title: "Inspection Done", SectionLabel: "Total", count: 8 }),
-      cardWithCount({ CardID: 2, CardKey: "total_camera_count", Title: "Camera Count", SectionLabel: "Total", count: 17 }),
-      cardWithCount({ CardID: 3, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: "Today's", count: 2 }),
-      cardWithCount({ CardID: 4, CardKey: "today_camera_count", Title: "Camera Count", SectionLabel: "Today's", count: 5 }),
+      cardWithCount({ CardID: 1, CardKey: "total_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TOTAL, count: 8 }),
+      cardWithCount({ CardID: 2, CardKey: "total_camera_count", Title: "Camera Count", SectionLabel: SECTION_LABEL_TOTAL, count: 17 }),
+      cardWithCount({ CardID: 3, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TODAY, count: 2 }),
+      cardWithCount({ CardID: 4, CardKey: "today_camera_count", Title: "Camera Count", SectionLabel: SECTION_LABEL_TODAY, count: 5 }),
     ]);
     let tree: ReturnType<typeof TestRenderer.create>;
     await TestRenderer.act(async () => {
@@ -254,10 +290,10 @@ describe("DashboardCardGrid", () => {
       await flushPromises();
     });
     const strings = collectStrings(tree!.toJSON());
-    expect(strings).toContain("Total");
-    expect(strings).toContain("Today's");
-    expect(strings.indexOf("Total")).toBeLessThan(strings.indexOf("Inspection Done"));
-    expect(strings.indexOf("Today's")).toBeGreaterThan(strings.indexOf("Inspection Done"));
+    expect(strings).toContain(SECTION_LABEL_TOTAL);
+    expect(strings).toContain(SECTION_LABEL_TODAY);
+    expect(strings.indexOf(SECTION_LABEL_TOTAL)).toBeLessThan(strings.indexOf("Inspection Done"));
+    expect(strings.indexOf(SECTION_LABEL_TODAY)).toBeGreaterThan(strings.indexOf("Inspection Done"));
   });
 
   it("renders no section headers for cards with null SectionLabel", async () => {
@@ -271,14 +307,14 @@ describe("DashboardCardGrid", () => {
       await flushPromises();
     });
     const strings = collectStrings(tree!.toJSON());
-    expect(strings).not.toContain("Total");
-    expect(strings).not.toContain("Today's");
+    expect(strings).not.toContain(SECTION_LABEL_TOTAL);
+    expect(strings).not.toContain(SECTION_LABEL_TODAY);
   });
 
   it("does not pair the last card of one section with the first of the next", async () => {
     mockedService.getEnabledCardsWithCounts.mockResolvedValue([
-      cardWithCount({ CardID: 1, CardKey: "total_camera_count", Title: "Camera Count", SectionLabel: "Total", count: 17 }),
-      cardWithCount({ CardID: 2, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: "Today's", count: 2 }),
+      cardWithCount({ CardID: 1, CardKey: "total_camera_count", Title: "Camera Count", SectionLabel: SECTION_LABEL_TOTAL, count: 17 }),
+      cardWithCount({ CardID: 2, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TODAY, count: 2 }),
     ]);
     let tree: ReturnType<typeof TestRenderer.create>;
     await TestRenderer.act(async () => {
@@ -286,9 +322,82 @@ describe("DashboardCardGrid", () => {
       await flushPromises();
     });
     const strings = collectStrings(tree!.toJSON());
-    expect(strings).toContain("Total");
-    expect(strings).toContain("Today's");
-    expect(strings.indexOf("Today's")).toBeGreaterThan(strings.indexOf("Camera Count"));
+    expect(strings).toContain(SECTION_LABEL_TOTAL);
+    expect(strings).toContain(SECTION_LABEL_TODAY);
+    expect(strings.indexOf(SECTION_LABEL_TODAY)).toBeGreaterThan(strings.indexOf("Camera Count"));
+  });
+
+  it("renders a collapsible chevron header for a summary section", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "total_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TOTAL, count: 8 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).toContain(SECTION_LABEL_TOTAL);
+    const chevrons = findChevrons(tree!);
+    expect(chevrons.length).toBeGreaterThan(0);
+    expect(chevrons.every((c) => c.props.name === "chevron-up")).toBe(true);
+  });
+
+  it("hides a collapsed summary section's cards but keeps the header", async () => {
+    mockedCollapse.mockReturnValue({
+      isCollapsed: jest.fn((label: string) => label === SECTION_LABEL_TOTAL),
+      toggle: jest.fn(),
+    });
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "total_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TOTAL, count: 8 }),
+      cardWithCount({ CardID: 2, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TODAY, count: 2 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).toContain(SECTION_LABEL_TOTAL);
+    expect(strings).toContain(SECTION_LABEL_TODAY);
+    expect(strings.filter((s) => s === "Inspection Done")).toHaveLength(1);
+    expect(strings.filter((s) => s === "8")).toHaveLength(0);
+    expect(strings.filter((s) => s === "2")).toHaveLength(1);
+  });
+
+  it("toggles a summary section on header tap", async () => {
+    const toggle = jest.fn();
+    mockedCollapse.mockReturnValue({
+      isCollapsed: jest.fn().mockReturnValue(false),
+      toggle,
+    });
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "total_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TOTAL, count: 8 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const pressable = findPressable(tree!);
+    await TestRenderer.act(async () => {
+      pressable.props.onPress();
+    });
+    expect(toggle).toHaveBeenCalledWith(SECTION_LABEL_TOTAL);
+  });
+
+  it("renders custom sections as plain headers without a chevron", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "custom_card", Title: "Custom Card", SectionLabel: "My Section", count: 8 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const strings = collectStrings(tree!.toJSON());
+    expect(strings).toContain("My Section");
+    expect(findChevrons(tree!)).toHaveLength(0);
   });
 
   it("reloads when the auto-refresh hook bumps its key (bus-triggered)", async () => {
