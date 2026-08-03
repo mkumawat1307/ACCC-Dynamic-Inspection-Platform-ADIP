@@ -54,7 +54,7 @@ The application follows a layered architecture.
 
 +----------------------------------------------------+
 |                  User Interface                    |
-| Screens • Components • Forms • Camera • Dashboard |
+| Screens • Components • Forms • Camera • Smart Dashboard |
 +----------------------------------------------------+
                      │
                      ▼
@@ -71,6 +71,7 @@ The application follows a layered architecture.
 | Field Repository                                  |
 | Photo Repository                                  |
 | DeviceOptions Repository                          |
+| InspectionDataBus (pub/sub, module-level)        |
 +----------------------------------------------------+
                      │
                      ▼
@@ -276,7 +277,7 @@ ACCC-Dynamic-Inspection-Platform/
 │   │   ├── +html.tsx
 │   │   ├── projects/
 │   │   │   ├── new.tsx
-│   │   │   └── dashboard.tsx      (Per-project dashboard)
+│   │   │   └── dashboard.tsx      (Per-project dashboard with Smart Dashboard auto-refresh)
 │   │   ├── inspection/
 │   │   │   ├── new.tsx
 │   │   │   └── ...
@@ -368,6 +369,8 @@ Examples
 - DashboardActionCard
 - SummaryCard
 - ProjectCard
+- SmartCardGenerator
+- DashboardCardManager
 
 Rules
 
@@ -514,6 +517,7 @@ Location: src/hooks/
 Current hooks
 
 - use-icon-fonts (Icon font loading)
+- useDashboardAutoRefresh (Auto-refresh dashboard cards on inspection data changes, app foreground, midnight, 60s focused poll)
 
 ---
 

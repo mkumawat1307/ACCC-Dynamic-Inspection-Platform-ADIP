@@ -361,32 +361,21 @@ AI-assisted inspection platform
 
 ## Sprint Name
 
-Administration Panel v1.5 Complete
+Smart Dashboard Implementation Complete
 
 ### Sprint Goal
 
-Complete the full administration panel with DB-driven device options, template import/export, project management, CSV export, and drill-down admin flow.
+Complete the Smart Dashboard with auto-refresh, SmartCardGenerator, and DashboardCardManager.
 
 ### Tasks
 
-- ✅ DeviceOptions table, repository, and seed data
-- ✅ CameraSection and SwitchSection load from DeviceOptionsRepository
-- ✅ Settings → Camera Options / Switch Options screens
-- ✅ InspectionSections.IsDefault column and migration
-- ✅ Sections drill-down screen (list, create, edit, reorder)
-- ✅ Fields drill-down screen (list, create, edit, reorder)
-- ✅ Options screen (list, create, edit, reorder)
-- ✅ Settings screen simplified
-- ✅ Template export/import (JSON)
-- ✅ Home screen Edit/Delete buttons on project cards
-- ✅ Delete warning dialog
-- ✅ Project edit mode (editProjectId param)
-- ✅ ProjectRepository.updateProject()
-- ✅ Project-wise CSV export (exportData.ts)
-- ✅ Export Project button on project dashboard
-- ✅ SectionRenderer poleIdLoaded state
-- ✅ Inspections.SectionsSnapshot column (deprecated)
-- ✅ Database at 18 core tables
+- ✅ SmartCardGenerator (auto-creates Total + Today cards from inspection form field selection)
+- ✅ DashboardCardManager (Smart Add Card flow + Custom Card manual editor)
+- ✅ InspectionDataBus (pub/sub event bus for inspection data changes)
+- ✅ useDashboardAutoRefresh hook (bus events, AppState foreground, midnight rollover, 60s focused poll)
+- ✅ DashboardCardGrid auto-refresh integration (focused prop, reloadKey counter)
+- ✅ Dashboard auto-refresh isolation (project-filtered events, no cross-project refresh)
+- ✅ Changelog entry for Smart Dashboard auto-refresh
 
 ### Progress
 
