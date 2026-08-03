@@ -71,7 +71,8 @@ export function getProjectFolderPath(projectName: string): string {
 
 export async function createProjectDb(
   projectName: string,
-  projectDbPath: string
+  projectDbPath: string,
+  projectId: number
 ): Promise<void> {
   logger.info("[ProjectDBManager] createProjectDb — START");
 
@@ -90,7 +91,7 @@ export async function createProjectDb(
   await seedRepeatableGroupFields();
   await seedDeviceOptions();
   await seedDeviceFieldDefinitions();
-  await seedDashboardCards();
+  await seedDashboardCards(projectId);
 
   await clearActiveProject();
 
@@ -112,100 +113,135 @@ export async function cloneProjectDb(
     Record<(typeof INSPECTION_DATA_TABLES)[number], SettingsRow[]>
   > = {};
 
-  await setActiveProject(sourceDbPath);
-  const sourceDb = await getDatabase();
-  for (const table of SETTINGS_TABLES) {
-    const rows = await sourceDb.getAllAsync<SettingsRow>(
-      `SELECT * FROM ${table}`
-    );
-    settings[table] = rows;
-  }
+  let sourceInspections: SettingsRow[] = [];
 
-  const sourceInspections = await sourceDb.getAllAsync<SettingsRow>(
-    `SELECT * FROM Inspections`
-  );
-  for (const table of INSPECTION_DATA_TABLES) {
-    const rows = await sourceDb.getAllAsync<SettingsRow>(
-      `SELECT * FROM ${table}`
+  await setActiveProject(sourceDbPath);
+  try {
+    const sourceDb = await getDatabase();
+    for (const table of SETTINGS_TABLES) {
+      const rows = await sourceDb.getAllAsync<SettingsRow>(
+        `SELECT * FROM ${table}`
+      );
+      settings[table] = rows;
+    }
+
+    sourceInspections = await sourceDb.getAllAsync<SettingsRow>(
+      `SELECT * FROM Inspections`
     );
-    inspectionData[table] = rows;
+    for (const table of INSPECTION_DATA_TABLES) {
+      const rows = await sourceDb.getAllAsync<SettingsRow>(
+        `SELECT * FROM ${table}`
+      );
+      inspectionData[table] = rows;
+    }
+  } finally {
+    await clearActiveProject();
   }
-  await clearActiveProject();
 
   const folderPath = projectDbPath.replace(/inspection\.db$/, "");
   await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
 
   await setActiveProject(projectDbPath);
-  await createProjectSchema();
+  try {
+    const newDb = await getDatabase();
+    await newDb.withTransactionAsync(async () => {
+      await createProjectSchema();
 
-  const newDb = await getDatabase();
-  for (const table of SETTINGS_TABLES) {
-    const rows = settings[table];
-    if (!rows || rows.length === 0) continue;
-    for (const row of rows) {
-      const cols = Object.keys(row);
-      const placeholders = cols.map(() => "?").join(", ");
-      const values = cols.map((c) => row[c] as string | number | null);
-      await newDb.runAsync(
-        `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`,
-        values
-      );
-    }
-  }
-
-  const inspectionIdMap = new Map<number, number>();
-  for (const row of sourceInspections) {
-    const cols = Object.keys(row).filter(
-      (c) => c !== "InspectionID" && c !== "ProjectID"
-    );
-    const placeholders = cols.map(() => "?").join(", ");
-    const values = cols.map((c) => row[c] as string | number | null);
-    const result = await newDb.runAsync(
-      `INSERT INTO Inspections (${cols.join(", ")}, ProjectID) VALUES (${placeholders}, ?)`,
-      [...values, newProjectId]
-    );
-    const oldId = row.InspectionID;
-    if (typeof oldId === "number") {
-      inspectionIdMap.set(oldId, result.lastInsertRowId as number);
-    }
-  }
-
-  const recordIdMap = new Map<number, number>();
-  for (const table of INSPECTION_DATA_TABLES) {
-    const rows = inspectionData[table];
-    if (!rows || rows.length === 0) continue;
-    const idColumn = DATA_TABLE_ID_COLUMNS[table];
-    const remap: Record<string, Map<number, number>> = table === "RepeatableValues"
-      ? { RecordID: recordIdMap }
-      : { InspectionID: inspectionIdMap };
-    for (const row of rows) {
-      const cols = Object.keys(row).filter((c) => c !== idColumn);
-      const placeholders = cols.map(() => "?").join(", ");
-      const values = cols.map((c) => {
-        const value = row[c];
-        const map = remap[c];
-        if (map && typeof value === "number") {
-          return map.get(value) ?? value;
-        }
-        return value as string | number | null;
-      });
-      const result = await newDb.runAsync(
-        `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`,
-        values
-      );
-      const oldId = row[idColumn];
-      if (table === "RepeatableRecords" && typeof oldId === "number") {
-        recordIdMap.set(oldId, result.lastInsertRowId as number);
+      for (const table of [
+        ...SETTINGS_TABLES,
+        "Inspections",
+        ...INSPECTION_DATA_TABLES,
+      ]) {
+        await newDb.runAsync(`DELETE FROM ${table}`);
       }
-    }
-  }
 
-  await clearActiveProject();
+      const dashboardCards = (settings.DashboardCards ?? [])
+        .slice()
+        .sort((a, b) => (a.CardID as number) - (b.CardID as number));
+      const seenCardKeys = new Set<string>();
+      const dedupedDashboardCards: SettingsRow[] = [];
+      for (const row of dashboardCards) {
+        const key = row.CardKey as string;
+        if (seenCardKeys.has(key)) continue;
+        seenCardKeys.add(key);
+        dedupedDashboardCards.push(row);
+      }
+
+      for (const table of SETTINGS_TABLES) {
+        const rows =
+          table === "DashboardCards"
+            ? dedupedDashboardCards
+            : (settings[table] ?? []);
+        if (rows.length === 0) continue;
+        for (const row of rows) {
+          const cols = Object.keys(row);
+          const placeholders = cols.map(() => "?").join(", ");
+          const values = cols.map((c) => row[c] as string | number | null);
+          await newDb.runAsync(
+            `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`,
+            values
+          );
+        }
+      }
+
+      await newDb.runAsync(`UPDATE DashboardCards SET ProjectID = ?`, [newProjectId]);
+
+      const inspectionIdMap = new Map<number, number>();
+      for (const row of sourceInspections) {
+        const cols = Object.keys(row).filter(
+          (c) => c !== "InspectionID" && c !== "ProjectID"
+        );
+        const placeholders = cols.map(() => "?").join(", ");
+        const values = cols.map((c) => row[c] as string | number | null);
+        const result = await newDb.runAsync(
+          `INSERT INTO Inspections (${cols.join(", ")}, ProjectID) VALUES (${placeholders}, ?)`,
+          [...values, newProjectId]
+        );
+        const oldId = row.InspectionID;
+        if (typeof oldId === "number") {
+          inspectionIdMap.set(oldId, result.lastInsertRowId as number);
+        }
+      }
+
+      const recordIdMap = new Map<number, number>();
+      for (const table of INSPECTION_DATA_TABLES) {
+        const rows = inspectionData[table];
+        if (!rows || rows.length === 0) continue;
+        const idColumn = DATA_TABLE_ID_COLUMNS[table];
+        const remap: Record<string, Map<number, number>> =
+          table === "RepeatableValues"
+            ? { RecordID: recordIdMap }
+            : { InspectionID: inspectionIdMap };
+        for (const row of rows) {
+          const cols = Object.keys(row).filter((c) => c !== idColumn);
+          const placeholders = cols.map(() => "?").join(", ");
+          const values = cols.map((c) => {
+            const value = row[c];
+            const map = remap[c];
+            if (map && typeof value === "number") {
+              return map.get(value) ?? value;
+            }
+            return value as string | number | null;
+          });
+          const result = await newDb.runAsync(
+            `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${placeholders})`,
+            values
+          );
+          const oldId = row[idColumn];
+          if (table === "RepeatableRecords" && typeof oldId === "number") {
+            recordIdMap.set(oldId, result.lastInsertRowId as number);
+          }
+        }
+      }
+    });
+  } finally {
+    await clearActiveProject();
+  }
 
   logger.info(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
 }
 
-export async function openProjectDb(dbPath: string): Promise<void> {
+export async function openProjectDb(dbPath: string, projectId: number): Promise<void> {
   logger.info("[ProjectDBManager] openProjectDb — START");
   await setActiveProject(dbPath);
 
@@ -220,7 +256,7 @@ export async function openProjectDb(dbPath: string): Promise<void> {
 
   logger.info("[ProjectDBManager] openProjectDb — valid");
 
-  await migrateProjectSchema();
+  await migrateProjectSchema(projectId);
 
   logger.info("[ProjectDBManager] openProjectDb — migrations applied");
 }

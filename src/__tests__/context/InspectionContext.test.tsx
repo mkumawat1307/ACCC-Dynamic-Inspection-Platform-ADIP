@@ -63,7 +63,7 @@ describe("InspectionProvider", () => {
     await TestRenderer.act(async () => {
       await result.current.openProject(mockProject);
     });
-    expect(openProjectDb).toHaveBeenCalledWith("/db/test.db");
+    expect(openProjectDb).toHaveBeenCalledWith("/db/test.db", 1);
     expect(result.current.project?.ProjectName).toBe("Test Project");
   });
 

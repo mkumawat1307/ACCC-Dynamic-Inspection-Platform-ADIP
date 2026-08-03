@@ -417,6 +417,22 @@ Avoid duplicate code.
 
 ---
 
+# 20a. Database Connection Rules (Mandatory)
+
+The app uses a **sequential open/close model** with a single `SQLiteDatabase` handle. This is the only safe pattern on Android due to expo-sqlite v16 bugs.
+
+- Never open two `SQLiteDatabase` handles simultaneously.
+- Never call `closeAsync()` then immediately `openDatabaseAsync()` for a different file (handle corruption).
+- Never use `ATTACH DATABASE` with dot-qualified DDL (`CREATE TABLE p.Name(...)`) — expo-sqlite Android rejects it.
+- During the inspection flow, NEVER call `getGlobalDatabase()` — it closes the project DB and corrupts the native handle.
+- Project data must be passed via navigation params + React Context to avoid DB switching mid-flow.
+- Route all DB access through `src/database/repositories/` using the connection manager (`db.ts`).
+- Use `cleanPath()` to strip `file://` before comparing DB paths.
+
+See `docs/09-Decisions.md` (ADR-014) and `docs/10-DATABASE_ARCHITECTURE.md` for full reasoning.
+
+---
+
 # 21. Device Options Rules
 
 Camera and switch dropdown options (type, status, make, SI, SD card) must be DB-driven via the DeviceOptions table, not hardcoded in component source code.
@@ -430,6 +446,8 @@ Device options must be manageable from Settings → Camera Options / Switch Opti
 When adding a new device dropdown field, seed data must be added to the device-options.seed.ts file.
 
 Do not hardcode device option arrays in components or screens. Always query DeviceOptionsRepository.
+
+Custom device types (added via Settings → Device Types) use DeviceFieldDefinitions for field schemas and DeviceRecords for per-inspection device data (JSON storage). ProjectDeviceTypes tracks which device types are enabled for each project. DeviceSection renders device sections generically based on DeviceFieldDefinitions, replacing the need for hardcoded CameraSection/SwitchSection for new device types.
 
 ---
 

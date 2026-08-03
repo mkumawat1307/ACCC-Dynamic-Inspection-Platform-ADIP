@@ -1,34 +1,3 @@
-export function formatInspectionDate(date: Date): string {
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-
-  const day = date.getDate().toString().padStart(2, "0");
-  const month = months[date.getMonth()];
-  const year = date.getFullYear();
-
-  return `${day}-${month}-${year}`;
-}
-
-export function getTodayDateString(): string {
-  return formatInspectionDate(new Date());
-}
-
-export function getCurrentInspectionDate(): string {
-  return formatInspectionDate(new Date());
-}
-
 const MONTHS = [
   "Jan",
   "Feb",
@@ -43,6 +12,22 @@ const MONTHS = [
   "Nov",
   "Dec",
 ];
+
+export function formatInspectionDate(date: Date): string {
+  const day = date.getDate().toString().padStart(2, "0");
+  const month = MONTHS[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${day}-${month}-${year}`;
+}
+
+export function getTodayDateString(): string {
+  return formatInspectionDate(new Date());
+}
+
+export function getCurrentInspectionDate(): string {
+  return formatInspectionDate(new Date());
+}
 
 export function parseInspectionDate(dateStr: string): number {
   const match = /^(\d{2})-([A-Z][a-z]{2})-(\d{4})$/.exec(dateStr);

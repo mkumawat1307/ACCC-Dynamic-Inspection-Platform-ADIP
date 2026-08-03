@@ -1,4 +1,5 @@
 import React from "react";
+import { StyleSheet } from "react-native";
 import TestRenderer from "react-test-renderer";
 import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
 import StatCard from "@/src/components/StatCard";
@@ -398,6 +399,37 @@ describe("DashboardCardGrid", () => {
     const strings = collectStrings(tree!.toJSON());
     expect(strings).toContain("My Section");
     expect(findChevrons(tree!)).toHaveLength(0);
+  });
+
+  it("wraps each summary section in a single colored panel", async () => {
+    mockedService.getEnabledCardsWithCounts.mockResolvedValue([
+      cardWithCount({ CardID: 1, CardKey: "total_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TOTAL, count: 8 }),
+      cardWithCount({ CardID: 2, CardKey: "total_camera_count", Title: "Camera Count", SectionLabel: SECTION_LABEL_TOTAL, count: 17 }),
+      cardWithCount({ CardID: 3, CardKey: "today_inspection_done", Title: "Inspection Done", SectionLabel: SECTION_LABEL_TODAY, count: 2 }),
+      cardWithCount({ CardID: 4, CardKey: "custom_card", Title: "Custom Card", SectionLabel: "My Section", count: 5 }),
+    ]);
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DashboardCardGrid projectId={1} />);
+      await flushPromises();
+    });
+    const panels: { label: string; borderColor?: string }[] = [];
+    const seen = new Set<string>();
+    tree!.root.findAll((node) => {
+      const props = node.props as { testID?: string; style?: unknown };
+      if (typeof props.testID === "string" && props.testID.startsWith("dashboard-section-panel-")) {
+        const label = props.testID.replace("dashboard-section-panel-", "");
+        if (!seen.has(label)) {
+          seen.add(label);
+          const flattened = StyleSheet.flatten(props.style) as { borderColor?: string };
+          panels.push({ label, borderColor: flattened.borderColor });
+        }
+      }
+      return false;
+    });
+    expect(panels).toHaveLength(2);
+    expect(panels.find((p) => p.label === SECTION_LABEL_TOTAL)?.borderColor).toBe("#0B5ED7");
+    expect(panels.find((p) => p.label === SECTION_LABEL_TODAY)?.borderColor).toBe("#198754");
   });
 
   it("reloads when the auto-refresh hook bumps its key (bus-triggered)", async () => {

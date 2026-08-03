@@ -105,7 +105,7 @@ export default function InspectionListScreen() {
   }
 
   function handleSingleExport(item: InspectionListItem) {
-    exportFlow.beginExport({ ids: [item.InspectionID], poleId: item.PoleID || null });
+    exportFlow.beginExport({ ids: [item.InspectionID] });
   }
 
   function handleBulkExport() {
@@ -113,7 +113,7 @@ export default function InspectionListScreen() {
       Alert.alert("No Selection", "Please select at least one inspection.");
       return;
     }
-    exportFlow.beginExport({ ids: selectedIds, poleId: null });
+    exportFlow.beginExport({ ids: selectedIds });
   }
 
   function toggleSelection(id: number) {

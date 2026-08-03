@@ -83,10 +83,7 @@ const [saving, setSaving] = useState(false);
       } else {
         const dbPath = getProjectDbPath(projectName.trim());
 
-        // Create the project DB with full schema + seed data
-        await createProjectDb(projectName.trim(), dbPath);
-
-        await ProjectRepository.createProject({
+        const newId = await ProjectRepository.createProject({
           projectName: projectName.trim(),
           districtId: Number(district),
           dbPath: dbPath,
@@ -95,6 +92,9 @@ const [saving, setSaving] = useState(false);
           description: description.trim(),
           inspectorName: inspectorName.trim(),
         });
+
+        // Create the project DB with full schema + seed data (scoped to the real ProjectID)
+        await createProjectDb(projectName.trim(), dbPath, newId);
         Alert.alert("Success", "Project created successfully.");
       }
       router.back();

@@ -142,8 +142,10 @@ export default function HomeScreen() {
 
   const handleClone = async () => {
     if (!selectedProject || !cloneName.trim()) return;
+    const projectDbPath = getProjectDbPath(cloneName.trim());
+    let newId: number | null = null;
     try {
-      const newId = await ProjectRepository.cloneProject(
+      newId = await ProjectRepository.cloneProject(
         selectedProject.ProjectID,
         cloneName.trim()
       );
@@ -152,11 +154,11 @@ export default function HomeScreen() {
           await cloneProjectDb(
             selectedProject.DBPath,
             cloneName.trim(),
-            getProjectDbPath(cloneName.trim()),
+            projectDbPath,
             newId
           );
         } else {
-          await createProjectDb(cloneName.trim(), getProjectDbPath(cloneName.trim()));
+          await createProjectDb(cloneName.trim(), projectDbPath, newId);
         }
       }
       setCloneDialogVisible(false);
@@ -171,6 +173,12 @@ export default function HomeScreen() {
       }
     } catch (error) {
       logger.error("Clone error:", error);
+      try {
+        if (projectDbPath) await deleteProjectDb(projectDbPath);
+        if (newId) await ProjectRepository.deleteProject(newId);
+      } catch (cleanupError) {
+        logger.error("Clone cleanup error:", cleanupError);
+      }
       Alert.alert("Error", "Unable to clone project.");
     }
   };

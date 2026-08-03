@@ -501,25 +501,38 @@ Quick Actions
 
 Dashboard should display
 
-Total Projects
-
-Total Inspections
-
-Completed
-
-Draft
-
-Camera Count
-
-Switch Count
-
-Recent Activity
-
-Search
-
-Quick Actions
+- Configurable statistic cards (Smart Dashboard)
+- Smart Card Generator (auto-creates cards from inspection form fields)
+- Manual card creation (entity count, dropdown breakdown, sum, field count, date breakdown)
+- Card enable/disable and reorder
+- Recent inspections
+- Search
+- Quick Actions
+- Project information
 
 The dashboard should prioritize the most important information.
+
+Cards can be grouped into sections (e.g., "Total Summary", "Today's Summary") with collapsible section headers.
+
+Smart cards are non-editable and are managed through the Dashboard Settings screen.
+
+## Smart Dashboard Cards
+
+Card types:
+
+- **Entity Count**: Count of inspections, cameras, switches, or devices (Total / Today's)
+- **Dropdown Breakdown**: Group inspections by a dropdown field value (e.g., Pole Status)
+- **Sum**: Sum of a numeric field (e.g., camera_count)
+- **Field Count**: Count of inspections with a text/multiline field populated
+- **Date Breakdown**: Group inspections by date
+
+Cards auto-refresh when:
+- Inspection data changes (via InspectionDataBus)
+- App returns to foreground
+- Midnight passes
+- 60-second focused poll fires
+
+Card refresh is project-isolated — opening Project B does not refresh Project A's dashboard.
 
 ---
 

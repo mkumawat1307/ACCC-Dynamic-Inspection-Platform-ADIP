@@ -196,7 +196,7 @@ export async function createProjectSchema() {
     logger.info("✅ [schema] createProjectSchema() — END");
 }
 
-export async function migrateProjectSchema() {
+export async function migrateProjectSchema(projectId: number) {
     logger.info("[schema] migrateProjectSchema() — START");
 
     const db = await getDatabase();
@@ -240,7 +240,13 @@ export async function migrateProjectSchema() {
     }
 
     try {
-        await DashboardCardRepository.ensureDefaultCards(1);
+        await db.runAsync(`UPDATE DashboardCards SET ProjectID = ?`, [projectId]);
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — DashboardCards ProjectID repair failed (non-fatal):", e);
+    }
+
+    try {
+        await DashboardCardRepository.ensureDefaultCards(projectId);
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — ensureDefaultCards failed (non-fatal):", e);
     }
@@ -304,13 +310,13 @@ export async function migrateProjectSchema() {
     }
 
       try {
-          await DashboardCardRepository.migrateDefaultCards(1);
+          await DashboardCardRepository.migrateDefaultCards(projectId);
       } catch (e) {
           logger.info("[schema] migrateProjectSchema \u2014 migrateDefaultCards failed (non-fatal):", e);
       }
 
       try {
-          await DashboardCardRepository.migrateDeviceCards(1);
+          await DashboardCardRepository.migrateDeviceCards(projectId);
       } catch (e) {
           logger.info("[schema] migrateProjectSchema \u2014 migrateDeviceCards failed (non-fatal):", e);
       }

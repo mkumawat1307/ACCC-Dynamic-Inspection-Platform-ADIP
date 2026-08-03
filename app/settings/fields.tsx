@@ -23,7 +23,6 @@ export default function FieldsScreen() {
 
   const [fieldName, setFieldName] = useState("");
   const [fieldKey, setFieldKey] = useState("");
-  const [keyManuallyEdited, setKeyManuallyEdited] = useState(false);
   const [fieldType, setFieldType] = useState("text");
   const [placeholder, setPlaceholder] = useState("");
   const [defaultValue, setDefaultValue] = useState("");
@@ -49,7 +48,6 @@ export default function FieldsScreen() {
     setEditing(null);
     setFieldName("");
     setFieldKey("");
-    setKeyManuallyEdited(false);
     setFieldType("text");
     setPlaceholder("");
     setDefaultValue("");

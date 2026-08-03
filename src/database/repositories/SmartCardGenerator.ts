@@ -147,8 +147,7 @@ export class SmartCardGenerator {
     }>(
       `SELECT FieldDefID, DeviceType, FieldName, Label, FieldType
        FROM DeviceFieldDefinitions
-       WHERE DeviceType IN ('Camera', 'Switch')
-         AND FieldType IN ('dropdown', 'switch', 'checkbox')
+       WHERE FieldType IN ('dropdown', 'switch', 'checkbox')
          AND IsActive = 1
        ORDER BY DeviceType, DisplayOrder`
     );
@@ -233,21 +232,20 @@ export class SmartCardGenerator {
     return [totalCard, todayCard];
   }
 
-  static async getAvailableFields(projectId: number): Promise<SmartFormField[]> {
-    const allFields = await this.getAllFields();
-    const existingCards = await DashboardCardRepository.getAllCards(projectId);
-    const existingKeys = new Set(existingCards.map((c) => c.CardKey));
+  static isFieldCovered(field: SmartFormField, cards: DashboardCard[]): boolean {
+    if (SmartCardGenerator.getCardKind(field.FieldType) === "skip") return true;
+    for (const card of cards) {
+      if (card.CardMode === "sum" && card.AggregateField === field.FieldKey) return true;
+      if (card.CardMode !== "sum" && card.DeviceType === field.DeviceType && card.BreakdownField === field.DeviceColumn) return true;
+      if (card.CardMode !== "sum" && !card.DeviceType && card.BreakdownField === field.FieldKey) return true;
+    }
+    return false;
+  }
 
-    return allFields.filter((field) => {
-      if (this.getCardKind(field.FieldType) === "skip") return false;
-      const keyBase =
-        field.source === "device"
-          ? `smart_dev_${field.DeviceType}_${field.DeviceColumn}`
-          : `smart_${field.FieldKey}`;
-      const hasTotal = existingKeys.has(`${keyBase}_total`);
-      const hasToday = existingKeys.has(`${keyBase}_today`);
-      return !(hasTotal || hasToday);
-    });
+  static async getAvailableFields(projectId: number): Promise<SmartFormField[]> {
+    const cards = await DashboardCardRepository.getAllCards(projectId);
+    const allFields = await this.getAllFields();
+    return allFields.filter((field) => !SmartCardGenerator.isFieldCovered(field, cards));
   }
 
   static async getNextSortOrder(projectId: number): Promise<number> {

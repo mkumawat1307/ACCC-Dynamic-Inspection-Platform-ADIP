@@ -60,18 +60,20 @@ Configuration Driven
 
 Overall Progress
 
-Approximately 93%
+Approximately 95%
 
 Current Version
 
-1.9.0
+1.9.1 (Unreleased)
 
 Current Sprint
 
-Reports & Export v2 (Phase 5 — PDF/Excel/CSV)
+Smart Dashboard Implementation Complete
 
 Previous Sprints
 
+- v1.9.1 — Smart Dashboard, Template Transfer v2.0, Inspection List Block Search
+- v1.9.0 — Reports & Export v2
 - v1.8.1 — App Rename + Bug Fixes
 - v1.8 — Per-Project Database Isolation
 - v1.7 — Per-Project Template Cloning
@@ -103,6 +105,8 @@ Active Development
 - Dashboard Screen with Smart Dashboard auto-refresh
 - SmartCardGenerator (auto-creates Total + Today cards from inspection form field selection)
 - DashboardCardManager (Smart Add Card flow + Custom Card manual editor)
+- InspectionDataBus (pub/sub event bus for inspection data changes)
+- useDashboardAutoRefresh (auto-refresh on bus events, app foreground, midnight, 60s focused poll)
 - Search
 - Recent Inspections
 - Project-wise CSV Export (moved to Reports screen in v1.9.0)
@@ -322,7 +326,7 @@ Global DB (accc_global.db) — 4 tables:
 - Districts
 - Blocks
 
-Project DB (Projects/<ProjectName>/inspection.db) — 17+ tables per project:
+Project DB (Projects/<ProjectName>/inspection.db) — 20+ tables per project:
 - InspectionTemplates
 - InspectionSections
 - InspectionFields
@@ -340,6 +344,7 @@ Project DB (Projects/<ProjectName>/inspection.db) — 17+ tables per project:
 - DeviceFieldDefinitions
 - DeviceRecords
 - ProjectDeviceTypes
+- DashboardCards
 
 Each project database is created with full seed data at project creation time.
 
@@ -471,19 +476,19 @@ No issue should be removed until resolved.
 
 Highest Priority
 
-Cloud Platform
+Reporting Completion (Phase 5) — Photo Reports, Analytics Dashboard
 
 Second Priority
 
-AI Features
+Cloud Platform (Phase 6) — Cloud Synchronization, Authentication
 
 Third Priority
 
-Dashboard Analytics and Advanced Reporting
+AI Features (Phase 7) — OCR, Image Analysis
 
 Fourth Priority
 
-Photo Reports
+Additional Inspection Modules — NVR, UPS, Solar, OFC, Data Centre, Traffic Signal, Smart Pole, Control Room
 
 ---
 
@@ -597,7 +602,7 @@ Reports & Export v2 — Reports screen with live banded preview, project-wide CS
 
 1.9.1 (Unreleased)
 
-Template Transfer v2.0 (export/import replace-in-place, error-scoped dialogs, reset preserves DeviceRecords), Inspection List shows Block name and searches by it (testable filterByQuery helper)
+Smart Dashboard (SmartCardGenerator, DashboardCardManager, InspectionDataBus, useDashboardAutoRefresh, CardMode), Template Transfer v2.0 (replace-in-place import, v1.0 backward compatibility, reset preserves DeviceRecords), Inspection List Block search and display (testable filterByQuery helper)
 
 Future versions shall be added after every release.
 
@@ -605,11 +610,15 @@ Future versions shall be added after every release.
 
 # 15. Next Sprint
 
-Cloud Platform (Phase 6)
+Reporting Completion (Phase 5)
 
-- Cloud Synchronization
-- Authentication
 - Photo Reports
+- Analytics Dashboard / Project / District Statistics
+
+Future phases:
+
+- Cloud Platform (Phase 6) — Cloud Synchronization, Authentication
+- AI Platform (Phase 7) — OCR, Image Analysis, Inspection Recommendations
 
 This section should always contain the next planned milestone.
 

@@ -9,7 +9,7 @@
 ![Database](https://img.shields.io/badge/Database-SQLite-orange)
 ![Architecture](https://img.shields.io/badge/Architecture-Offline%20First-success)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
-![Version](https://img.shields.io/badge/Version-1.9.0-blue)
+![Version](https://img.shields.io/badge/Version-1.9.1-blue)
 
 ---
 
@@ -52,9 +52,12 @@ The platform aims to:
 
 ## Dashboard
 
-- Inspection statistics
-- Recent inspections
+- Smart Dashboard with configurable statistic cards
+- Smart Card Generator (auto-creates cards from inspection form fields)
+- Dashboard Card Manager (add/edit/delete/reorder/enable/disable cards)
+- Auto-refresh on data changes, app foreground, midnight, and 60s interval
 - Search
+- Recent inspections
 - Project overview
 
 ---
@@ -81,6 +84,7 @@ The platform aims to:
 - Dynamic Fields
 - Configurable Validation
 - Display Order
+- 10 field types
 
 ---
 
@@ -95,6 +99,9 @@ The platform aims to:
 - Section repeatable and visibility toggles
 - Section IsDefault toggle
 - Field required/visible/readOnly toggles
+- Device Types Management (create/edit/delete device types and their fields)
+- Photos section locked (cannot be edited, reordered, or deleted)
+- Reset to Default button (restores original inspection form)
 
 ---
 
@@ -241,17 +248,22 @@ assets/
 
 # Database
 
-Core tables (18):
+Core tables (20+):
+
+### Global DB (4 tables)
 
 - Projects
 - Districts
 - Blocks
 - Divisions
-- Inspections
+
+### Project DB (20+ tables per project)
+
 - InspectionTemplates
 - InspectionSections
 - InspectionFields
 - FieldOptions
+- Inspections
 - InspectionValues
 - RepeatableGroups
 - RepeatableGroupFields
@@ -261,8 +273,29 @@ Core tables (18):
 - Switches
 - Photos
 - DeviceOptions
+- DeviceFieldDefinitions
+- DeviceRecords
+- ProjectDeviceTypes
+- DashboardCards
 
 ---
+
+# New Files (v1.9.1)
+
+- app/projects/dashboard-settings.tsx — Dashboard card configuration screen
+- src/components/dashboard/DashboardCardManager.tsx — Smart Add Card flow + Custom Card manual editor
+- src/components/dashboard/DashboardCardGrid.tsx — Grid with auto-refresh, collapse, and stat rendering
+- src/components/dashboard/StatBreakdownCard.tsx — Breakdown rows card
+- src/database/repositories/SmartCardGenerator.ts — Auto-creates cards from inspection form fields
+- src/database/repositories/StatisticCountService.ts — Generic parameterized count engine
+- src/database/repositories/DashboardService.ts — Composes dashboard card counts
+- src/database/repositories/DashboardCardRepository.ts — Dashboard card CRUD
+- src/database/tables/dashboard-cards.table.ts — DashboardCards table definition
+- src/database/seeds/dashboard-cards.seed.ts — Default dashboard cards
+- src/utils/InspectionDataBus.ts — Pub/sub event bus
+- src/hooks/useDashboardAutoRefresh.ts — Auto-refresh hook
+- src/hooks/useSectionCollapse.ts — Persists collapsed section state
+- src/constants/ui.ts — Design tokens (SPACING, COLORS, RADIUS)
 
 # New Files (v1.9.0)
 
@@ -365,7 +398,7 @@ The project documentation is located in the **docs/** folder.
 ## Prerequisites
 
 - Node.js
-- npm
+- Yarn 1.22
 - Expo CLI
 - Android Studio
 - Git
@@ -376,7 +409,7 @@ The project documentation is located in the **docs/** folder.
 
 ```bash
 git clone <repository-url>
-cd ACCC-Pole-Inspection-App
+cd "ACCC inspection"
 ```
 
 ---
@@ -384,7 +417,7 @@ cd ACCC-Pole-Inspection-App
 ## Install Dependencies
 
 ```bash
-npm install
+yarn install
 ```
 
 ---
@@ -392,7 +425,7 @@ npm install
 ## Start Development Server
 
 ```bash
-npx expo start
+yarn start
 ```
 
 ---
@@ -400,7 +433,7 @@ npx expo start
 ## Run Android
 
 ```bash
-npx expo run:android
+yarn android
 ```
 
 ---
@@ -425,17 +458,19 @@ Refer to **03-Rules.md** for complete standards.
 
 Current Phase
 
-Administration Panel Complete (v1.4)
-Device Options DB-Driven + Template Import/Export + Project Management (v1.5)
-Per-Project Database Isolation (v1.8)
-App Rename + Bug Fixes (v1.8.1)
-Reports & Export v2 (v1.9.0)
+- Administration Panel Complete (v1.4)
+- Device Options DB-Driven + Template Import/Export + Project Management (v1.5)
+- Per-Project Database Isolation (v1.8)
+- App Rename + Bug Fixes (v1.8.1)
+- Reports & Export v2 (v1.9.0)
+- Smart Dashboard (v1.9.1)
 
 Upcoming
 
 - Cloud Synchronization
 - AI Features
-- Dashboard Analytics
+- Analytics Dashboard
+- Photo Reports
 
 ---
 
@@ -443,7 +478,7 @@ Upcoming
 
 Current Version
 
-1.9.0
+1.9.1 (Unreleased)
 
 Status
 

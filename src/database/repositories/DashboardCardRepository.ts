@@ -358,10 +358,21 @@ export class DashboardCardRepository {
     );
 
     const smartCards = existing.filter((row) => row.CardKey.startsWith("smart_dev_"));
-    const cameraKeys = new Set(["total_cameras", "today_cameras", "total_camera_count", "today_camera_count"]);
-    const cameraCards = existing.filter((row) => cameraKeys.has(row.CardKey));
+    const legacyCameraKeys = new Set(["total_cameras", "today_cameras"]);
+    const legacyCameraCards = existing.filter((row) => legacyCameraKeys.has(row.CardKey));
+    const fieldCameraKeys = new Set(["total_camera_count", "today_camera_count"]);
+    const fieldCameraCards = existing.filter((row) => fieldCameraKeys.has(row.CardKey));
+    const poleKeys = new Set(["total_pole_status", "today_pole_status"]);
+    const poleCards = existing.filter((row) => poleKeys.has(row.CardKey));
 
-    if (smartCards.length === 0 && cameraCards.length === 0) return;
+    if (
+      smartCards.length === 0 &&
+      legacyCameraCards.length === 0 &&
+      fieldCameraCards.length === 0 &&
+      poleCards.length === 0
+    ) {
+      return;
+    }
 
     await db.withTransactionAsync(async () => {
       for (const row of smartCards) {
@@ -378,13 +389,30 @@ export class DashboardCardRepository {
         );
       }
 
-      for (const row of cameraCards) {
+      for (const row of legacyCameraCards) {
         await db.runAsync(
           `UPDATE DashboardCards
            SET EntityType = 'devices', DeviceType = 'Camera', CardMode = 'entitycount',
                FilterJson = ?, AggregateField = NULL, UpdatedAt = CURRENT_TIMESTAMP
            WHERE CardID = ? AND ProjectID = ?`,
           ['{"DeviceType":"Camera"}', row.CardID, projectId]
+        );
+      }
+
+      for (const row of fieldCameraCards) {
+        await db.runAsync(
+          `UPDATE DashboardCards
+           SET EntityType = ?, CardMode = ?, AggregateField = ?,
+               FilterJson = NULL, DeviceType = NULL, UpdatedAt = CURRENT_TIMESTAMP
+           WHERE CardID = ? AND ProjectID = ?`,
+          ["inspections", "sum", "camera_count", row.CardID, projectId]
+        );
+      }
+
+      for (const row of poleCards) {
+        await db.runAsync(
+          `UPDATE DashboardCards SET Title = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE CardID = ? AND ProjectID = ?`,
+          ["Pole Availability", row.CardID, projectId]
         );
       }
 

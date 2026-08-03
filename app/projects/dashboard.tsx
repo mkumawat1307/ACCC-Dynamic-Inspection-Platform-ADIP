@@ -92,6 +92,7 @@ export default function ProjectDashboard() {
           <Card.Title
             title="Project Information"
             titleVariant="titleMedium"
+            titleStyle={{ fontWeight: "700" }}
             left={() => (
               <MaterialCommunityIcons
                 name="information-outline"
@@ -102,6 +103,7 @@ export default function ProjectDashboard() {
           />
           <Card.Content>
             <View style={styles.infoGrid}>
+              <InfoField label="Project" value={project.ProjectName || "-"} />
               <InfoField label="Division" value={project.DivisionName || "-"} />
               <InfoField label="District" value={project.DistrictName || "-"} />
               <InfoField label="Inspector" value={project.InspectorName || "-"} />
@@ -123,6 +125,8 @@ export default function ProjectDashboard() {
             title="Manage Cards"
             subtitle="Add, edit, reorder or disable dashboard cards"
             icon="tune-variant"
+            borderColor={COLORS.primary}
+            borderWidth={2}
             onPress={() =>
               router.push({
                 pathname: "/projects/dashboard-settings",
@@ -231,13 +235,15 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    padding: SPACING.lg,
-    paddingBottom: SPACING.xl,
+    padding: SPACING.md,
+    paddingBottom: SPACING.lg,
   },
 
   card: {
-    marginBottom: SPACING.xl,
+    marginBottom: SPACING.lg,
     borderRadius: RADIUS.md,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
   },
 
   infoGrid: {
@@ -248,17 +254,18 @@ const styles = StyleSheet.create({
   infoField: {
     width: "50%",
     paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
 
   infoFull: {
     paddingHorizontal: SPACING.md,
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.sm,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
 
   infoLabel: {
     fontSize: 12,
+    fontWeight: "700",
     color: COLORS.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.4,
@@ -275,23 +282,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: COLORS.textPrimary,
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.md,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.sm,
   },
 
   manageCard: {
-    marginTop: SPACING.xl,
-    marginBottom: SPACING.xl,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.lg,
   },
 
   actionGrid: {
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.sm,
   },
 
   actionRow: {
     flexDirection: "row",
     gap: SPACING.md,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
 
   actionHalf: {

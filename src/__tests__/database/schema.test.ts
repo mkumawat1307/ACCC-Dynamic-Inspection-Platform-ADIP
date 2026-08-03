@@ -47,17 +47,8 @@ jest.mock("@/src/database/tables/switches.table", () => ({
 jest.mock("@/src/database/tables/photos.table", () => ({
   createPhotosTable: "CREATE TABLE Photos...",
 }));
-jest.mock("@/src/database/tables/device-options.table", () => ({
-  createDeviceOptionsTable: "CREATE TABLE DeviceOptions...",
-}));
-jest.mock("@/src/database/tables/device-field-definitions.table", () => ({
-  createDeviceFieldDefinitionsTable: "CREATE TABLE DeviceFieldDefinitions...",
-}));
 jest.mock("@/src/database/tables/device-records.table", () => ({
   createDeviceRecordsTable: "CREATE TABLE DeviceRecords...",
-}));
-jest.mock("@/src/database/tables/project-device-types.table", () => ({
-  createProjectDeviceTypesTable: "CREATE TABLE ProjectDeviceTypes...",
 }));
 jest.mock("@/src/database/tables/dashboard-cards.table", () => ({
   createDashboardCardsTable: "CREATE TABLE DashboardCards...",
@@ -151,9 +142,9 @@ describe("schema.ts createSchema", () => {
     const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
 
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
-    expect(mockRunAsync).not.toHaveBeenCalled();
+    expect(mockRunAsync).toHaveBeenCalledWith("UPDATE DashboardCards SET ProjectID = ?", [1]);
     expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
     expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
   });
@@ -166,9 +157,9 @@ describe("schema.ts createSchema", () => {
     const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
 
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
-    expect(mockRunAsync).not.toHaveBeenCalled();
+    expect(mockRunAsync).toHaveBeenCalledWith("UPDATE DashboardCards SET ProjectID = ?", [1]);
     expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
     expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
   });
@@ -182,9 +173,9 @@ describe("schema.ts createSchema", () => {
     const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
 
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
-    expect(mockRunAsync).toHaveBeenCalledTimes(3);
+    expect(mockRunAsync).toHaveBeenCalledTimes(4);
     expect(mockRunAsync).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO InspectionSections"),
       [1, "Remarks", "remarks", "Remarks", "note-text", 9]
@@ -210,10 +201,24 @@ describe("schema.ts createSchema", () => {
     const { createDashboardCardsTable } = require("@/src/database/tables/dashboard-cards.table");
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
 
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
     expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
     expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
+  });
+
+  it("migrateProjectSchema repairs DashboardCards to the real ProjectID and uses it for defaults", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
+
+    await migrateProjectSchema(5);
+
+    expect(mockRunAsync).toHaveBeenCalledWith("UPDATE DashboardCards SET ProjectID = ?", [5]);
+    expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(5);
+    expect(DashboardCardRepository.migrateDefaultCards).toHaveBeenCalledWith(5);
+    expect(DashboardCardRepository.migrateDeviceCards).toHaveBeenCalledWith(5);
   });
 
   it("migrateProjectSchema does not throw when ensureDefaultCards fails", async () => {
@@ -223,7 +228,7 @@ describe("schema.ts createSchema", () => {
     (DashboardCardRepository.ensureDefaultCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
 
     const { migrateProjectSchema } = require("@/src/database/schema");
-    await expect(migrateProjectSchema()).resolves.toBeUndefined();
+    await expect(migrateProjectSchema(1)).resolves.toBeUndefined();
   });
 
   it("migrateProjectSchema adds the BreakdownField column idempotently", async () => {
@@ -232,7 +237,7 @@ describe("schema.ts createSchema", () => {
     const { migrateProjectSchema } = require("@/src/database/schema");
     const { DashboardCardRepository } = require("@/src/database/repositories/DashboardCardRepository");
 
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
     expect(mockExecAsync).toHaveBeenCalledWith(
       expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN BreakdownField TEXT")
@@ -248,7 +253,7 @@ describe("schema.ts createSchema", () => {
     (DashboardCardRepository.migrateDefaultCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
 
     const { migrateProjectSchema } = require("@/src/database/schema");
-    await expect(migrateProjectSchema()).resolves.toBeUndefined();
+    await expect(migrateProjectSchema(1)).resolves.toBeUndefined();
   });
 
   it("migrateProjectSchema does not throw when migrateDeviceCards fails", async () => {
@@ -258,7 +263,7 @@ describe("schema.ts createSchema", () => {
     (DashboardCardRepository.migrateDeviceCards as jest.Mock).mockRejectedValueOnce(new Error("boom"));
 
     const { migrateProjectSchema } = require("@/src/database/schema");
-    await expect(migrateProjectSchema()).resolves.toBeUndefined();
+    await expect(migrateProjectSchema(1)).resolves.toBeUndefined();
   });
 
   it("migrateProjectSchema adds the SectionLabel and AggregateField columns idempotently", async () => {
@@ -266,7 +271,7 @@ describe("schema.ts createSchema", () => {
 
     const { migrateProjectSchema } = require("@/src/database/schema");
 
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
     expect(mockExecAsync).toHaveBeenCalledWith(
       expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN SectionLabel TEXT")
@@ -280,7 +285,7 @@ describe("schema.ts createSchema", () => {
     mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
 
     const { migrateProjectSchema } = require("@/src/database/schema");
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
     expect(mockExecAsync).toHaveBeenCalledWith(
       expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN DeviceType TEXT")
@@ -431,7 +436,7 @@ describe("schema.ts createSchema", () => {
     const execSpy = jest.spyOn(legacyDb, "execAsync");
 
     const { migrateProjectSchema } = require("@/src/database/schema");
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
     expect(legacyDb.columns.has("CardMode")).toBe(true);
     const expected = {
@@ -466,7 +471,7 @@ describe("schema.ts createSchema", () => {
     );
 
     getDatabase.mockResolvedValueOnce(legacyDb);
-    await expect(migrateProjectSchema()).resolves.toBeUndefined();
+    await expect(migrateProjectSchema(1)).resolves.toBeUndefined();
 
     expect(cardModes(legacyDb.cards)).toEqual(expected);
   });
@@ -477,7 +482,7 @@ describe("schema.ts createSchema", () => {
     mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
 
     const { migrateProjectSchema } = require("@/src/database/schema");
-    await migrateProjectSchema();
+    await migrateProjectSchema(1);
 
     const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
     const sumBackfill = emitted.find(

@@ -44,11 +44,12 @@ const styles = StyleSheet.create({
 
   content: {
     alignItems: "center",
+    paddingVertical: SPACING.sm,
   },
 
   iconContainer: {
     alignItems: "center",
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
 
   value: {

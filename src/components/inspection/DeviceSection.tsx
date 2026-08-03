@@ -148,7 +148,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     );
   }
 
-  const getDeviceLabel = (record: DeviceRecord, index: number) => {
+  const getDeviceLabel = (record: DeviceRecord) => {
     return `${deviceType} ${record.DeviceNo}`;
   };
 
@@ -218,7 +218,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
 
       {records.map((record, index) => (
         <Card key={record.RecordID ?? `new-${record.DeviceNo}`} style={styles.card}>
-          <Card.Title title={getDeviceLabel(record, index)} titleStyle={styles.cardTitle} />
+          <Card.Title title={getDeviceLabel(record)} titleStyle={styles.cardTitle} />
           <Card.Content>
             {halfFields.map((pair, pairIdx) => (
               <View key={pairIdx} style={styles.row}>

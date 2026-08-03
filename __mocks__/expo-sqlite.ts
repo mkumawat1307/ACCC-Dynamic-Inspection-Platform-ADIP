@@ -46,20 +46,24 @@ const SQL_COMMANDS = {
 function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boolean {
   const conditions = whereClause.split(/\s+AND\s+/i);
   let paramIdx = 0;
+  const compiled = conditions.map((cond) => {
+    const match = cond.match(/(\w+)\s*=\s*(?:\?|'([^']*)'|(\d+))/);
+    if (!match) return null;
+    const col = match[1];
+    let value: unknown;
+    if (match[2] !== undefined) {
+      value = match[2];
+    } else if (match[3] !== undefined) {
+      value = parseInt(match[3], 10);
+    } else {
+      value = params[paramIdx++];
+    }
+    return { col, value };
+  });
   return (row: Row) => {
-    return conditions.every((cond) => {
-      const match = cond.match(/(\w+)\s*=\s*(?:\?|'([^']*)'|(\d+))/);
-      if (!match) return true;
-      const col = match[1];
-      let value: unknown;
-      if (match[2] !== undefined) {
-        value = match[2];
-      } else if (match[3] !== undefined) {
-        value = parseInt(match[3], 10);
-      } else {
-        value = params[paramIdx++];
-      }
-      return row[col] === value;
+    return compiled.every((cond) => {
+      if (!cond) return true;
+      return row[cond.col] === cond.value;
     });
   };
 }
