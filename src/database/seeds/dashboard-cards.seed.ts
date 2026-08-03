@@ -16,6 +16,7 @@ export interface DashboardCardSeed {
   BreakdownField?: string;
   SectionLabel?: string;
   AggregateField?: string;
+  DeviceType?: string;
   SortOrder: number;
 }
 
@@ -57,8 +58,8 @@ export async function seedDashboardCards(): Promise<void> {
     for (const card of missing) {
       await db.runAsync(
         `INSERT INTO DashboardCards
-         (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+         (ProjectID, CardKey, Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, CardMode, SortOrder, Enabled, IsDefault, DeviceType)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)`,
         [
           1,
           card.CardKey,
@@ -75,6 +76,7 @@ export async function seedDashboardCards(): Promise<void> {
           card.AggregateField ?? null,
           card.CardMode,
           card.SortOrder,
+          card.DeviceType ?? null,
         ]
       );
     }

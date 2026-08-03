@@ -267,6 +267,13 @@ export async function migrateProjectSchema() {
     }
 
     try {
+        await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN DeviceType TEXT;`);
+        logger.info("[schema] Migration: DeviceType column added to DashboardCards");
+    } catch {
+        logger.info("[schema] Migration: DeviceType column already exists in DashboardCards (ok)");
+    }
+
+    try {
         await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN CardMode TEXT NOT NULL DEFAULT 'entitycount';`);
         logger.info("[schema] Migration: CardMode column added to DashboardCards");
     } catch {

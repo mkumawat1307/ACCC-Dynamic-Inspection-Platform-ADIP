@@ -16,6 +16,7 @@ export interface DashboardCard {
   BreakdownField?: string | null;
   SectionLabel?: string | null;
   AggregateField?: string | null;
+  DeviceType?: string | null;
   SortOrder: number;
   Enabled: number;
   IsDefault: number;

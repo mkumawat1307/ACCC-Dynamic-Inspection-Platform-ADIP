@@ -264,6 +264,17 @@ describe("schema.ts createSchema", () => {
     );
   });
 
+  it("migrateProjectSchema adds the DeviceType column idempotently", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema();
+
+    expect(mockExecAsync).toHaveBeenCalledWith(
+      expect.stringContaining("ALTER TABLE DashboardCards ADD COLUMN DeviceType TEXT")
+    );
+  });
+
   interface LegacyCardRow {
     CardKey: string;
     AggregateField?: string | null;
