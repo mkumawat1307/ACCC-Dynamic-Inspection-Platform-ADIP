@@ -77,6 +77,18 @@ function parseColumnList(cols: string): string[] {
     });
 }
 
+function parseInsertValues(valuesClause: string, params: unknown[]): unknown[] {
+  const tokens = valuesClause.split(",").map((t) => t.trim());
+  let paramIdx = 0;
+  return tokens.map((token) => {
+    if (token === "?") return params[paramIdx++];
+    if (/^'.*'$/.test(token)) return token.slice(1, -1);
+    if (/^-?\d+$/.test(token)) return parseInt(token, 10);
+    if (/^NULL$/i.test(token)) return null;
+    return token;
+  });
+}
+
 class MockDatabase {
   private tables = new Map<string, TableData>();
   private rowIdCounter = 1;
@@ -92,9 +104,10 @@ class MockDatabase {
     if (insertMatch) {
       const tableName = insertMatch[1];
       const cols = insertMatch[2].split(",").map((c) => c.trim());
+      const values = parseInsertValues(insertMatch[3], params);
       const row: Row = {};
       cols.forEach((col, i) => {
-        row[col] = params[i] ?? null;
+        row[col] = values[i] ?? null;
       });
       const id = this.rowIdCounter++;
       if (cols.includes("ID") || cols.includes("id")) {

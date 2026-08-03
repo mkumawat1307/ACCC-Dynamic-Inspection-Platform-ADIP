@@ -42,7 +42,9 @@ describe("dashboard-cards.seed", () => {
 
   it("seeds exactly the six sectioned default cards on an empty project", async () => {
     await openProject();
-    const { seedDashboardCards, DEFAULT_SECTIONED_CARDS } = require("@/src/database/seeds/dashboard-cards.seed");
+    const { seedDashboardCards, DEFAULT_SECTIONED_CARDS, SECTION_LABEL_TOTAL, SECTION_LABEL_TODAY } = require("@/src/database/seeds/dashboard-cards.seed");
+    expect(SECTION_LABEL_TOTAL).toBe("Total Summary");
+    expect(SECTION_LABEL_TODAY).toBe("Today's Summary");
 
     await seedDashboardCards();
 
@@ -56,11 +58,11 @@ describe("dashboard-cards.seed", () => {
     expect(cards.map((c) => c.CardKey).sort()).toEqual(
       ["total_inspection_done", "total_pole_status", "total_camera_count", "today_inspection_done", "today_pole_status", "today_camera_count"].sort()
     );
-    expect(cards.filter((c) => c.SectionLabel === "Total")).toHaveLength(3);
-    expect(cards.filter((c) => c.SectionLabel === "Today's")).toHaveLength(3);
-    expect(cards.filter((c) => c.CardMode === "entitycount")).toHaveLength(2);
+    expect(cards.filter((c) => c.SectionLabel === "Total Summary")).toHaveLength(3);
+    expect(cards.filter((c) => c.SectionLabel === "Today's Summary")).toHaveLength(3);
+    expect(cards.filter((c) => c.CardMode === "entitycount")).toHaveLength(4);
     expect(cards.filter((c) => c.CardMode === "dropdown")).toHaveLength(2);
-    expect(cards.filter((c) => c.CardMode === "sum")).toHaveLength(2);
+    expect(cards.filter((c) => c.CardMode === "sum")).toHaveLength(0);
     expect(DEFAULT_SECTIONED_CARDS).toHaveLength(6);
   });
 
@@ -119,7 +121,7 @@ describe("dashboard-cards.seed", () => {
     expect(row!.FilterJson).toBe(JSON.stringify({ Status: "Completed" }));
     expect(row!.CounterType).toBe("today");
     expect(row!.SortOrder).toBe(3);
-    expect(row!.SectionLabel).toBe("Today's");
+    expect(row!.SectionLabel).toBe("Today's Summary");
   });
 
   it("seeds the Camera Count SUM and Pole Status breakdown defaults", async () => {
@@ -129,13 +131,15 @@ describe("dashboard-cards.seed", () => {
 
     const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     const db: SQLiteDatabase = await dbModule.getDatabase();
-    const camera = await db.getFirstAsync<{ AggregateField: string; SectionLabel: string; CardMode: string }>(
-      "SELECT AggregateField, SectionLabel, CardMode FROM DashboardCards WHERE CardKey = 'total_camera_count'"
+    const camera = await db.getFirstAsync<{ EntityType: string; FilterJson: string; CardMode: string; DeviceType: string; SectionLabel: string }>(
+      "SELECT EntityType, FilterJson, CardMode, DeviceType, SectionLabel FROM DashboardCards WHERE CardKey = 'total_camera_count'"
     );
     expect(camera).not.toBeNull();
-    expect(camera!.AggregateField).toBe("camera_count");
-    expect(camera!.SectionLabel).toBe("Total");
-    expect(camera!.CardMode).toBe("sum");
+    expect(camera!.EntityType).toBe("devices");
+    expect(camera!.FilterJson).toBe(JSON.stringify({ DeviceType: "Camera" }));
+    expect(camera!.CardMode).toBe("entitycount");
+    expect(camera!.DeviceType).toBe("Camera");
+    expect(camera!.SectionLabel).toBe("Total Summary");
 
     const pole = await db.getFirstAsync<{ BreakdownField: string; CardMode: string }>(
       "SELECT BreakdownField, CardMode FROM DashboardCards WHERE CardKey = 'total_pole_status'"
@@ -159,9 +163,9 @@ describe("dashboard-cards.seed", () => {
 
     expect(byKey["total_inspection_done"]).toBe("entitycount");
     expect(byKey["total_pole_status"]).toBe("dropdown");
-    expect(byKey["total_camera_count"]).toBe("sum");
+    expect(byKey["total_camera_count"]).toBe("entitycount");
     expect(byKey["today_inspection_done"]).toBe("entitycount");
     expect(byKey["today_pole_status"]).toBe("dropdown");
-    expect(byKey["today_camera_count"]).toBe("sum");
+    expect(byKey["today_camera_count"]).toBe("entitycount");
   });
 });
