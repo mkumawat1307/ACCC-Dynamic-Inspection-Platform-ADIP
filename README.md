@@ -3,13 +3,9 @@
 > Offline-First | Configuration-Driven | Android Inspection Platform
 
 ![Version](https://img.shields.io/badge/version-1.9.1-blue)
-
 ![Platform](https://img.shields.io/badge/platform-Android-success)
-
 ![Offline](https://img.shields.io/badge/offline-yes-green)
-
 ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)
-
 ![Expo SDK](https://img.shields.io/badge/Expo-54-black)
 
 ---
