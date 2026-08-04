@@ -2,14 +2,15 @@
 
 > Offline-First | Configuration-Driven | Android Inspection Platform
 
-![Platform](https://img.shields.io/badge/Platform-Android-green)
-![Framework](https://img.shields.io/badge/Framework-React%20Native-blue)
-![Expo](https://img.shields.io/badge/Expo-SDK%2054-black)
-![TypeScript](https://img.shields.io/badge/Language-TypeScript-blue)
-![Database](https://img.shields.io/badge/Database-SQLite-orange)
-![Architecture](https://img.shields.io/badge/Architecture-Offline%20First-success)
-![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
-![Version](https://img.shields.io/badge/Version-1.8.1-blue)
+![Version](https://img.shields.io/badge/version-1.9.1-blue)
+
+![Platform](https://img.shields.io/badge/platform-Android-success)
+
+![Offline](https://img.shields.io/badge/offline-yes-green)
+
+![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)
+
+![Expo SDK](https://img.shields.io/badge/Expo-54-black)
 
 ---
 
