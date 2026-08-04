@@ -18,7 +18,7 @@
 | Framework | React Native (Expo) |
 | Database | SQLite (dual-database: global + per-project) |
 | Architecture | Offline-First, Configuration-Driven, Per-Project Isolation |
-| Last Updated | August 2026 |
+| Last Updated | 2026-08-04 |
 
 ---
 
@@ -95,13 +95,13 @@ The platform aims to:
 - Device options admin panel (Camera/Switch dropdowns configurable from Settings)
 - Device types admin panel (custom device type management)
 - Template import/export (JSON v2.0 — replace-in-place)
-- Project-wise CSV/Excel/PDF export
+- Project-wise CSV/Excel export
 - Drill-down admin flow (Sections → Fields → Options)
 - DB-driven camera/switch dropdown options
 - Dashboard card management (add/edit/delete/reorder/enable/disable cards)
 - Smart Card Generator (auto-creates cards from inspection form fields)
 - Inspection data bus (auto-refresh dashboard on data changes)
-- Single-inspection export (PDF/Excel/CSV)
+- Single-inspection export (Excel/CSV)
 - Reports screen with live banded table preview
 - Per-project database isolation
 - Inspector name field on projects
@@ -111,6 +111,7 @@ The platform aims to:
 - Cloud synchronization
 - User authentication
 - Role-based access
+- PDF report export
 - Photo reports
 - Analytics dashboard (project/district statistics)
 - AI-assisted inspection
@@ -220,7 +221,7 @@ Administrators manage the inspection platform and maintain inspection configurat
 - Configure camera and switch device options
 - Import and export inspection templates
 - Manage dashboard cards
-- Export project-wise inspection data as CSV/Excel/PDF
+- Export project-wise inspection data as CSV/Excel
 - Maintain application settings
 
 ---
@@ -267,7 +268,7 @@ The system shall allow users to:
 - Search inspection (by Pole ID, Division, District, Block)
 - Filter inspection
 - View inspection details
-- Export single inspection (PDF/Excel/CSV)
+- Export single inspection (Excel/CSV)
 
 ---
 
@@ -380,8 +381,8 @@ The system shall support:
 - Inspection summary with live banded table preview
 - Project-wise CSV export
 - Project-wise Excel export (xlsx)
-- Project-wise PDF export
-- Single-inspection export (PDF/Excel/CSV)
+- Project-wise PDF export (future — not yet implemented)
+- Single-inspection export (Excel/CSV)
 - Photo reports (future)
 - Analytics dashboard (future)
 
@@ -447,7 +448,7 @@ The application shall allow users to clone a project (copy all settings and insp
 
 ## FR-16 Project-wise Export
 
-The application shall allow users to export inspection data for a specific project from the Reports screen in CSV, Excel (xlsx), or PDF format.
+The application shall allow users to export inspection data for a specific project from the Reports screen in CSV or Excel (xlsx) format.
 
 The export shall include inspection fields, device data, and GPS coordinates. The exported file shall be shareable via device sharing options.
 
@@ -557,7 +558,6 @@ Responsible for:
 - Live banded table preview
 - CSV export
 - Excel export (xlsx)
-- PDF export
 - Single-inspection export
 - Project-wide export
 
@@ -700,7 +700,7 @@ The application shall use SQLite as the primary local database.
 - Districts
 - Blocks
 
-#### Project DB (20+ tables per project)
+#### Project DB (18 tables per project)
 
 - InspectionTemplates
 - InspectionSections (with IsDefault flag)
@@ -737,18 +737,23 @@ Fields include:
 
 - CardID (INTEGER PRIMARY KEY AUTOINCREMENT)
 - ProjectID (INTEGER — FK to project)
-- CardKey (TEXT — unique key like total_poles, today_poles)
-- CardLabel (TEXT — display label)
+- CardKey (TEXT — unique key like total_inspections, today_poles; UNIQUE together with ProjectID)
+- Title (TEXT — display label)
+- Icon (TEXT — MaterialCommunityIcons name, default chart-box-outline)
+- Color (TEXT — card accent color, default #0B5ED7)
 - CardMode (TEXT — entitycount, dropdown, sum, fieldcount, datebreakdown)
+- CountMode (TEXT — count, distinct)
+- DistinctColumn (TEXT — column used for distinct counts)
 - EntityType (TEXT — Inspections, Cameras, Switches, Devices)
 - CounterType (TEXT — total, today)
-- BreakdownField (TEXT — field key for breakdown/sum cards)
+- BreakdownField (TEXT — field key for breakdown cards)
 - AggregateField (TEXT — numeric field key for SUM cards)
-- SectionLabel (TEXT — section header for grouped cards)
+- SectionLabel (TEXT — section header for grouped cards, e.g. "Total Summary"/"Today's Summary")
 - DeviceType (TEXT — device type for device cards)
 - FilterJson (TEXT — JSON-serialized filters)
-- DisplayOrder (INTEGER)
-- IsActive (INTEGER — 1 = active, 0 = disabled)
+- SortOrder (INTEGER)
+- Enabled (INTEGER — 1 = active, 0 = disabled)
+- IsDefault (INTEGER — 1 = seeded default card)
 
 Future tables may be added as the platform evolves, while preserving backward compatibility where practical.
 
@@ -801,7 +806,7 @@ The application shall support:
 - Capturing photos.
 - Recording GPS coordinates (subject to device availability).
 - Auto-save.
-- Exporting inspection data as CSV/Excel/PDF.
+- Exporting inspection data as CSV/Excel.
 - Importing/exporting templates as JSON.
 - Configuring dashboard cards.
 
@@ -1006,7 +1011,7 @@ Users shall be able to:
 - Store photos with inspection records.
 - Associate photos with inspection components.
 - View watermarked photos in gallery.
-- View photos in app Download folder.
+- View watermarked photos saved via SAF (DCIM/ACCC Inspection/<project>).
 
 ---
 
@@ -1101,7 +1106,7 @@ Users shall be able to:
 
 Users shall be able to:
 
-- Export inspection data for a specific project as CSV, Excel, or PDF.
+- Export inspection data for a specific project as CSV or Excel.
 - Share the exported file via device sharing options.
 
 ---
@@ -1256,19 +1261,22 @@ Current dependencies include:
 
 - React Native Paper
 - React Native Element Dropdown
+- React Native Paper Dropdown
 - React Native WebView
 
 ## Libraries
 
 - expo-router (navigation)
 - expo-sqlite (database)
+- expo-file-system (SAF photo storage + export files)
 - expo-location (GPS)
 - expo-image-picker (camera)
 - expo-media-library (gallery)
 - expo-sharing (file sharing)
 - expo-document-picker (template import)
+- expo-intent-launcher (open exported files)
+- @react-native-async-storage/async-storage (persisted state)
 - xlsx (Excel export)
-- react-native-view-shot (watermark burn-in)
 
 ---
 
@@ -1318,19 +1326,25 @@ The project shall follow an incremental release approach.
 
 - Reports & Export v2
 - Unified export service
-- CSV/Excel/PDF export
+- CSV/Excel export
 - Single-inspection export
 - Legacy export removed
 
-### Version 1.9.1 (Unreleased)
+### Version 1.9.1
 
-- Smart Dashboard with dynamic cards
+- Smart Dashboard with dynamic per-project cards
 - SmartCardGenerator
-- DashboardCardManager
-- InspectionDataBus
-- useDashboardAutoRefresh
+- DashboardCardManager + Dashboard settings screen
+- StatBreakdownCard (dropdown/date breakdown cards)
+- InspectionDataBus + useDashboardAutoRefresh
+- Project Information card on dashboard
+- DashboardCards / DeviceTypes / DeviceOptions tables + repositories
+- Project clone (cloneProjectDb atomic clone)
+- Duplicate-pole detection
 - Template Transfer v2.0
 - Inspection List Block search
+- Photo watermarking via WebView canvas + SAF photo storage
+- Reports screen (Excel/CSV export)
 
 ### Future Releases
 
@@ -1389,8 +1403,9 @@ Status: Completed
 Reporting
 
 - Reports screen with live preview
-- CSV/Excel/PDF export
+- CSV/Excel export
 - Single-inspection export
+- PDF report export (future)
 - Photo Report (pending)
 - Analytics Dashboard (pending)
 

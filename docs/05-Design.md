@@ -6,7 +6,7 @@ Version: 2.1
 
 Status: Active
 
-Last Updated: July 2026
+Last Updated: 2026-08-04
 
 ---
 
@@ -562,7 +562,7 @@ Remarks
 
 Photos
 
-Each section should be collapsible in future versions.
+Each section renders as a collapsible accordion card in the inspection form.
 
 ---
 
@@ -778,9 +778,9 @@ Compress when appropriate
 
 Store metadata
 
-Burn watermark into gallery photos (green #76FF03 on light black background)
+Burn watermark into gallery photos via a hidden WebView canvas (green #76FF03 on light black background)
 
-Save to device gallery AND app Download folder
+Save watermarked photos through the Storage Access Framework to the device gallery (DCIM/ACCC Inspection/<project>)
 
 ---
 
@@ -838,9 +838,9 @@ Device Options are accessible from Settings > Device Options and allow administr
 
 Template configurations can be exported and imported in JSON format.
 
-Export produces a self-contained JSON file with all template, section, field, and option data.
+Export produces a self-contained JSON file with all template, section, field, and option data (v2.0 also includes custom device types, device options, and project device type mappings).
 
-Import uses expo-document-picker to select JSON files and creates a new template from the imported data.
+Import uses expo-document-picker to select JSON files. v2.0 imports replace the form in-place (deactivate + add) while preserving existing inspection data; legacy v1.0 files are normalized on import.
 
 Both operations are accessible from the Settings screen.
 
@@ -854,7 +854,7 @@ Delete triggers a confirmation dialog warning that all inspections within the pr
 
 Edit opens a modal with pre-filled form data.
 
-Project dashboard includes a CSV export button for project-wise inspection data export using expo-sharing.
+Project-wise inspection data export (Excel/CSV) lives on the Reports screen; the project dashboard links to Reports.
 
 ---
 

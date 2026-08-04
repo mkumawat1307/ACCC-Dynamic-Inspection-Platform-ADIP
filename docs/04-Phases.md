@@ -2,7 +2,7 @@
 
 # Development Phases
 
-Version: 1.9.0
+Version: 1.9.1
 
 Status: Active Development
 
@@ -194,7 +194,7 @@ Allow administrators to configure inspections without changing code.
 
 - Template Management
 - Section Management (list, create, edit, delete, reorder)
-- Field Management (list, create, edit, delete, reorder, 10 field types)
+- Field Management (list, create, edit, delete, reorder, 13 field types)
 - Dropdown Option Management (list, create, edit, delete, reorder)
 - Device Options Admin Panel (DB-driven camera/switch dropdown options)
 - Template Import/Export (JSON)
@@ -260,18 +260,19 @@ Generate professional inspection reports.
 - Reports screen with live banded table preview
 - Project-wide CSV export
 - Project-wide Excel export (xlsx)
-- Project-wide PDF export
-- Single-inspection export (PDF/Excel/CSV)
+- Project-wide PDF export (pending)
+- Single-inspection export (Excel/CSV)
 - Photo Report (pending)
 - Analytics Dashboard / Project / District Statistics (pending)
 
 ### Progress (v1.9.0)
 
 - ✅ Reports screen with live banded table preview
-- ✅ Project-wide export: CSV, Excel (xlsx), PDF
-- ✅ Single-inspection export from Inspection List (PDF/Excel/CSV)
+- ✅ Project-wide export: CSV, Excel (xlsx)
+- ✅ Single-inspection export from Inspection List (Excel/CSV)
 - ✅ Derived Latitude/Longitude + Status columns, Photos count
 - ✅ Unified export service (`src/utils/exportData.ts`)
+- ⏳ PDF report export
 - ⏳ Photo Report
 - ⏳ Analytics Dashboard / Project / District Statistics
 
@@ -281,7 +282,7 @@ Automated reporting system
 
 ### Status
 
-🟢 In Progress (CSV/Excel/PDF core done; Photo Report + analytics pending)
+🟢 In Progress (CSV/Excel core done; PDF + Photo Report + analytics pending)
 
 ---
 
@@ -377,7 +378,7 @@ Complete the Smart Dashboard with auto-refresh, SmartCardGenerator, and Dashboar
 
 ### Next Phase
 
-Reporting (Phase 5)
+Phase 5 completion — PDF report export, Photo Report, Analytics Dashboard
 
 ---
 
@@ -446,28 +447,35 @@ Status
 
 ## Version 1.9.1
 
-Smart Dashboard + Template Transfer v2.0 + Inspection List Block Search
+Smart Dashboard + Template Transfer v2.0 + Inspection List Block Search + Project Clone + SAF Photos
 
 Features:
 
 - SmartCardGenerator (auto-creates Total + Today cards from inspection form fields)
 - DashboardCardManager (Smart Add Card flow + Custom Card manual editor)
+- Dashboard settings screen (app/projects/dashboard-settings.tsx)
 - InspectionDataBus (pub/sub event bus)
 - useDashboardAutoRefresh hook
 - CardMode column on DashboardCards
 - Template Transfer v2.0 (replace-in-place import, v1.0 backward compatibility)
 - Inspection List Block search and display
 - Breakdown card type (group by any inspection form field)
+- Project Information card on dashboard
+- Project clone (cloneProjectDb atomic clone)
+- Duplicate Pole ID detection
+- Photo watermarking via WebView canvas + SAF storage (expo-file-system)
+- Device types admin + dashboard cards tables and repositories
+- Reports screen with Excel/CSV export
 
 Status
 
-✅ Released (Unreleased)
+✅ Released
 
 ---
 
 ## Version 1.9.0
 
-Reports & Export v2 — Reports screen, project-wide CSV/Excel/PDF export, single-inspection export, legacy export removal
+Reports & Export v2 — Reports screen, project-wide CSV/Excel export, single-inspection export, legacy export removal
 
 Status
 
@@ -577,7 +585,7 @@ Status
 
 ## Version 0.5
 
-Reporting (CSV/Excel/PDF core in v1.9.0; Photo Report + analytics pending)
+Reporting (CSV/Excel core in v1.9.0; PDF, Photo Report + analytics pending)
 
 Status
 

@@ -24,7 +24,7 @@ Patch → Bug fixes
 
 ---
 
-## [Unreleased]
+## [1.9.1] - 04-Aug-2026
 
 ### Added
 
@@ -59,12 +59,14 @@ Patch → Bug fixes
 - The "Add Card" dropdown picker now hides fields already bound to an existing card (SUM or breakdown) so the same field cannot be added twice for a project.
 - The project dashboard's "Project Information" card now shows the project name as its first field, and the card title renders bold.
 
+### Removed
+
+- PDF export (project-wide and single-inspection) is not currently implemented — removed in the v1.9.1 baseline and planned as a future enhancement. The unified export service (`src/utils/exportData.ts`) now supports only CSV and Excel (`ExportFormat = "csv" | "excel"`); the Reports screen and Inspection List offer Excel/CSV only.
+
 ### Fixed
 
 - `DashboardCardRepository.createCard` INSERT column/placeholder mismatch (14 columns / 15 placeholders) that real SQLite would reject — now 16 columns / 16 placeholders including `SectionLabel` and `AggregateField`.
 - Cloning a project no longer fails with `UNIQUE constraint failed: DashboardCards.ProjectID, DashboardCards.CardKey` and no longer leaves orphaned projects: the clone now runs in a transaction, wipes any stale/partial target DB before copying, re-binds `DashboardCards` to the cloned project (de-duplicated by `CardKey`), always releases the active project handle, and cleans up the partial folder + orphaned project row on failure so retrying the same name succeeds.
-
-### Fixed
 
 - Foreign-key guard for inspection value writes: `InspectionValueRepository.saveValue` and `InspectionRepository.saveFieldValue` now verify the parent `Inspections`/`InspectionFields` rows exist before inserting/updating `InspectionValues`. A write targeting a missing or stale inspection/field ID is skipped with a warning instead of raising a `FOREIGN KEY constraint failed` error (with `PRAGMA foreign_keys = ON`) or creating an orphaned row. Includes an isolation regression test proving a stale inspection ID from one project never writes into another project's DB.
 - Crash on opening pre-existing project databases (`no such table: DashboardCards`): `migrateProjectSchema()` early-returned when the legacy `remarks` section was already present, so the `DashboardCards` table creation and default-card seeding — which lived inside that early-returning block — never ran for existing project DBs. The `DashboardCards` migration now runs unconditionally on every project open (table creation is `CREATE TABLE IF NOT EXISTS` and `ensureDefaultCards` is idempotent), fixing all DBs created before the dynamic dashboard cards feature.
