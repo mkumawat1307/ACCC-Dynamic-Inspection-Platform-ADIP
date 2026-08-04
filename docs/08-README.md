@@ -84,7 +84,7 @@ The platform aims to:
 - Dynamic Fields
 - Configurable Validation
 - Display Order
-- 10 field types
+- 13 field types
 
 ---
 
@@ -93,7 +93,7 @@ The platform aims to:
 - Template Management (list, create, edit, delete)
 - Section Management (list, create, edit, delete, reorder)
 - Field Management (list, create, edit, delete, reorder)
-- 10 field types
+- 13 field types
 - Field Options / Dropdown Management
 - Section reorder, Field reorder, Option reorder
 - Section repeatable and visibility toggles
@@ -128,16 +128,16 @@ The platform aims to:
 
 - Create, Edit, Delete projects
 - Delete confirmation dialog with warning
-- Project export from the Reports screen (CSV/Excel/PDF)
+- Project export from the Reports screen (CSV/Excel)
 
 ---
 
 ## Reports & Export
 
 - Reports screen with live banded table preview
-- Project-wide export: CSV, Excel (xlsx), PDF
-- Banded headers (section groups) across all three formats
-- Single-inspection export (PDF/Excel/CSV) from the Inspection List
+- Project-wide export: CSV, Excel (xlsx)
+- Banded headers (section groups) across both formats
+- Single-inspection export (Excel/CSV) from the Inspection List
 - Derived Latitude/Longitude, Status, and Photos-count columns
 - Legacy dashboard/Home export removed — exports live in Reports
 
@@ -157,8 +157,7 @@ The platform aims to:
 - Local Storage
 - Metadata
 - Green Watermark (Pole ID, District, GPS, Timestamp)
-- Gallery Save
-- Download Folder Save
+- WebView canvas watermark burn-in + SAF gallery storage (DCIM/ACCC Inspection/<project>)
 - GPS Mandatory
 - Minimum 1 Photo Required
 
@@ -187,9 +186,11 @@ Future synchronization will upload inspection data to the cloud.
 | Camera | Expo Image Picker |
 | Location | Expo Location |
 | Gallery | Expo Media Library |
-| Watermark | react-native-view-shot |
+| File System | expo-file-system (SAF photo storage) |
+| Watermark | react-native-webview (canvas burn-in) |
 | Document Picker | expo-document-picker |
 | Sharing | expo-sharing |
+| Intent Launcher | expo-intent-launcher |
 | Spreadsheet (xlsx) | SheetJS (xlsx) |
 
 ---
@@ -248,7 +249,7 @@ assets/
 
 # Database
 
-Core tables (20+):
+Core tables (22 total: 4 global + 18 per project):
 
 ### Global DB (4 tables)
 
@@ -257,7 +258,7 @@ Core tables (20+):
 - Blocks
 - Divisions
 
-### Project DB (20+ tables per project)
+### Project DB (18 tables per project)
 
 - InspectionTemplates
 - InspectionSections
@@ -283,6 +284,7 @@ Core tables (20+):
 # New Files (v1.9.1)
 
 - app/projects/dashboard-settings.tsx — Dashboard card configuration screen
+- src/components/dashboard/DashboardActionCard.tsx — Tappable quick-action card
 - src/components/dashboard/DashboardCardManager.tsx — Smart Add Card flow + Custom Card manual editor
 - src/components/dashboard/DashboardCardGrid.tsx — Grid with auto-refresh, collapse, and stat rendering
 - src/components/dashboard/StatBreakdownCard.tsx — Breakdown rows card
@@ -296,12 +298,20 @@ Core tables (20+):
 - src/hooks/useDashboardAutoRefresh.ts — Auto-refresh hook
 - src/hooks/useSectionCollapse.ts — Persists collapsed section state
 - src/constants/ui.ts — Design tokens (SPACING, COLORS, RADIUS)
+- src/components/export/useExportFlow.ts — Export state machine (choose/export/success/error)
+- app/inspection/components/ExportDialogs.tsx — Export format chooser + progress/success/error dialogs
+- src/components/inspection/usePhotoCapture.ts — Camera + GPS capture pipeline
+- src/components/inspection/useWatermarkProcessor.ts — Serial WebView watermark queue + SAF save
+- src/components/inspection/photoUtils.ts — Photo naming/format helpers
+- src/utils/storageManager.ts — SAF photo storage helpers
+- src/utils/watermarkHtml.ts — Canvas watermark HTML builder
+- src/database/helpers/ProjectDBManager.ts — cloneProjectDb atomic project clone
 
 # New Files (v1.9.0)
 
 - app/reports/index.tsx — Reports screen (project export + live preview)
 - src/components/reports/ReportTablePreview.tsx — banded table preview
-- src/utils/exportData.ts — unified export service (CSV/Excel/PDF, project + single-inspection)
+- src/utils/exportData.ts — unified export service (CSV/Excel, project + single-inspection)
 
 # New Files (v1.5)
 
@@ -467,6 +477,7 @@ Current Phase
 
 Upcoming
 
+- PDF report export
 - Cloud Synchronization
 - AI Features
 - Analytics Dashboard
@@ -478,7 +489,7 @@ Upcoming
 
 Current Version
 
-1.9.1 (Unreleased)
+1.9.1
 
 Status
 

@@ -1,543 +1,404 @@
 # ACCC Dynamic Inspection Platform (ADIP)
 
-> Offline-First | Configuration-Driven | Android Inspection Platform
+Offline-first mobile application for infrastructure inspections. Built with React Native (Expo) and targeted at Android. Inspectors capture pole-level inspection data — device details, photos with GPS watermarks, and dropdown fields — entirely on-device, then export structured Excel/CSV reports.
 
-![Platform](https://img.shields.io/badge/Platform-Android-green)
-![Framework](https://img.shields.io/badge/Framework-React%20Native-blue)
-![Expo](https://img.shields.io/badge/Expo-SDK%2054-black)
-![TypeScript](https://img.shields.io/badge/Language-TypeScript-blue)
-![Database](https://img.shields.io/badge/Database-SQLite-orange)
-![Architecture](https://img.shields.io/badge/Architecture-Offline%20First-success)
-![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
-![Version](https://img.shields.io/badge/Version-1.9.1-blue)
+Version 1.9.1 · TypeScript · Expo SDK 54 · Android-first
+
+> This README documents the **current implementation**. It is kept in sync with the source of truth in [`docs/`](docs/).
 
 ---
 
-# Overview
+## Table of Contents
 
-The **ACCC Dynamic Inspection Platform (ADIP)** is a professional Android application developed to digitize field inspections for Smart City infrastructure.
-
-The platform is designed around an **Offline-First** and **Configuration-Driven** architecture, allowing inspectors to work without internet connectivity while supporting multiple inspection types through reusable templates.
-
-The initial implementation focuses on **Pole Inspection**, with the architecture prepared for future inspection modules such as:
-
-- Pole Inspection
-- NVR Inspection
-- UPS Inspection
-- Solar Inspection
-- OFC Inspection
-- Media Converter Inspection
-- Traffic Signal Inspection
-- Control Room Inspection
-
----
-
-# Project Goals
-
-The platform aims to:
-
-- Replace paper-based inspections.
-- Reduce manual data entry.
-- Improve inspection quality.
-- Capture GPS automatically.
-- Capture inspection photographs.
-- Support offline inspections.
-- Generate professional reports.
-- Support configurable inspection templates.
-- Enable admin-configurable device options without code changes.
-- Provide a configurable Smart Dashboard per project.
+1. [Project Overview](#1-project-overview)
+2. [Screenshots](#2-screenshots)
+3. [Features](#3-features)
+4. [Tech Stack](#4-tech-stack)
+5. [Installation](#5-installation)
+6. [Running the App](#6-running-the-app)
+7. [Folder Structure](#7-folder-structure)
+8. [Architecture](#8-architecture)
+9. [Dependencies](#9-dependencies)
+10. [Environment Variables](#10-environment-variables)
+11. [Configuration](#11-configuration)
+12. [Database](#12-database)
+13. [API](#13-api)
+14. [State Management](#14-state-management)
+15. [Navigation](#15-navigation)
+16. [Permissions](#16-permissions)
+17. [Assets](#17-assets)
+18. [Build Instructions](#18-build-instructions)
+19. [Troubleshooting](#19-troubleshooting)
+20. [License](#20-license)
 
 ---
 
-# Key Features
+## 1. Project Overview
 
-## Dashboard
+ADIP lets field inspectors work without a network connection. Each project is a self-contained SQLite database holding its own inspection template (sections, fields, options), device definitions, dashboard cards, and every inspection record. The app:
 
-- Smart Dashboard with configurable statistic cards
-- Smart Card Generator (auto-creates cards from inspection form fields)
-- Dashboard Card Manager (add/edit/delete/reorder/enable/disable cards)
-- Auto-refresh on data changes, app foreground, midnight, and 60s interval
-- Search
-- Recent inspections
-- Project overview
+- Creates projects from a **global template** (seeded once into each project DB).
+- Collects inspections through a **dynamic, template-driven form** — the form is rendered from DB configuration, not hardcoded.
+- Captures photos that are **watermarked** (pole ID, district/block, date, GPS) via a hidden WebView canvas and stored through Android's Storage Access Framework (SAF).
+- Tracks **devices** (cameras, switches, NVR, custom types) per inspection with their own dropdown options.
+- Exports **Excel/CSV reports** and **JSON templates** to the device file system for sharing.
+- Provides a **smart dashboard** per project: count cards, today's/total summaries, and breakdown cards auto-generated from form fields.
 
----
-
-## Inspection Engine
-
-- Create Inspection
-- Edit Inspection
-- Delete Inspection
-- Draft Support
-- Auto Save
-- Duplicate Pole Detection
-- Pole ID Lock (waits for DB before locking)
-- Section IsDefault Filtering (only default sections in inspections)
-- Block name shown on each inspection card
-- Search by Pole ID, Division, District, and Block
+The app is fully offline — there is no server, no network dependency, and no account system.
 
 ---
 
-## Dynamic Forms
+## 2. Screenshots
 
-- Inspection Templates
-- Dynamic Sections
-- Dynamic Fields
-- Configurable Validation
-- Display Order
-- 10 field types
+*Screenshots will be added here as they are captured.*
 
----
-
-## Administration Panel
-
-- Template Management (list, create, edit, delete)
-- Section Management (list, create, edit, delete, reorder)
-- Field Management (list, create, edit, delete, reorder)
-- 10 field types
-- Field Options / Dropdown Management
-- Section reorder, Field reorder, Option reorder
-- Section repeatable and visibility toggles
-- Section IsDefault toggle
-- Field required/visible/readOnly toggles
-- Device Types Management (create/edit/delete device types and their fields)
-- Device Options Management (Camera/Switch dropdown configuration)
-- Photos section locked (cannot be edited, reordered, or deleted)
-- Reset to Default button (restores original inspection form)
+| Home / Project list | Project dashboard | Inspection form | Reports |
+|:---:|:---:|:---:|:---:|
+| *Placeholder* | *Placeholder* | *Placeholder* | *Placeholder* |
 
 ---
 
-## Device Types (Admin Configurable)
+## 3. Features
 
-- Custom device type creation (Camera, Switch, and future types)
-- Per-type field management (text, dropdown, number, date, checkbox)
-- Dropdown options loaded from database (DeviceOptions table)
-- No code changes needed to add new device types
-- Per-project device type enable/disable toggle
-- Generic DeviceSection component renders any configured device type
+**Project management**
+- Create, edit, clone, and delete projects (each with its own SQLite DB).
+- Search and sort projects by name, district, client, and created date.
+- Per-project dashboard with smart statistic cards and quick actions.
 
----
+**Inspection collection**
+- Dynamic inspection form built from DB-configured sections and fields.
+- Field types rendered by the form engine: text, number, multiline, dropdown, project dropdown, date, date-auto, time, switch, checkbox, and GPS (13 types accepted on template import, including device/camera/calculation).
+- Auto-unlock and duplicate-pole detection (redirects to the existing inspection).
+- Draft auto-save with debounced persistence; only "Completed" inspections count as final.
+- Device detail editors (Camera, Switch, NVR, custom types) with per-type dropdown options.
 
-## Template Import/Export
+**Photo capture & watermarking**
+- Camera capture with GPS + timestamp watermark rendered on a hidden canvas (WebView).
+- Photos stored in `DCIM/ACCC Inspection/<Project>` via SAF.
+- Watermark queue with retry and per-photo status (pending / done / error).
 
-- Export templates to JSON format (v2.0: includes device types, device options, project device type mappings)
-- Import templates from JSON files
-- Replace-in-place import (preserves existing inspection data)
-- v1.0 backward compatibility
-- Uses expo-document-picker and expo-sharing
+**Dashboard**
+- Smart cards auto-generated from form fields (entity counts, dropdown breakdowns, today's/total summaries, date breakdowns).
+- Manage, reorder, enable/disable, and delete cards; per-project collapse state.
+- Auto-refresh on data change, app foreground, midnight rollover, and 60s poll.
 
----
+**Form/settings admin**
+- CRUD + reorder for sections, fields, and dropdown options.
+- Manage device types and their field definitions; toggle device inclusion in the form.
+- Reset-to-default (restores the seeded template, removes custom data).
+- Template export/import as JSON (v2 format, with legacy v1 support).
 
-## Project Management
-
-- Create, Edit, Delete, Clone projects
-- Delete confirmation dialog with warning
-- Project export from the Reports screen (CSV/Excel/PDF)
-
----
-
-## Reports & Export
-
-- Reports screen with live banded table preview
-- Project-wide export: CSV, Excel (xlsx), PDF
-- Banded headers (section groups) across all three formats
-- Single-inspection export (PDF/Excel/CSV) from the Inspection List
-- Derived Latitude/Longitude, Status, and Photos-count columns
-- Device rows included in reports
+**Reporting**
+- Excel (`.xlsx`) and CSV export of project inspection data.
+- Banded report layout (merged section headers), device rows split per inspection, autofilter + frozen header row.
+- Preview table in-app; open or share the generated file.
 
 ---
 
-## GPS
+## 4. Tech Stack
 
-- Latitude
-- Longitude
-- Timestamp
-
----
-
-## Photos
-
-- Camera Integration
-- Local Storage (in project folder)
-- Metadata
-- Green Watermark (Pole ID, District, GPS, Timestamp)
-- Watermark Burn-In (react-native-view-shot, on-screen)
-- Gallery Save
-- Download Folder Save
-- GPS Mandatory for Photo Capture
-- Minimum 1 Photo Required
+| Layer | Choice |
+|---|---|
+| Framework | Expo SDK 54 · React Native 0.81.5 · React 19.1.0 |
+| Language | TypeScript (strict mode) |
+| Routing | Expo Router 6 (file-based, typed routes) |
+| UI | React Native Paper 5 (Material 3) |
+| Local DB | expo-sqlite 16 (SQLite, sequential single-handle model) |
+| Photo storage | expo-file-system + Storage Access Framework (SAF) |
+| Icons | MaterialCommunityIcons (`@expo/vector-icons`) |
+| Charts/export | No chart lib; Excel generated via in-app XLSX builder (no server) |
+| Tests | Jest (jest-expo), 41 suites / 507 tests, per-file coverage thresholds |
+| Lint | ESLint via `expo lint` |
 
 ---
 
-## Offline First
+## 5. Installation
 
-The application works without internet.
-
-SQLite stores all operational data locally.
-
-Future synchronization will upload inspection data to the cloud.
-
----
-
-# Technology Stack
-
-| Layer | Technology |
-|---------|------------|
-| Framework | React Native |
-| Platform | Expo SDK 54 |
-| Language | TypeScript |
-| Database | SQLite (dual-database: global + per-project) |
-| Navigation | Expo Router |
-| State | React Context |
-| UI Library | React Native Paper |
-| Dropdown | React Native Element Dropdown |
-| Camera | Expo Image Picker |
-| Location | Expo Location |
-| Gallery | Expo Media Library |
-| Watermark | react-native-view-shot |
-| Document Picker | expo-document-picker |
-| Sharing | expo-sharing |
-| Spreadsheet (xlsx) | SheetJS (xlsx) |
-| PDF | expo-sharing (HTML-based) |
-| Build Tool | Gradle (Android) |
-| Package Manager | Yarn 1.22 |
-
----
-
-# Architecture
-
-The application follows a layered architecture.
-
-```
-UI
-↓
-Components
-↓
-Context
-↓
-Repositories
-↓
-SQLite (Global DB or Project DB)
-```
-
----
-
-# Folder Structure
-
-```
-frontend/
-├── app/                          # Expo Router screens
-│   ├── _layout.tsx               # Root layout with InspectionProvider
-│   ├── index.tsx                 # Home screen — project list
-│   ├── +html.tsx                 # HTML root wrapper
-│   ├── projects/
-│   │   ├── new.tsx               # New/Edit project
-│   │   └── dashboard.tsx         # Per-project dashboard
-│   ├── projects/
-│   │   └── dashboard-settings.tsx # Dashboard card configuration
-│   ├── inspection/
-│   │   ├── new.tsx               # New inspection form
-│   │   ├── edit.tsx              # Edit inspection
-│   │   └── index.tsx             # Inspection list
-│   ├── reports/
-│   │   └── index.tsx             # Reports screen
-│   └── settings/
-│       ├── index.tsx             # Settings main screen
-│       ├── sections.tsx          # Section management
-│       ├── fields.tsx            # Field management
-│       ├── options.tsx           # Dropdown option management
-│       ├── device-types.tsx      # Device type management
-│       └── device-options.tsx    # Device option management
-├── src/
-│   ├── components/               # Reusable UI components
-│   │   ├── inspection/           # Inspection form components
-│   │   ├── dashboard/            # Dashboard components
-│   │   ├── reports/              # Report components
-│   │   └── projects/             # Project components
-│   ├── context/
-│   │   └── InspectionContext.tsx # Shared inspection state
-│   ├── database/
-│   │   ├── db.ts                 # SQLite connection manager (sequential open/close)
-│   │   ├── schema.ts             # DDL — global + project schema + migrations
-│   │   ├── seed.ts               # Seed orchestrator
-│   │   ├── DatabaseService.ts    # Startup initialization
-│   │   ├── tables/               # CREATE TABLE definitions
-│   │   ├── seeds/                # Idempotent seed data
-│   │   ├── repositories/         # Repository Pattern (20+ repos)
-│   │   └── helpers/
-│   │       └── ProjectDBManager.ts # Create/open/delete/clone project DBs
-│   ├── hooks/                    # Reusable React hooks
-│   ├── models/                   # TypeScript interfaces (8 models)
-│   ├── utils/                    # Utility functions
-│   └── constants/                # UI constants
-├── assets/                       # Images, fonts
-├── android/                      # Android native project
-├── docs/                         # Project documentation
-├── __mocks__/                    # Jest mocks
-├── package.json
-├── tsconfig.json
-├── app.json
-└── jest.config.js
-```
-
----
-
-# Database
-
-## Global DB (`accc_global.db`) — 4 tables
-
-- Projects
-- Divisions
-- Districts
-- Blocks
-
-## Project DB (`Projects/<ProjectName>/inspection.db`) — 20+ tables
-
-- InspectionTemplates
-- InspectionSections (with IsDefault flag)
-- InspectionFields
-- FieldOptions
-- Inspections
-- InspectionValues
-- RepeatableGroups
-- RepeatableGroupFields
-- RepeatableRecords
-- RepeatableValues
-- Cameras
-- Switches
-- Photos
-- DeviceOptions
-- DeviceFieldDefinitions
-- DeviceRecords
-- ProjectDeviceTypes
-- DashboardCards
-
----
-
-# New Files (v1.9.1)
-
-- app/projects/dashboard-settings.tsx — Dashboard card configuration screen
-- src/components/dashboard/DashboardCardManager.tsx — Smart Add Card flow
-- src/components/dashboard/DashboardCardGrid.tsx — Grid with auto-refresh
-- src/components/dashboard/StatBreakdownCard.tsx — Breakdown rows card
-- src/database/repositories/SmartCardGenerator.ts — Auto-creates cards from form fields
-- src/database/repositories/StatisticCountService.ts — Generic count engine
-- src/database/repositories/DashboardService.ts — Composes card counts
-- src/database/repositories/DashboardCardRepository.ts — Dashboard card CRUD
-- src/database/tables/dashboard-cards.table.ts — DashboardCards table
-- src/database/seeds/dashboard-cards.seed.ts — Default cards
-- src/utils/InspectionDataBus.ts — Pub/sub event bus
-- src/hooks/useDashboardAutoRefresh.ts — Auto-refresh hook
-- src/hooks/useSectionCollapse.ts — Collapsed section state persistence
-- src/constants/ui.ts — Design tokens
-
-# New Files (v1.9.0)
-
-- app/reports/index.tsx — Reports screen
-- src/components/reports/ReportTablePreview.tsx — banded table preview
-- src/utils/exportData.ts — unified export service
-
-# New Files (v1.5)
-
-- app/settings/device-options.tsx — Device Options admin screen
-- src/database/repositories/DeviceOptionsRepository.ts — DeviceOptions CRUD
-- src/database/tables/device-options.table.ts — DeviceOptions table
-- src/database/seeds/device-options.seed.ts — DeviceOptions seed data
-- src/utils/templateData.ts — Template JSON import/export utilities
-
----
-
-# Inspection Workflow
-
-```
-Dashboard
-↓
-Project
-↓
-New Inspection
-↓
-General Information
-↓
-Pole Structure
-↓
-Junction Box
-↓
-Earthing
-↓
-Meter
-↓
-Connectivity
-↓
-Camera / Switch / Custom Devices
-↓
-Remarks
-↓
-Photos
-↓
-Complete
-```
-
-Only sections marked with IsDefault = 1 appear in the inspection form.
-
----
-
-# Documentation
-
-The project documentation is located in the **docs/** folder.
-
-| Document | Purpose |
-|----------|---------|
-| 01-PRD.md | Product Requirements |
-| 02-Architecture.md | Technical Architecture |
-| 03-Rules.md | Development Rules |
-| 04-Phases.md | Roadmap |
-| 05-Design.md | UI Design System |
-| 06-Memory.md | AI Project Memory |
-| 07-Changelog.md | Release History |
-| 08-README.md | Project Guide |
-| 09-Decisions.md | Architecture Decisions |
-| 10-DATABASE_ARCHITECTURE.md | Database Architecture |
-
----
-
-# Installation
-
-## Prerequisites
-
-- Node.js
-- Yarn 1.22
-- Expo CLI
-- Android Studio
-- Git
-
----
-
-## Clone Repository
+Prerequisites: Node.js (LTS), Yarn 1.x, and either the Expo Go app or an Android emulator/device.
 
 ```bash
-git clone <repository-url>
-cd "ACCC inspection"
-```
+# 1. Clone / enter the repo
+cd "ACCC inspection/frontend"
 
----
-
-## Install Dependencies
-
-```bash
+# 2. Install dependencies (uses yarn 1.22; preinstall guard blocks unsafe installs)
 yarn install
 ```
 
+> **Package manager**: `package.json` pins the `packageManager`; `.npmrc` sets `save-exact=true`. Do not use `npm install` in this repo.
+
 ---
 
-## Start Development Server
+## 6. Running the App
 
 ```bash
+cd frontend
+yarn start              # Start the Expo dev server
+yarn android            # Run on Android device/emulator (or scan QR in Expo Go)
+yarn ios                # Run on iOS simulator (Expo Go / dev build)
+yarn web                # Run the web build
+```
+
+Health checks:
+
+```bash
+yarn lint               # ESLint (expo lint)
+yarn test               # Jest (224+ tests)
+npx tsc --noEmit        # TypeScript typecheck
+```
+
+> Note: the app is designed and tested for **Android**. iOS and web builds exist but are secondary targets.
+
+---
+
+## 7. Folder Structure
+
+```
+frontend/
+├── app/                          # Expo Router routes (file-based navigation)
+│   ├── _layout.tsx               # Root layout: PaperProvider → InspectionProvider → Stack
+│   ├── +html.tsx                 # Web-only HTML shell (scroll reset)
+│   ├── index.tsx                 # Home: project list / search / sort / CRUD
+│   ├── components/               # Route-embedded components (ProjectDialogs)
+│   ├── inspection/               # Inspection list, new/edit form, export dialogs
+│   ├── projects/                 # New project, dashboard, dashboard settings
+│   ├── reports/                  # Reports screen (Excel/CSV export + preview)
+│   └── settings/                 # Form settings: sections, fields, options, device types
+│       └── components/           # DeviceTypeBody, template import/export dialogs, etc.
+├── src/
+│   ├── components/               # Shared UI components
+│   │   ├── dashboard/            # DashboardCardGrid, StatBreakdownCard, etc.
+│   │   ├── export/               # useExportFlow state machine
+│   │   ├── inspection/           # Form renderers, photo capture/watermark, camera/device sections
+│   │   ├── reports/              # ReportTablePreview
+│   │   ├── template/             # useTemplateFlow state machine
+│   │   └── StatCard.tsx
+│   ├── constants/                # UI tokens (SPACING, COLORS, RADIUS)
+│   ├── context/                  # InspectionContext (project + inspection state)
+│   ├── database/                 # SQLite connection manager, schema, seeds
+│   │   ├── db.ts                 # Sequential open/close connection manager (ADR-014)
+│   │   ├── schema.ts             # Global + project DDL + migrations
+│   │   ├── seed.ts               # Seed orchestrator
+│   │   ├── helpers/              # ProjectDBManager (create/open/clone/delete project DBs)
+│   │   ├── repositories/         # All data access (repository pattern)
+│   │   └── seeds/                # Seed data (template sections/fields, dashboard cards, device types)
+│   ├── hooks/                    # useIconFonts, useDashboardAutoRefresh, useSectionCollapse
+│   ├── models/                   # TypeScript interfaces (Project, Photo, Camera, DashboardCard…)
+│   └── utils/                    # logger, date, location, storageManager, watermarkHtml, exportData, templateData
+├── __mocks__/                    # Jest mocks (expo-sqlite in-memory, expo-file-system)
+├── docs/                         # PRD, Architecture, Decisions (ADRs), Rules, Changelog, Database
+└── package.json
+```
+
+---
+
+## 8. Architecture
+
+ADIP uses a **repository pattern** over a **sequential single-handle SQLite connection**.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                         UI (app/**)                      │
+│   Home → Dashboard → Inspection form → Reports/Settings │
+└───────────────▲─────────────────────┬────────────────────┘
+                │                     │
+                │         src/components + hooks (state machines)
+                │                     │
+┌───────────────┴─────────────────────▼────────────────────┐
+│                    Repository layer                      │
+│   ProjectRepository · InspectionRepository ·             │
+│   DashboardService · StatisticCountService ·             │
+│   FieldRepository · DeviceOptionsRepository · …          │
+└───────────────▲─────────────────────┬────────────────────┘
+                │                     │
+                │   src/database/db.ts (single handle,
+                │   sequential open/close)                 │
+┌───────────────┴─────────────────────▼────────────────────┐
+│          SQLite (accc_global.db + per-project DB)        │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Key rules (see `docs/09-Decisions.md`, ADR-014):**
+
+- **Sequential open/close DB model.** expo-sqlite on Android has confirmed bugs with multiple simultaneous handles and close/reopen ordering. `src/database/db.ts` therefore keeps **exactly one** `SQLiteDatabase` handle at a time, switching via `ensureGlobalDb()` / `ensureProjectDb()` with path sanitization.
+- **Never call `getGlobalDatabase()` during the inspection flow.** It closes the project DB and reopens the global DB, corrupting the native handle. Project data is passed via navigation params + `InspectionContext` instead.
+- **Repository pattern.** All DB access goes through `src/database/repositories/`; the UI never queries SQLite directly.
+- **Per-project isolation.** Every project DB is fully standalone (template + seed scoped to that project). No cross-DB joins; tables are per file. Custom/admin data (`IsDefault=0` sections, device types) is created per project, never seeded globally.
+- **Migrations.** Schema additions ship as `migrateProjectSchema()` steps wired into `ProjectDBManager.openProjectDb`, so existing project DBs are upgraded in place.
+
+**Data flow example — inspection form:** `app/inspection/new.tsx` → `InspectionRepository.getSections()` → `SectionRenderer`/`GeneralInformation` → `InspectionValueRepository` (debounced saves) → `InspectionDataBus` event → dashboard auto-refresh.
+
+---
+
+## 9. Dependencies
+
+Core runtime dependencies (from `package.json`):
+
+| Package | Purpose |
+|---|---|
+| `expo` (SDK 54) | React Native / Expo runtime |
+| `expo-router` (~6.0.24) | File-based routing with typed routes |
+| `expo-sqlite` (~16.0.10) | Local SQLite storage |
+| `expo-file-system` | File read/write for exports & photos |
+| `expo-image-picker` | Camera capture for inspection photos |
+| `expo-media-library` | Media library permissions |
+| `expo-location` | GPS capture for watermarks |
+| `expo-document-picker` | Template import file picking |
+| `expo-sharing` | Share exported files |
+| `expo-intent-launcher` | Open exported files on Android |
+| `react-native-paper` (5.15.3) | Material 3 UI components |
+| `@react-native-async-storage/async-storage` | Key/value persistence (collapse state, SAF URIs) |
+| `react-native-element-dropdown` | Searchable dropdowns in forms |
+| `react-native-paper-dropdown` | Paper-styled dropdowns |
+| `react-native-webview` | Hidden watermark canvas renderer |
+| `@react-navigation/native` (7) | Navigation primitives used by Expo Router |
+| `@expo/vector-icons` | MaterialCommunityIcons |
+
+Dev/test: `jest-expo`, `jest`, `@types/*`, `eslint` (+ `eslint-config-expo`), `typescript`.
+
+---
+
+## 10. Environment Variables
+
+There are **no runtime environment variables** — the app is fully offline and self-contained. All configuration (templates, sections, fields, dashboard cards) lives in SQLite seed data.
+
+For development, standard Expo environment variables apply if you need them (e.g., `EXPO_PUBLIC_*`), but no `EXPO_PUBLIC_*` values are referenced by the current implementation.
+
+---
+
+## 11. Configuration
+
+- **`app.json`** — app metadata, name, scheme, splash (logo + background), Android package `com.accc.dynamicinspection`, iOS info-plist strings (location/camera/photo-library usage descriptions), and the `expo-router` / `expo-splash-screen` / `expo-location` plugins. `experiments.typedRoutes: true` enables type-safe route strings.
+- **`tsconfig.json`** — strict TypeScript; `@/*` path alias maps to `frontend/*`.
+- **`jest.config.js`** — jest-expo preset; `@/` alias; per-glob coverage thresholds; `__mocks__/` in-memory SQLite + file-system mocks.
+- **Seed data** (per project DB) — default template (sections, fields, options), device types + definitions, and default dashboard cards. These are the app's "configuration" and are edited via the in-app Settings screens.
+
+---
+
+## 12. Database
+
+Dual SQLite databases:
+
+| Database | Location | Contents |
+|---|---|---|
+| Global | `SQLite/accc_global.db` | `Projects`, `Divisions`, `Districts` |
+| Per-project | `SQLite/Projects/<Name>/inspection.db` | Full inspection template + data (18 tables) |
+
+**22 tables total: 4 global + 18 per project.** Per-project tables include `Templates`, `TemplateSections`, `TemplateFields`, `FieldOptions`, `Inspections`, `InspectionValues`, `Photos`, `Cameras`, `Switches`, `DeviceRecords`, `DeviceFieldDefinitions`, `DeviceOptions`, `DeviceTypes`, `ProjectDeviceTypes`, `DashboardCards`, `DashboardCardOrder`, `ActivityLogs`, and more.
+
+Key entities:
+- `Projects` (global) → one row per project; `DBPath`/`SAFPath` point to the project DB and photo folder.
+- `Templates` → `TemplateSections` → `TemplateFields` (+ `FieldOptions`) drive the dynamic form.
+- `DashboardCards` → per-project smart cards; `IsDefault` distinguishes seeded vs custom cards.
+- `DeviceTypes`/`DeviceFieldDefinitions`/`DeviceOptions`/`DeviceRecords` → device-type config and per-inspection device data.
+- `Inspections` + `InspectionValues` → inspection rows and key/value answers.
+- `Photos` → captured photos (filename, file path, GPS, captured-at).
+
+See **[`docs/10-DATABASE_ARCHITECTURE.md`](docs/10-DATABASE_ARCHITECTURE.md)** for the full schema, tables, and relationship details.
+
+---
+
+## 13. API
+
+There is **no external API** — ADIP is fully offline. The app's "API surface" is the repository layer + two in-app export formats:
+
+| Format | Producer | Shape |
+|---|---|---|
+| Excel report (`.xlsx`) | `src/utils/exportData.ts` | Banded worksheet: merged section headers, device rows, autofilter, frozen header |
+| CSV report (`.csv`) | `src/utils/exportData.ts` | Flat escaped CSV of the same table |
+| Template export (`.json`) | `src/utils/templateData.ts` | v2 JSON: templates, sections, fields, options, device types/options, project device types |
+
+Excel generation uses an in-app XLSX builder (binary structure + compression, no spreadsheet library dependency).
+
+---
+
+## 14. State Management
+
+- **`InspectionContext`** (`src/context/InspectionContext.tsx`) — the only global context. Holds the active `project`, `openProject`/`closeProject`/`removeProject`, plus the current `inspectionDate`, `inspectionId`, and `poleId` (which drives form lock state). Consumed via the `useInspection()` hook; throws outside the provider.
+- **Local `useState`** in screens for form/UI state.
+- **`InspectionDataBus`** (`src/utils/InspectionDataBus.tsx`) — lightweight pub/sub so the dashboard auto-refreshes when inspection data changes.
+- **`useDashboardAutoRefresh`** — returns an incrementing reload key on data-change events, app foreground, midnight, and a 60s poll.
+- **`useExportFlow` / `useTemplateFlow`** — typed state machines (`idle → choosing/exporting → success/error`) for export/import flows.
+
+No Redux, Zustand, or other external state library.
+
+---
+
+## 15. Navigation
+
+- **Expo Router** file-based routing with **typed routes** enabled. Exactly **one layout** (the root `app/_layout.tsx`) with `headerShown: false`; every screen renders its own React Native Paper `Appbar.Header`. There are no nested layouts.
+- Navigation is **imperative only** (no `Link` components): `useRouter()`, the global `router`, and `router.replace()` (used to redirect to an existing inspection on duplicate Pole ID).
+- Structured data (e.g., a `Project`) is passed as a JSON string in route params (`projectData`) and parsed on the receiving screen.
+- Android hardware back is intercepted only in the inspection form (`app/inspection/new.tsx`) to run validation before exiting.
+
+Route table — see [`docs/02-Architecture.md`](docs/02-Architecture.md) (navigation section) or `.superpowers/docmap-app-layer.md`.
+
+---
+
+## 16. Permissions
+
+Declared in `app.json` (Android manifest / iOS plist) and requested at runtime:
+
+| Permission | Why | When |
+|---|---|---|
+| `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` | GPS watermark on captured photos | On photo capture |
+| `CAMERA` | Capture inspection photos | On photo capture |
+| `WRITE_EXTERNAL_STORAGE` (SAF tree) | Save photos to `DCIM/ACCC Inspection/<Project>` | On first photo save (SAF directory picker) |
+| iOS `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSLocationWhenInUseUsageDescription` | Equivalent iOS usage strings | As above (iOS secondary target) |
+
+---
+
+## 17. Assets
+
+- Splash screen image: `assets/abhay-logo.png` (shown by the `expo-splash-screen` plugin).
+- Icons: MaterialCommunityIcons via `@expo/vector-icons`; icon fonts are lazily loaded under Expo Go (`useIconFonts`).
+- App icon/adaptive icon: Expo defaults in `app.json` (`assets/icon.png` etc.).
+
+---
+
+## 18. Build Instructions
+
+```bash
+cd frontend
+
+# Development build / Expo Go
 yarn start
+
+# Android production APK (EAS)
+npx eas-cli build --platform android --profile production
+
+# Or a local APK (if you use Expo prebuild)
+npx expo prebuild --platform android
+cd android
+./gradlew assembleRelease
 ```
 
----
-
-## Run Android
-
-```bash
-yarn android
-```
+The project is set up for **EAS builds** with the Expo SDK 54 toolchain. The generated Android app id is `com.accc.dynamicinspection`.
 
 ---
 
-# Development Rules
+## 19. Troubleshooting
 
-- TypeScript only.
-- SQLite only.
-- Repository Pattern.
-- React Context.
-- Offline First.
-- Reusable Components.
-- Configuration-Driven Forms.
-- Auto Save.
-- No SQL inside UI components.
-- Sequential SQLite connection model (single handle).
-- Per-project database isolation.
+**Database handle / file-mixing issues (Android)**
+- Symptom: after opening a project, the app reads from the wrong database or a query fails with "no such table".
+- Cause: expo-sqlite on Android does not safely support two simultaneous handles or close+reopen ordering (ADR-014).
+- Fix: ensure all DB access flows through `src/database/db.ts` (`ensureGlobalDb()` / `ensureProjectDb()`). Never call `getGlobalDatabase()` while a project is open (especially during the inspection flow).
 
-Refer to **03-Rules.md** for complete standards.
+**Watermark failures**
+- Symptom: photos stuck in "Watermarking…" or an error chip.
+- Check: `DCIM/ACCC Inspection` directory permission (SAF tree grant), available storage, and the hidden WebView's `postMessage` handler (`watermarkHtml.ts`). Jobs retry once.
 
----
+**Excel export empty**
+- Symptom: export returns "no rows".
+- Cause: `createExportFile` returns `null` when the project has no inspection data. Add at least one inspection.
 
-# Roadmap
+**Tests / lint**
+- Run `yarn test`, `yarn lint`, and `npx tsc --noEmit`. Coverage thresholds are enforced per-directory in `jest.config.js`.
 
-Current Phase
-
-- Administration Panel Complete (v1.4)
-- Device Options DB-Driven + Template Import/Export + Project Management (v1.5)
-- Per-Project Database Isolation (v1.8)
-- App Rename + Bug Fixes (v1.8.1)
-- Reports & Export v2 (v1.9.0)
-- Smart Dashboard (v1.9.1)
-
-Upcoming
-
-- Cloud Synchronization
-- AI Features
-- Analytics Dashboard
-- Photo Reports
+**Reinstalling mocks**
+- `__mocks__/expo-sqlite.ts` and `__mocks__/expo-file-system.ts` are in-memory test doubles; keep their path-aware behavior in sync if you extend tests (see `docs/03-Rules.md`).
 
 ---
 
-# Version
+## 20. License
 
-Current Version
-
-1.9.1 (Unreleased)
-
-Status
-
-Active Development
-
----
-
-# Contributing
-
-Before contributing:
-
-1. Read **03-Rules.md**
-2. Read **02-Architecture.md**
-3. Read **06-Memory.md**
-
-Follow the documented coding standards.
-
----
-
-# License
-
-Private Project
-
-All rights reserved.
-
----
-
-# Author
-
-**Manish Kumawat**
-
-Senior Consultant
-
-Cyber Risk Advisory
-
----
-
-# Acknowledgements
-
-Built using:
-
-- React Native
-- Expo
-- TypeScript
-- SQLite
-
-Designed for Smart City infrastructure inspections.
-
----
-
-# Future Vision
-
-The long-term vision is to evolve ADIP into a configurable inspection platform capable of supporting multiple infrastructure domains through reusable templates, dynamic forms, offline data collection, cloud synchronization, and AI-assisted inspections.
+Private/internal project. All rights reserved. Contact the project owner before redistribution.

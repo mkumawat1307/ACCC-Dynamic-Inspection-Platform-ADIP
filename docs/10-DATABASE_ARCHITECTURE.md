@@ -2,7 +2,12 @@
 
 ## Overview
 
-The app uses a **per-project database isolation** model with a **sequential open/close** connection strategy. Each project gets its own SQLite database file, photos folder, and exports folder. The global database stores the project list and reference data only.
+The app uses a **per-project database isolation** model with a **sequential open/close** connection strategy. Each project gets its own SQLite database file. The global database stores the project list and reference data only. **22 tables total: 4 global + 18 per project.**
+
+This architecture was chosen to avoid confirmed expo-sqlite v16 Android bugs:
+1. Dual connections cause the second handle to point at the first file.
+2. Close+reopen corrupts the native handle before the next open completes.
+3. `ATTACH DATABASE` DDL fails with `near ".": syntax error` on Android.
 
 This architecture was chosen to avoid confirmed expo-sqlite v16 Android bugs:
 1. Dual connections cause the second handle to point at the first file.
@@ -17,9 +22,9 @@ documentDirectory/
   Projects/
     <ProjectName>/
       inspection.db           # Project DB: template, sections, fields, inspections, photos, devices
-      photos/                 # Project photos
-      Download/Inspection/    # Watermarked copies
 ```
+
+Photos are stored separately via the Storage Access Framework under `DCIM/ACCC Inspection/<ProjectName>/` (see `src/utils/storageManager.ts`); the SAF tree URI is cached in AsyncStorage per device and the project folder is created on demand.
 
 ## Global Database (`accc_global.db`)
 
@@ -35,14 +40,14 @@ Each project DB contains a full, self-contained schema:
 
 ### Template Engine
 - **InspectionTemplates** — single default template record (IsDefault=1)
-- **InspectionSections** — section definitions (10 default sections)
+- **InspectionSections** — section definitions (11 default sections, IsDefault=1)
 - **InspectionFields** — field definitions within sections
 - **FieldOptions** — dropdown options for fields
 - **RepeatableGroups** — repeatable section groups (Camera, Switch)
 - **RepeatableGroupFields** — fields within repeatable groups
 
 ### Inspection Data
-- **Inspections** — inspection records (one per pole)
+- **Inspections** — inspection records (one per inspection/pole)
 - **InspectionValues** — dynamic field values
 - **RepeatableRecords** — repeatable group instances
 - **RepeatableValues** — repeatable field values
@@ -50,16 +55,16 @@ Each project DB contains a full, self-contained schema:
 ### Device Data
 - **DeviceFieldDefinitions** — custom device type field definitions
 - **DeviceOptions** — dropdown options for device fields
-- **DeviceRecords** — device instance data per inspection
+- **DeviceRecords** — generic device instance data per inspection (JSON `DeviceData`)
 - **ProjectDeviceTypes** — enabled device types for this project
 
 ### Media
-- **Cameras** — camera device records (legacy)
-- **Switches** — switch device records (legacy)
-- **Photos** — inspection photos
+- **Cameras** — camera device records
+- **Switches** — switch device records
+- **Photos** — inspection photos (watermarked, stored via SAF)
 
 ### Dashboard
-- **DashboardCards** — configurable dashboard stat cards per project
+- **DashboardCards** — configurable dashboard stat cards per project (`UNIQUE(ProjectID, CardKey)`)
 
 ## Connection Model
 
@@ -142,7 +147,7 @@ createSchema(): Promise<void>
 ### `seed.ts`
 
 ```typescript
-// Seeds global DB (Divisions + Districts only)
+// Seeds global DB (7 Divisions + 41 Districts only)
 seedGlobalDatabase(): Promise<void>
 
 // Seeds project DB (template, sections, fields, options, devices, dashboard cards)
@@ -187,9 +192,10 @@ seedDatabase(): Promise<void>
    - Reads all settings tables (templates, sections, fields, options, device data, dashboard cards)
    - Reads all inspection data
    - Creates new project DB with full schema
-   - Re-inserts settings data (de-duplicating dashboard cards by CardKey)
-   - Re-inserts inspection data with remapped IDs
+   - Re-inserts settings data **atomically inside `withTransactionAsync`** (de-duplicating dashboard cards by CardKey, keeping the lowest CardID)
+   - Re-inserts inspection data with remapped IDs (InspectionID, RecordID)
    - Updates DashboardCards ProjectID to new ID
+   - Cleans up (rolls back) on failure
 4. Opens the cloned project for editing
 
 ## Isolation Model
@@ -209,7 +215,7 @@ seedDatabase(): Promise<void>
 | `src/database/seed.ts` | Split into `seedGlobalDatabase()` + `seedProjectDatabase()` |
 | `src/database/DatabaseService.ts` | Only init global DB at startup |
 | `src/database/index.ts` | Export new functions |
-| `src/database/helpers/ProjectDBManager.ts` | Create/open/delete/clone project DBs |
+| `src/database/helpers/ProjectDBManager.ts` | Create/open/delete/clone project DBs (atomic `cloneProjectDb`) |
 | `src/database/repositories/ProjectRepository.ts` | All queries use `getGlobalDatabase()` |
 | `src/database/repositories/DistrictRepository.ts` | Queries global DB |
 | `src/context/InspectionContext.tsx` | `openProject()`, `closeProject()`, `removeProject()` |
@@ -218,4 +224,4 @@ seedDatabase(): Promise<void>
 | `app/inspection/new.tsx` | Read project from `projectData` navigation param, never call `getGlobalDatabase()` |
 | `app/projects/dashboard.tsx` | Read project from `projectData` navigation param |
 | `src/components/inspection/GeneralInformation.tsx` | Removed `getProjectById()` fallback |
-| `src/components/inspection/PhotoSection.tsx` | Photos stored in project folder |
+| `src/components/inspection/PhotoSection.tsx` | Photos watermarked and stored via SAF (`storageManager.ts`) |

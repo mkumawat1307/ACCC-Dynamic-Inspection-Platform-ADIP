@@ -2,7 +2,9 @@
 
 # Architecture Decision Records (ADR)
 
-Version: 1.4
+Version: 1.5
+
+Last Updated: 2026-08-04
 
 Status: Active
 
@@ -362,6 +364,8 @@ Future metadata
 
 - OCR
 - AI Classification
+
+Update (v1.9.1): the watermark burn-in now uses a hidden WebView `<canvas>` (`src/utils/watermarkHtml.ts` + `useWatermarkProcessor`) instead of react-native-view-shot, and watermarked photos are saved to the gallery via the Storage Access Framework (`src/utils/storageManager.ts`) rather than the app Download folder. Photos are processed through a serial queue with one retry per job.
 
 ---
 
@@ -792,6 +796,8 @@ Negative:
 - Live template queries mean export depends on the project DB being open (satisfied via navigation params + context per ADR-014).
 - PDF path reads inspection data twice for single-inspection export (guard + form re-read) — negligible offline.
 
+Update (v1.9.1): PDF export was removed after the initial implementation — the export service now supports CSV and Excel only (`ExportFormat = "csv" | "excel"`), and the Reports screen / Inspection List offer Excel/CSV. Decision point 6 is amended: `getProjectExportMeta` (used for file-naming metadata in `createExportFile`) is the single UI-facing `getGlobalDatabase()` call in the export flow, invoked only outside the mid-inspection DB session (ADR-014).
+
 ---
 
 # ADR-016
@@ -912,7 +918,7 @@ Replace hardcoded dashboard stats with a configurable card engine backed by a pe
 
 1. **`DashboardCards` table** — stores per-project card config with `CardMode` (entitycount/dropdown/sum/fieldcount/datebreakdown), `BreakdownField`, `AggregateField`, `SectionLabel`, `DeviceType`, `FilterJson`.
 2. **SmartCardGenerator** — discovers active form fields, classifies each field type into a card kind, and auto-creates Total + Today cards.
-3. **DashboardCardManager** — UI for adding/editing/deleting/reordering/enabling/disabling cards. Smart cards are non-editable (picker-only). Custom cards use a manual editor.
+3. **DashboardCardManager** — UI for adding/deleting/reordering/enabling/disabling cards. Cards are added via the field picker (smart cards) and are non-editable — they are deleted and re-added rather than edited; the manual Custom Card editor was removed.
 4. **InspectionDataBus** — lightweight pub/sub that emits `inspectionsChanged` events with `projectId` payload after every repository mutation.
 5. **useDashboardAutoRefresh** — listens to bus (project-filtered), AppState foreground, midnight rollover, and 60s focused poll. Returns a reload key consumed by `DashboardCardGrid`.
 6. **StatisticCountService** — generic parameterized `SELECT COUNT(*)` engine with entity + counter-type registries.
@@ -1011,4 +1017,49 @@ Positive:
 Negative:
 - v1.0 files lose device data on import by design (they never carried it).
 - The two-step pick + parse + confirm + apply flow adds a confirmation dialog before any DB write.
+
+---
+
+# ADR-021
+
+## Title
+
+Atomic Project Clone — Transactional `cloneProjectDb`
+
+### Status
+
+Accepted
+
+### Date
+
+August 2026
+
+### Context
+
+Cloning a project (Home screen Clone dialog) used `ProjectRepository.cloneProject` (inserts a `Projects` row) followed by `ProjectDBManager.cloneProjectDb`. The clone originally failed with `UNIQUE constraint failed: DashboardCards.ProjectID, DashboardCards.CardKey` and could leave orphaned state — a partial target folder plus a `Projects` row pointing at a broken DB — so retrying the same clone name failed.
+
+### Decision
+
+`cloneProjectDb` performs a transactional, atomic clone:
+
+1. Runs entirely inside one `withTransactionAsync`.
+2. Reads the source DB with the active project handle open (settings tables, `Inspections`, and all inspection-data tables), always releasing the handle in `finally`.
+3. Opens the target DB, creates the schema, wipes any stale/partial clone tables, de-duplicates `DashboardCards` by `CardKey` (keeps lowest `CardID`), re-binds `DashboardCards.ProjectID` to the new project, and re-inserts `Inspections` plus every data table with `InspectionID` (and `RecordID` for `RepeatableValues`) remapped.
+4. On failure, cleans up the partial target folder and the orphaned `Projects` row so retrying the same name succeeds.
+
+### Alternatives
+
+- **Raw file copy of `inspection.db`** — rejected: `DashboardCards` must be re-bound to the new `ProjectID` and child rows remapped; a straight copy violates `UNIQUE(ProjectID, CardKey)` and carries stale identity.
+- **Insert-only clone without wiping the target** — rejected: stale tables from a previous failed attempt blocked retries.
+
+### Consequences
+
+Positive:
+- Cloning is idempotent and retryable — no orphaned projects or partial folders.
+- All dashboard cards and inspection data are re-bound to the cloned project.
+- Per-project isolation holds: the clone writes only to the new project's DB.
+
+Negative:
+- `cloneProjectDb` is the most complex helper in `ProjectDBManager` (ID remapping across 10+ tables).
+- The clone must open source and target DBs sequentially per ADR-014.
 

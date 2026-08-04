@@ -2,7 +2,9 @@
 
 # AI Development Rules
 
-Version: 2.5
+Version: 2.6
+
+Last Updated: 2026-08-04
 
 Status: Active
 
@@ -127,6 +129,8 @@ Never mix responsibilities.
 
 SQLite is the only local database.
 
+The schema has 22 tables: 4 in the global DB (Divisions, Districts, Blocks, Projects) + 18 per-project.
+
 Rules
 
 Never execute SQL inside screens.
@@ -135,11 +139,21 @@ Never execute SQL inside components.
 
 Only repositories may access SQLite.
 
+Known exceptions: a small set of settings/admin screens (`app/settings/index.tsx`, `app/settings/sections.tsx`, `app/settings/device-types.tsx`, `app/settings/device-options.tsx`) and `app/inspection/new.tsx` run scoped raw SQL via `getDatabase()` for config/template operations, and `src/utils/exportData.ts` calls `getGlobalDatabase()` via `getProjectExportMeta` outside the inspection flow. All inspection data access routes through repositories.
+
 Always use transactions where appropriate.
 
 Always use foreign keys.
 
 Always keep database normalized.
+
+Per-project data (custom IsDefault=0 sections, device types, device options, dashboard cards, inspection records) lives only in the active project DB — never seed it globally and never reference it across project DBs.
+
+Schema additions must include a migration (`migrateProjectSchema()` pattern wired into `ProjectDBManager.openProjectDb`) so existing project DBs upgrade — new columns/tables are never schema-only for fresh installs.
+
+New project-scoped features must ship with an isolation regression test (mirror `src/__tests__/database/isolation.test.ts`): create data in Project A, open Project B, and assert it does not appear there.
+
+The Jest suite runs via jest-expo (41 suites / 507 tests) against in-memory, path-aware mocks (`__mocks__/expo-sqlite.ts`, `__mocks__/expo-file-system.ts`) with per-directory coverage thresholds; test fixtures must use distinct DB paths/names to preserve isolation.
 
 ---
 
@@ -437,11 +451,11 @@ See `docs/09-Decisions.md` (ADR-014) and `docs/10-DATABASE_ARCHITECTURE.md` for 
 
 Camera and switch dropdown options (type, status, make, SI, SD card) must be DB-driven via the DeviceOptions table, not hardcoded in component source code.
 
-CameraSection and SwitchSection components must load dropdown options from DeviceOptionsRepository.
+CameraSection and DeviceSection components must load dropdown options from DeviceOptionsRepository.
 
 If the DeviceOptions table is empty, components may fall back to hardcoded default arrays for backward compatibility, but the primary source of options must always be the database.
 
-Device options must be manageable from Settings → Camera Options / Switch Options.
+Device options must be manageable from Settings → Device Types (per-device-type options).
 
 When adding a new device dropdown field, seed data must be added to the device-options.seed.ts file.
 
@@ -455,7 +469,7 @@ Custom device types (added via Settings → Device Types) use DeviceFieldDefinit
 
 InspectionSections has an IsDefault column (INTEGER, default 0).
 
-Only sections with IsDefault=1 (the original 10 built-in sections) shall appear in inspection forms.
+Only sections with IsDefault=1 (the original 11 built-in sections) shall appear in inspection forms.
 
 Custom sections created by administrators through Settings → Sections are stored with IsDefault=0 and are hidden from inspection forms but visible in the admin Sections screen.
 

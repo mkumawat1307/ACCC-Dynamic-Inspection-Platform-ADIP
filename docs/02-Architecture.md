@@ -9,14 +9,14 @@
 | Item | Value |
 |------|-------|
 | Document | System Architecture |
-| Version | 1.9.0 |
+| Version | 1.9.1 |
 | Status | Active Development |
-| Platform | Android |
-| Framework | React Native (Expo) |
-| Language | TypeScript |
-| Database | SQLite |
+| Platform | Android (primary) |
+| Framework | React Native (Expo SDK 54) |
+| Language | TypeScript (strict) |
+| Database | SQLite (expo-sqlite 16) |
 | Architecture | Offline-First, Configuration-Driven |
-| Last Updated | July 2026 |
+| Last Updated | 2026-08-04 |
 
 ---
 
@@ -26,7 +26,7 @@ The ACCC Dynamic Inspection Platform (ADIP) is an offline-first mobile applicati
 
 The application is built using a modular, configuration-driven architecture that allows inspection forms to evolve without requiring major code changes.
 
-The initial implementation focuses on pole inspections. The architecture is intentionally designed to support additional inspection types in future releases.
+The current implementation focuses on pole inspections. The architecture is intentionally designed to support additional inspection types in future releases.
 
 ---
 
@@ -52,6 +52,7 @@ The architecture has been designed with the following objectives:
 
 The application follows a layered architecture.
 
+```
 +----------------------------------------------------+
 |                  User Interface                    |
 | Screens • Components • Forms • Camera • Smart Dashboard |
@@ -60,27 +61,27 @@ The application follows a layered architecture.
                      ▼
 +----------------------------------------------------+
 |               React Context Layer                  |
-| Inspection Context • Settings • Shared State       |
+| InspectionContext • useInspection()                |
 +----------------------------------------------------+
                      │
                      ▼
 +----------------------------------------------------+
 |              Repository Layer                      |
-| Project Repository                                |
-| Inspection Repository                             |
-| Field Repository                                  |
-| Photo Repository                                  |
-| DeviceOptions Repository                          |
-| InspectionDataBus (pub/sub, module-level)        |
+| Project • Inspection • Section • Field • Option    |
+| Photo • Camera • Device* • Dashboard • Statistics  |
+| InspectionDataBus (pub/sub, module-level)          |
 +----------------------------------------------------+
                      │
                      ▼
 +----------------------------------------------------+
 |               SQLite Database                      |
-| Global DB: Projects, Divisions, Districts, Blocks |
-| Project DB: Templates, Sections, Fields, Values,  |
-|             Devices, Photos, DeviceOptions         |
+| Global DB: Projects, Divisions, Districts, Blocks  |
+| Project DB: Templates, Sections, Fields, Values,   |
+|             Devices, Photos, DashboardCards        |
 +----------------------------------------------------+
+```
+
+All database access is routed through `src/database/db.ts`, which enforces a **sequential single-handle** connection model (see Section 10 and ADR-014 in `docs/09-Decisions.md`).
 
 ---
 
@@ -88,57 +89,46 @@ The application follows a layered architecture.
 
 ## Frontend
 
-React Native
+- React Native 0.81.5
+- Expo SDK 54
+- TypeScript (strict mode)
+- React 19.1.0
 
-Expo
+## UI
 
-TypeScript
-
----
+- react-native-paper 5 (Material 3)
+- react-native-element-dropdown / react-native-paper-dropdown
+- @expo/vector-icons (MaterialCommunityIcons)
 
 ## Database
 
-SQLite
-
----
+- SQLite via expo-sqlite 16
+- expo-file-system (file I/O, exports, SAF photo storage)
 
 ## Navigation
 
-Expo Router
-
----
+- Expo Router 6 (file-based, typed routes)
 
 ## State Management
 
-React Context API
-
----
+- React Context API (`InspectionContext`)
 
 ## Device APIs
 
-Expo Camera
-
-Expo Location
-
-Expo Image Picker
-
-File System
-
----
+- expo-image-picker (camera capture)
+- expo-location (GPS)
+- expo-media-library / Storage Access Framework (photos)
+- expo-document-picker / expo-sharing / expo-intent-launcher (import/export)
+- react-native-webview (watermark canvas rendering)
 
 ## Development Tools
 
-VS Code
-
-Git
-
-GitHub
-
-Android Studio
-
-Node.js
-
-npm
+- VS Code
+- Git
+- GitHub
+- Android Studio
+- Node.js
+- Yarn 1.22
 
 ---
 
@@ -172,9 +162,9 @@ This eliminates hardcoded inspection screens.
 
 ## DB-Driven Device Options
 
-Camera and switch dropdown options (type, status, make, SI, SD card) are stored in the DeviceOptions database table rather than hardcoded in component source code.
+Device dropdown options (type, status, make, SI, SD card) are stored in the `DeviceOptions` table and field definitions in `DeviceFieldDefinitions`, rather than hardcoded in component source code.
 
-CameraSection and SwitchSection components load dropdown options from DeviceOptionsRepository. If the DeviceOptions table is empty, components fall back to hardcoded default values for backward compatibility.
+`CameraSection` and `DeviceSection` load dropdown options from `DeviceOptionsRepository`. If the `DeviceOptions` table is empty, components fall back to hardcoded default values for backward compatibility.
 
 ---
 
@@ -221,17 +211,13 @@ Components should be generic and reusable.
 
 Examples:
 
-Text Input
-
-Dropdown
-
-Checkbox
-
-Camera Card
-
-Photo Preview
-
-Dynamic Field Renderer
+- Text Input
+- Dropdown
+- Checkbox
+- Dynamic Field Renderer (`FieldRenderer`)
+- Camera Card (`CameraSection`)
+- Generic Device Section (`DeviceSection`)
+- Photo Preview
 
 These components can be reused across multiple inspection templates.
 
@@ -270,61 +256,75 @@ ACCC-Dynamic-Inspection-Platform/
 │
 ├── docs/
 ├── frontend/
-│   ├── app/
-│   │   ├── _layout.tsx
-│   │   ├── index.tsx              (Project List — home screen)
-│   │   ├── dashboard.tsx          (Global dashboard)
-│   │   ├── +html.tsx
-│   │   ├── projects/
-│   │   │   ├── new.tsx
-│   │   │   └── dashboard.tsx      (Per-project dashboard with Smart Dashboard auto-refresh)
+│   ├── app/                        (Expo Router routes)
+│   │   ├── _layout.tsx             (Root layout — PaperProvider → InspectionProvider)
+│   │   ├── +html.tsx               (Web-only HTML shell)
+│   │   ├── index.tsx               (Home: project list / search / sort / CRUD)
+│   │   ├── components/             (ProjectDialogs)
 │   │   ├── inspection/
-│   │   │   ├── new.tsx
-│   │   │   └── ...
+│   │   │   ├── index.tsx           (Inspection list + multi-select export/delete)
+│   │   │   ├── new.tsx             (Dynamic inspection form)
+│   │   │   ├── edit.tsx            (Thin wrapper → new.tsx in edit mode)
+│   │   │   └── components/         (DeleteInspectionsDialog, ExportDialogs)
+│   │   ├── projects/
+│   │   │   ├── new.tsx             (Create/Edit project)
+│   │   │   ├── dashboard.tsx       (Per-project Smart Dashboard)
+│   │   │   └── dashboard-settings.tsx  (Dashboard Cards manager)
 │   │   ├── reports/
-│   │   │   └── index.tsx
+│   │   │   └── index.tsx           (Reports: Excel/CSV export + preview)
 │   │   └── settings/
-│   │       ├── index.tsx
+│   │       ├── index.tsx           (Form settings hub + template import/export)
 │   │       ├── sections.tsx
 │   │       ├── fields.tsx
 │   │       ├── options.tsx
-│   │       └── device-options.tsx
+│   │       ├── device-types.tsx
+│   │       ├── device-options.tsx
+│   │       └── components/         (DeviceTypeBody, DeviceTypeDialogs, Template*Dialogs)
 │   │
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── inspection/
-│   │   │   │   ├── FieldRenderer.tsx
-│   │   │   │   ├── SectionRenderer.tsx
-│   │   │   │   ├── GeneralInformation.tsx
-│   │   │   │   ├── CameraSection.tsx
-│   │   │   │   ├── SwitchSection.tsx
-│   │   │   │   └── PhotoSection.tsx
-│   │   │   ├── dashboard/
-│   │   │   ├── forms/
-│   │   │   └── projects/
+│   │   │   ├── inspection/         (FieldRenderer, SectionRenderer, GeneralInformation,
+│   │   │   │                        CameraSection, DeviceSection, PhotoSection,
+│   │   │   │                        renderFieldInput, photoUtils, usePhotoCapture,
+│   │   │   │                        useWatermarkProcessor, PhotoCard, PhotoPreviewModal)
+│   │   │   ├── dashboard/          (DashboardCardGrid, DashboardCardManager,
+│   │   │   │                        DashboardActionCard, StatBreakdownCard)
+│   │   │   ├── export/             (useExportFlow state machine)
+│   │   │   ├── reports/            (ReportTablePreview)
+│   │   │   ├── template/           (useTemplateFlow state machine)
+│   │   │   └── StatCard.tsx
+│   │   ├── constants/              (ui.ts — SPACING, COLORS, RADIUS)
 │   │   ├── context/
 │   │   │   └── InspectionContext.tsx
 │   │   ├── database/
 │   │   │   ├── db.ts               (Sequential open/close DB manager)
-│   │   │   ├── schema.ts           (Global + Project schema creators)
+│   │   │   ├── schema.ts           (Global + Project schema creators + migrations)
 │   │   │   ├── seed.ts             (Global + Project seed orchestrators)
 │   │   │   ├── DatabaseService.ts  (Startup initialization)
-│   │   │   ├── tables/             (CREATE TABLE definitions)
+│   │   │   ├── tables/             (CREATE TABLE definitions, 18 files)
 │   │   │   ├── seeds/              (Idempotent seed data)
-│   │   │   ├── repositories/       (Repository Pattern — 19 repos)
+│   │   │   ├── constants/          (Legacy DB name constant)
+│   │   │   ├── repositories/       (Repository Pattern — 18 repos + 2 helpers)
 │   │   │   └── helpers/
 │   │   │       └── ProjectDBManager.ts
 │   │   ├── hooks/
-│   │   │   └── use-icon-fonts.ts
-│   │   ├── models/                 (7 TypeScript interfaces)
+│   │   │   ├── use-icon-fonts.ts
+│   │   │   ├── useDashboardAutoRefresh.ts
+│   │   │   └── useSectionCollapse.ts
+│   │   ├── models/                 (Project, District, Camera, Switch, DashboardCard,
+│   │   │                            InspectionField, InspectionValue, Photo)
 │   │   └── utils/
 │   │       ├── date.ts
 │   │       ├── location.ts
+│   │       ├── logger.ts
+│   │       ├── InspectionDataBus.ts
+│   │       ├── storageManager.ts
+│   │       ├── watermarkHtml.ts
 │   │       ├── exportData.ts
 │   │       └── templateData.ts
 │   │
 │   ├── assets/
-│   ├── android/
+│   ├── __mocks__/                  (expo-sqlite, expo-file-system in-memory mocks)
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── app.json
@@ -336,19 +336,21 @@ ACCC-Dynamic-Inspection-Platform/
 
 ## app/
 
-Contains all application screens managed by Expo Router.
+Contains all application screens managed by Expo Router. There is exactly **one layout** (the root `_layout.tsx`); every route is a leaf with its own paper `Appbar.Header` (`headerShown: false` at the root Stack).
 
 Examples:
 
-- Dashboard
-- New Inspection
-- Edit Inspection
+- Home / Project list
+- New / Edit Project
+- Project Dashboard + Dashboard Settings
+- New / Edit Inspection
+- Inspection List
 - Reports
-- Settings (sections, fields, options, device-options)
+- Settings (sections, fields, options, device-types, device-options)
 
 Responsibilities
 
-- Navigation
+- Navigation (imperative `useRouter()` — no `Link` components)
 - Screen layout
 - User interaction
 
@@ -360,23 +362,19 @@ Contains reusable UI components.
 
 Examples
 
-- FieldRenderer
-- SectionRenderer
-- GeneralInformation
-- CameraSection
-- SwitchSection
-- PhotoSection
-- DashboardActionCard
-- SummaryCard
-- ProjectCard
-- SmartCardGenerator
-- DashboardCardManager
+- `inspection/` — FieldRenderer, SectionRenderer, GeneralInformation, CameraSection, DeviceSection, PhotoSection, renderFieldInput, photoUtils, usePhotoCapture, useWatermarkProcessor, PhotoCard, PhotoPreviewModal, PhotoSectionHeader
+- `dashboard/` — DashboardCardGrid, DashboardCardManager, DashboardActionCard, StatBreakdownCard
+- `export/` — useExportFlow
+- `reports/` — ReportTablePreview
+- `template/` — useTemplateFlow
+- StatCard
 
 Rules
 
 - Must not access SQLite directly.
 - Should remain reusable.
 - Should receive data through props.
+- Hooks (e.g. `useExportFlow`, `useTemplateFlow`) encapsulate UI state machines.
 
 ---
 
@@ -386,7 +384,7 @@ Contains React Context providers.
 
 Current providers
 
-- InspectionContext (project, inspectionDate, inspectionId, poleId)
+- InspectionContext (project, inspectionDate, inspectionId, poleId + open/close/remove project)
 
 Responsibilities
 
@@ -404,19 +402,19 @@ Structure
 
 database/
 
-db.ts (SQLite connection)
+db.ts (SQLite connection manager — sequential single-handle)
 
 schema.ts (CREATE TABLE statements, migrations)
 
 seed.ts (Seed orchestrator)
 
-tables/ (Table definitions)
+tables/ (Table DDL definitions)
 
 seeds/ (Idempotent seed data)
 
-repositories/ (Repository Pattern)
+repositories/ (Repository Pattern — 18 repos)
 
-constants/ (DB name constant)
+helpers/ (ProjectDBManager)
 
 Responsibilities
 
@@ -425,6 +423,7 @@ Responsibilities
 - Seed data
 - CRUD operations via repositories
 - Migrations for schema evolution
+- Per-project DB lifecycle (create/open/clone/delete)
 
 ---
 
@@ -438,15 +437,17 @@ Project
 
 District
 
-Inspection
+Camera
+
+Switch
+
+DashboardCard
 
 InspectionField
 
-InspectionPhoto
-
 InspectionValue
 
-DeviceOption
+Photo
 
 Responsibilities
 
@@ -469,30 +470,36 @@ Responsibilities
 - Transactions
 - Data mapping
 
-Current repositories:
+Current repositories (18):
 
-- ProjectRepository (Project CRUD, including cloneProject(), uses getGlobalDatabase)
-- InspectionRepository (Inspection CRUD, validation, sections, fields, values; getSections() filters by IsDefault=1, getAllSections() for admin)
-- InspectionFieldRepository (Field queries, option loading)
-- InspectionValueRepository (Save/load/delete field values)
-- InspectionSectionRepository (Section CRUD)
-- InspectionListRepository (Inspection list with details; filterByQuery — pure, testable case-insensitive search over PoleID/Division/District/Block)
-- CameraRepository (Camera CRUD with transactions)
-- SwitchRepository (Switch CRUD with transactions)
-- PhotoRepository (Photo CRUD, create returns lastInsertRowId)
-- DistrictRepository (District queries, uses getGlobalDatabase)
-- DashboardCardRepository (Dashboard card CRUD + ensureDefaultCards + migrateDefaultCards + migrateDeviceCards)
-- DashboardService (Aggregates dashboard cards with live counts using StatisticCountService)
-- StatisticCountService (Computes counts for dashboard cards: entity count, field count, sum, dropdown breakdown, date breakdown, device breakdown)
-- SmartCardGenerator (Auto-creates dashboard cards from inspection form field selection, classified into CardMode)
-- DeviceOptionsRepository (CRUD and reorder for DeviceOptions table)
-- TemplateRepository (Template CRUD + hasInspections check)
-- SectionRepository (Section CRUD + reorder + hasInspectionValues check)
-- FieldRepository (Field CRUD + reorder + keyExists check + 10 field types)
-- FieldOptionRepository (Dropdown option CRUD + reorder + getByFieldKey)
-- DeviceFieldDefinitionsRepository (Device field definition CRUD + device type management)
-- DeviceRecordsRepository (Generic device record CRUD, JSON storage)
-- ProjectDeviceTypesRepository (Project-device type mapping CRUD)
+**Global DB / reference:**
+- `ProjectRepository` (CRUD + cloneProject — clones the global row; file clone via `ProjectDBManager.cloneProjectDb`)
+- `DistrictRepository` (district list)
+
+**Form configuration (project DB):**
+- `SectionRepository` (section CRUD/reorder, hasInspectionValues check)
+- `FieldRepository` (field CRUD/reorder/keyExists; exports `FIELD_TYPES`)
+- `FieldOptionRepository` (dropdown option CRUD/reorder)
+- `InspectionFieldRepository` (fields-by-section, options, active template fields)
+- `InspectionValueRepository` (upsert/get/delete field values)
+
+**Inspections (project DB):**
+- `InspectionRepository` (inspection CRUD, validation, sections/fields, duplicate-pole lookup; emits `InspectionDataBus` changes)
+- `InspectionListRepository` (inspection list with details; `filterByQuery`)
+- `inspectionDataHelper.ts` (transactional child-data deletion) and `InspectionTypes.ts` (type-only) — helpers, not repos
+
+**Photos / Cameras / Devices (project DB):**
+- `PhotoRepository` (photo CRUD, updateFilePath)
+- `CameraRepository` (camera CRUD + transactional saveMultiple)
+- `DeviceRecordsRepository` (generic device records, JSON `DeviceData` storage)
+- `DeviceOptionsRepository` (per-device-type dropdown options)
+- `DeviceFieldDefinitionsRepository` (per-device-type field definitions)
+
+**Dashboard / statistics (project DB):**
+- `DashboardCardRepository` (card CRUD, reorder, ensure/migrate/reset default cards, normalizeSections, migrateDeviceCards)
+- `DashboardService` (aggregates enabled cards with live counts via StatisticCountService)
+- `StatisticCountService` (count, sum, field-count, dropdown/date/device breakdowns)
+- `SmartCardGenerator` (auto-creates dashboard cards from form fields)
 
 ---
 
@@ -504,10 +511,14 @@ Location: src/utils/
 
 Current files
 
-- date.ts (getCurrentInspectionDate)
+- date.ts (inspection date formatting/parsing)
 - location.ts (getCurrentLocation with permissions)
-- exportData.ts (unified export service: banded CSV/Excel/PDF for projects and single inspections)
-- templateData.ts (Template JSON export and import)
+- logger.ts (prod-safe console wrapper)
+- InspectionDataBus.ts (pub/sub for inspection changes)
+- storageManager.ts (SAF photo storage — ensureTreeUri/getProjectDir/writePhoto/deletePhoto)
+- watermarkHtml.ts (canvas watermark page builder)
+- exportData.ts (unified export service: banded Excel/CSV for projects and single inspections)
+- templateData.ts (template JSON export and import, v2 + legacy v1)
 
 ---
 
@@ -519,8 +530,9 @@ Location: src/hooks/
 
 Current hooks
 
-- use-icon-fonts (Icon font loading)
-- useDashboardAutoRefresh (Auto-refresh dashboard cards on inspection data changes, app foreground, midnight, 60s focused poll)
+- use-icon-fonts (icon font loading under Expo Go)
+- useDashboardAutoRefresh (auto-refresh dashboard on inspection data changes, app foreground, midnight, 60s focused poll)
+- useSectionCollapse (persists per-project collapsed dashboard sections in AsyncStorage)
 
 ---
 
@@ -574,20 +586,20 @@ Database Principles
 Dual-Database Model
 
 Global DB (`accc_global.db`) — 4 Tables:
-- Projects — list of all projects (name, district, division, client, DBPath)
 - Divisions — division master data
-- Districts — district master data
-- Blocks — block master data
+- Districts — district master data (FK → Divisions)
+- Blocks — block master data (FK → Districts)
+- Projects — list of all projects (name, district, block, client, DBPath, SAFPath)
 
-Project DB (`Projects/<ProjectName>/inspection.db`) — 17+ Tables per project:
+Project DB (`Projects/<ProjectName>/inspection.db`) — 18 Tables per project:
 - InspectionTemplates
 - InspectionSections (with IsDefault flag for built-in vs custom)
 - InspectionFields
 - FieldOptions
-- Inspections
-- InspectionValues
 - RepeatableGroups
 - RepeatableGroupFields
+- Inspections
+- InspectionValues
 - RepeatableRecords
 - RepeatableValues
 - Cameras
@@ -597,23 +609,31 @@ Project DB (`Projects/<ProjectName>/inspection.db`) — 17+ Tables per project:
 - DeviceFieldDefinitions
 - DeviceRecords
 - ProjectDeviceTypes
+- DashboardCards
 
-Each project database is created with full seed data (default template, sections, fields, options, device options) at project creation time.
+Each project database is created with full seed data (default template, sections, fields, options, device options, device field definitions, dashboard cards) at project creation time.
 
-ProjectDBManager handles creating, opening, and deleting project databases.
+ProjectDBManager (`src/database/helpers/ProjectDBManager.ts`) handles creating, opening, cloning, and deleting project databases:
+- `createProjectDb` — mkdir + schema + all seeds + `seedDashboardCards(projectId)`
+- `cloneProjectDb` — **atomic clone** inside `withTransactionAsync`: copies settings + inspection + data tables, dedupes DashboardCards by CardKey, remaps IDs (InspectionID, RecordID)
+- `openProjectDb` — opens, validates schema, then runs `migrateProjectSchema(projectId)`
+- `deleteProjectDb` / `deleteProjectFolder` — removes the project folder
 
 Connection Management (`db.ts`)
 
 The app uses a **sequential open/close model** with a single `SQLiteDatabase` handle to avoid expo-sqlite Android bugs where multiple simultaneous connections return handles to the wrong database file.
 
-- **Single handle**: Only one `SQLiteDatabase` handle is ever open at a time. `currentDbTarget` tracks which DB file is currently open (`"accc_global.db"` or a project path).
+- **Single handle**: Only one `SQLiteDatabase` handle is ever open at a time. `currentDbTarget` tracks which DB file is currently open (`"accc_global.db"` or a cleaned project path).
 - **Global-only state**: When `activeProjectPath` is null, `getDatabase()` returns the global DB (`accc_global.db`).
 - **Project-active state** (`setActiveProject`): `activeProjectPath` is set. The current DB is closed and the project DB is opened. `getDatabase()` returns the project DB.
 - **Switching**: `ensureGlobalDb()` and `ensureProjectDb()` only close+reopen when the requested DB differs from `currentDbTarget`. No redundant switches.
 - **`cleanPath()`**: Strips `file://` URI prefix before path comparison to avoid mismatches between `activeProjectPath` (which may include `file://`) and `currentDbTarget` (which never does).
 - Project DBs use WAL journal mode. The global DB uses DELETE journal mode.
 - PRAGMA configuration failures are caught silently — the database remains usable with SQLite defaults.
+- **Do not call `getGlobalDatabase()` during the inspection flow** — it closes the project handle and reopens global, corrupting the native handle. Project data is passed via navigation params + `InspectionContext` instead. The only UI-facing `getGlobalDatabase()` call is `getProjectExportMeta` in `exportData.ts` (export flow, outside the mid-inspection DB session).
 - `getInfoAsync` from expo-file-system is **not used** for SQLite `.db` files — it returns false negatives on Android (reports files as non-existent right after `closeAsync()`). Project DB validation uses `SELECT COUNT(*) FROM sqlite_master` instead.
+
+Schema migrations: `migrateProjectSchema(projectId)` in `src/database/schema.ts` runs idempotent per-project migrations (remarks section split, DashboardCards table creation/columns/backfill, default/device card migrations) and is wired into `ProjectDBManager.openProjectDb`.
 
 ---
 
@@ -624,10 +644,10 @@ The current high-level relationship model is:
 Global DB:
 
 ```
-Divisions ──────▶ Projects ◀────── Districts
+Divisions ──────▶ Districts ──────▶ Blocks
                         │
                         ▼
-                  (project link)
+                     Projects
 ```
 
 Project DB:
@@ -639,29 +659,26 @@ InspectionTemplates
 InspectionSections
        │
        ▼
-InspectionFields
-       │
-       ▲
-       │
-InspectionValues
-       │
-       ├──────────────┐
-       ▼              ▼
-Inspections    RepeatableGroups
+InspectionFields ◀── FieldOptions
+       │        ▲
+       │        │
+       ▼        │
+InspectionValues ◀── Inspections ────▶ Camera/Switch/DeviceRecords/Photos
+       ▲              │
        │              │
-       ├──────┐       ▼
-       ▼      ▼  RepeatableValues
-    Cameras  Switches
-       │
-       ▼
-    Photos
+RepeatableGroups ◀───┤
+       │              │
+       ▼              ▼
+RepeatableGroupFields / RepeatableValues
 
-DeviceOptions ──▶ (standalone config, read by CameraSection/SwitchSection)
+DeviceOptions / DeviceFieldDefinitions ──▶ (standalone config, read by CameraSection/DeviceSection)
+ProjectDeviceTypes ──▶ (per-project enabled device types)
+DashboardCards ──▶ (per-project, ProjectID + CardKey)
 ```
 
-InspectionDevices are associated with an Inspection and store device-level information.
+`Inspections` is the parent record for all captured information. Device records (`Cameras`, `Switches`, `DeviceRecords`) and `Photos` are associated with an inspection.
 
-DeviceOptions is a standalone configuration table that provides dropdown values to CameraSection and SwitchSection components at runtime.
+`DeviceOptions` is a standalone configuration table that provides dropdown values to `CameraSection` and `DeviceSection` components at runtime.
 
 Future versions may extend these relationships while preserving compatibility with existing inspection data.
 
@@ -686,7 +703,7 @@ Advantages
 - Improved testability
 - Cleaner UI code
 
-UI components should never execute SQL directly.
+UI components should never execute SQL directly. (A few settings screens run raw SQL via `getDatabase()` for transactional admin operations — reset-to-default, section reorder — which are documented exceptions; see `docs/03-Rules.md` §5.)
 
 ---
 
@@ -700,15 +717,17 @@ Project
 
 District
 
-Inspection
+Camera
+
+Switch
+
+DashboardCard
 
 InspectionField
 
-InspectionPhoto
-
 InspectionValue
 
-DeviceOption
+Photo
 
 Each model maps to a database entity and is used throughout the application to ensure consistent typing.
 
@@ -774,6 +793,7 @@ The architecture follows these standards:
 - Prefer composition over inheritance.
 - DB-driven device options (never hardcoded dropdown arrays in components).
 - Per-Project DB isolation (project data never mixes between projects).
+- Sequential single-handle DB access (ADR-014) — never open a second handle or call `getGlobalDatabase()` mid-inspection.
 
 These standards should be followed consistently throughout the project.
 
@@ -790,12 +810,13 @@ The ACCC Dynamic Inspection Platform uses SQLite as its embedded relational data
 - Transaction support
 - Auto-generated primary keys
 - Strong data integrity
+- Per-project isolation
 
 ---
 
 ## Core Tables
 
-### Projects
+### Projects (global)
 
 Stores all projects available for inspection.
 
@@ -809,6 +830,7 @@ Primary Information
 - Description
 - InspectorName
 - DBPath (path to the project's isolated inspection.db)
+- SAFPath (path to the project's photo folder under DCIM/ACCC Inspection)
 - CreatedAt
 - UpdatedAt
 
@@ -823,14 +845,13 @@ Inspection
 
 ---
 
-### Districts
+### Divisions / Districts / Blocks (global)
 
-Stores district information.
+Reference/master data.
 
-Fields
-
-- DistrictID
-- DistrictName
+- Divisions: DivisionID, DivisionName, IsActive
+- Districts: DistrictID, DivisionID (FK), DistrictName, DistrictCode, IsActive
+- Blocks: BlockID, DistrictID (FK, ON DELETE CASCADE), BlockName, BlockCode, IsActive
 
 ---
 
@@ -841,19 +862,19 @@ Stores one inspection record.
 Fields include
 
 - InspectionID
-- ProjectID
+- ProjectID (plain INTEGER, no FK — per-project DB)
 - DistrictID
 - PoleID
-- Status
+- Status (Draft / Completed)
 - Inspection Date
 - Latitude (REAL)
 - Longitude (REAL)
 - InspectorName
 - Remarks
 - SyncStatus
+- SectionsSnapshot (TEXT — deprecated, section config now read live from DB)
 - CreatedAt
 - UpdatedAt
-- SectionsSnapshot (TEXT — deprecated, section config now read live from DB)
 
 Each inspection acts as the parent record for all captured information.
 
@@ -865,7 +886,7 @@ Defines available inspection templates.
 
 Examples
 
-Pole Inspection
+Pole Inspection (default, IsDefault=1)
 
 Future
 
@@ -895,11 +916,11 @@ Switch
 
 Photos
 
-Settings
+Remarks
 
 Sections are ordered using DisplayOrder.
 
-IsDefault column (INTEGER, default 0): The original 10 built-in sections are marked with IsDefault=1. Only default sections appear in inspection forms. Custom sections created by administrators are stored with IsDefault=0 and are hidden from inspection forms but visible in the admin Sections screen.
+IsDefault column (INTEGER, default 0): The original 11 built-in sections are marked with IsDefault=1. Only default sections appear in inspection forms. Custom sections created by administrators are stored with IsDefault=0 and are hidden from inspection forms but visible in the admin Sections screen.
 
 ---
 
@@ -932,6 +953,8 @@ Each field includes
 - Validation Rule
 - Display Order
 - Visibility
+
+Field types (13, see `templateData.ts` `VALID_FIELD_TYPES`): text, number, multiline, dropdown, project dropdown, date, date_auto, time, switch, checkbox, GPS, and two more.
 
 ---
 
@@ -985,6 +1008,19 @@ Fields include
 - SwitchSerialNumber
 - SwitchSI
 
+### DeviceRecords
+
+Generic device records for arbitrary device types (e.g. NVR). `DeviceData` is a JSON string of field values.
+
+- RecordID
+- InspectionID
+- DeviceType
+- DeviceLabel
+- DeviceNo
+- DeviceData (JSON)
+- DisplayOrder
+- IsActive
+
 ### Photos
 
 Stores photo metadata.
@@ -995,7 +1031,7 @@ Information includes
 - InspectionID
 - PhotoType
 - FileName
-- FilePath
+- FilePath (SAF content URI)
 - Latitude
 - Longitude
 - CapturedAt
@@ -1003,19 +1039,41 @@ Information includes
 
 ### DeviceOptions
 
-Stores configurable dropdown options for camera and switch device fields.
+Stores configurable dropdown options for camera and device fields.
 
 Fields include
 
 - OptionID (INTEGER PRIMARY KEY AUTOINCREMENT)
-- DeviceType (TEXT — 'Camera' or 'Switch')
-- FieldName (TEXT — e.g., 'CameraType', 'CameraStatus', 'CameraMake', 'CameraSI', 'SDCardCapacity', 'SwitchType', 'SwitchStatus', 'SwitchMake', 'SwitchSI')
+- TemplateID (INTEGER NOT NULL DEFAULT 1)
+- DeviceType (TEXT — e.g., 'Camera' or 'Switch')
+- FieldName (TEXT — e.g., 'CameraType', 'CameraStatus', 'CameraMake', 'CameraSI', 'SDCardCapacity', 'SwitchType', ...)
 - OptionLabel (TEXT — display label shown in dropdown)
 - OptionValue (TEXT — stored value saved to inspection)
 - DisplayOrder (INTEGER — controls dropdown option order)
 - IsActive (INTEGER — 1 = active, 0 = inactive)
 
-This table replaces hardcoded dropdown arrays in CameraSection and SwitchSection components.
+This table replaces hardcoded dropdown arrays in `CameraSection` and `DeviceSection` components.
+
+### DeviceFieldDefinitions
+
+Defines the fields rendered per device type.
+
+- FieldDefID, TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder, IsActive
+- UNIQUE(TemplateID, DeviceType, FieldName)
+
+### ProjectDeviceTypes
+
+Per-project mapping of enabled device types.
+
+- ID, DeviceType (UNIQUE), IsActive
+
+### DashboardCards
+
+Per-project smart dashboard cards.
+
+- CardID, ProjectID, CardKey (UNIQUE with ProjectID), Title, Icon, Color, EntityType, CounterType, FilterJson, CountMode, DistinctColumn, BreakdownField, SectionLabel, AggregateField, DeviceType, CardMode, SortOrder, Enabled, IsDefault
+- CardMode values: `entitycount | dropdown | sum | fieldcount | datebreakdown`
+- `IsDefault=1` = seeded default cards; `0` = user-created smart cards
 
 ---
 
@@ -1026,7 +1084,10 @@ Current logical relationship
 Global DB:
 
 ```
-Divisions ──────▶ Projects ◀────── Districts
+Divisions ──▶ Districts ──▶ Blocks
+                     │
+                     ▼
+                  Projects
 ```
 
 Project DB:
@@ -1038,24 +1099,20 @@ InspectionTemplates
 InspectionSections
        │
        ▼
-InspectionFields
-       │
-       ▲
-       │
-InspectionValues
-       │
-       ├──────────────┐
-       ▼              ▼
-Inspections    RepeatableGroups
+InspectionFields ◀── FieldOptions
+       │        ▲
+       ▼        │
+InspectionValues ◀── Inspections
+       ▲              │
+       │              ├──────▶ Cameras / Switches / DeviceRecords / Photos
+RepeatableGroups      │
        │              │
-       ├──────┐       ▼
-       ▼      ▼  RepeatableValues
-    Cameras  Switches
-       │
-       ▼
-    Photos
+       ▼              │
+RepeatableGroupFields/Values
 
-DeviceOptions ──▶ (standalone config, read by CameraSection/SwitchSection)
+DeviceOptions / DeviceFieldDefinitions ──▶ (standalone config)
+ProjectDeviceTypes
+DashboardCards
 ```
 
 The design supports configurable inspection forms while maintaining a normalized database structure. Each project database is fully isolated with its own complete schema and seed data.
@@ -1104,7 +1161,7 @@ SQLite
 
 Device Options Loading
 
-CameraSection and SwitchSection load dropdown options from DeviceOptionsRepository at mount time:
+`CameraSection` and `DeviceSection` load dropdown options from `DeviceOptionsRepository` at mount time:
 
 1. Query DeviceOptions table for active options matching the device type and field name.
 2. If options exist, populate dropdowns from the database.
@@ -1114,7 +1171,7 @@ This ensures the application works out of the box while allowing full admin conf
 
 Pole ID Lock
 
-SectionRenderer maintains a `poleIdLoaded` state and waits for the pole ID to be loaded from the database before determining the form lock state. This prevents false "please enter pole id" messages on sections before the pole ID value has been read.
+`SectionRenderer` maintains a `poleIdLoaded` state and waits for the pole ID to be loaded from the database before determining the form lock state. This prevents false "please enter pole id" messages on sections before the pole ID value has been read. While the pole ID is empty, all other fields render read-only with a "Pole ID Required" alert.
 
 Advantages
 
@@ -1171,15 +1228,11 @@ Photo management is integrated directly into inspections.
 Workflow
 
 ```
-Request Camera Permission
+Request Camera + Location Permissions
 
 ↓
 
-Request GPS Permission
-
-↓
-
-Open Camera (expo-image-picker)
+Open Camera (expo-image-picker, quality 0.8)
 
 ↓
 
@@ -1187,11 +1240,11 @@ Capture Photo
 
 ↓
 
-Get GPS Coordinates
+Get GPS Coordinates (with cache fallback + timeout race)
 
 ↓
 
-Read Pole ID + Block from DB
+Read Pole ID + Block from Context/DB
 
 ↓
 
@@ -1199,32 +1252,32 @@ Generate Filename (District_Block_PoleId_DDMMMYYYY_Time.jpg)
 
 ↓
 
-Save to App Document Directory
+Create Photo row (PhotoRepository.create)
 
 ↓
 
-Save Metadata to Photos Table
+Enqueue watermark job (Pole ID, District+Block, GPS, Timestamp)
 
 ↓
 
-Burn Watermark via ViewShot (Pole ID, District+Block, GPS, Timestamp)
+Render watermark on hidden WebView canvas (buildWatermarkPage)
 
 ↓
 
-Save Watermarked Photo to Gallery (async)
+Post base64 back → write to SAF gallery (DCIM/ACCC Inspection/<Project>)
 
 ↓
 
-Copy to Download/Inspection/{District}/ folder
+Update Photo FilePath
 ```
 
 Implemented Features
 
-- Green watermark (#76FF03) on light black background
-- Watermark burned into gallery photos via react-native-view-shot
-- Pole ID and Block read fresh from DB before every capture
-- Photos saved to device gallery and app Download folder
+- Green watermark (#76FF03) on a translucent dark box, burned via a hidden WebView `<canvas>` (`watermarkHtml.ts`), queued serially with one retry (`useWatermarkProcessor`)
+- Pole ID and Block read before every capture
+- Photos saved to the device gallery via Storage Access Framework (`storageManager.ts`) and the SAF directory is cached per project
 - Minimum 1 photo required for inspection validation
+- Per-photo watermark state (pending / done / error) shown in the list (`PhotoCard`)
 
 ---
 
@@ -1305,7 +1358,9 @@ User enters values
 Auto Save
 ```
 
-Device dropdown options (type, status, make, SI, SD card) are loaded from the DeviceOptions database table rather than hardcoded. This allows administrators to add, edit, reorder, and remove options from the Settings screen without modifying source code.
+Device dropdown options (type, status, make, SI, SD card) are loaded from the `DeviceOptions` database table rather than hardcoded. Field definitions per device type come from `DeviceFieldDefinitions`. This allows administrators to add, edit, reorder, and remove device types and options from the Settings → Device Types screen without modifying source code.
+
+Camera and Switch are built-in device types. Custom types (e.g. NVR) are rendered through the generic `DeviceSection` component, which stores values as JSON in `DeviceRecords.DeviceData`. `ProjectDeviceTypes` tracks which types are enabled per project.
 
 This architecture avoids creating separate screens for every possible device.
 
@@ -1325,60 +1380,40 @@ Project List (Home Screen — index.tsx)
 ↓
 ┌─────────────────┬──────────────────┐
 ↓                 ↓                  ↓
-New Project    Open Project      Edit/Clone/Export/Delete
-                ↓
-         Project Dashboard
-
-                ↓
-
-         New Inspection
-
-                ↓
-
-         General Information
-
-                ↓
-
-         Pole Structure / Camera / Switch / ...
-
-                ↓
-
-         Photos
-
-                ↓
-
-         Save / Complete
+New Project    Open Project      Edit/Clone/Delete
+                 ↓
+          Project Dashboard
+          │         │
+          ▼         ▼
+   Manage Cards   Quick Actions
+                    │
+          ┌─────────┼─────────┬─────────┐
+          ▼         ▼         ▼         ▼
+   New Inspection  Inspection  Settings  Reports
+          |          List
+          ▼
+   General Information → Sections → Photos
+          │
+          ▼
+   Save / Complete
 ```
 
 Settings navigation
 
 ```
-Dashboard
+Dashboard → Settings
 
 ↓
 
-Settings
+Sections (list/create/edit/reorder) ──▶ Fields (…per section) ──▶ Options (…per dropdown field)
+                                     └──▶ Device Types ──▶ Device Options (…per field)
 
-↓
-
-Sections (list/create/edit/reorder)
-
-↓
-
-Fields (list/create/edit/reorder)
-
-↓
-
-Options (list/create/edit/reorder for dropdown fields)
-
-Camera Options (list/create/edit/reorder)
-
-Switch Options (list/create/edit/reorder)
-
-Export Template (JSON)
-
-Import Template (JSON)
+Export Template (JSON v2)
+Import Template (JSON v1/v2)
+Reset to Default
 ```
+
+Navigation mechanics: Expo Router typed routes; exactly one root layout (`headerShown: false`); every screen renders its own `Appbar.Header`. Structured data (e.g. a `Project`) is passed as a JSON string in route params (`projectData`) and parsed on the receiving screen. Android hardware back is intercepted in the inspection form to run `validateBeforeExit()`.
 
 ---
 
@@ -1393,8 +1428,16 @@ Current state
 - inspectionId (Current inspection ID)
 - poleId (Current pole ID)
 - openProject() — opens a project DB and sets it as active
-- closeProject() — closes the active project DB
+- closeProject() — closes the active project DB and resets state
 - removeProject() — closes and deletes a project DB
+- setProject / setInspectionDate / setInspectionId / setPoleId — direct setters
+
+Additional UI state machines:
+
+- `useExportFlow` — export state (idle → choosing → exporting → success/error)
+- `useTemplateFlow` — template import/export state machine
+- `useDashboardAutoRefresh` — dashboard reload key on data events / foreground / midnight / poll
+- `InspectionDataBus` — module-level pub/sub so screens react to inspection changes
 
 Repositories remain responsible for database access.
 
@@ -1416,7 +1459,7 @@ Validation Errors
 
 Storage Errors
 
-The application logs technical details while presenting user-friendly messages.
+The application logs technical details while presenting user-friendly messages. The logger (`src/utils/logger.ts`) suppresses `info`/`warn`/`debug` in production builds while always logging `error`.
 
 ---
 
@@ -1466,7 +1509,7 @@ The platform is designed for long-term growth.
 
 Future inspection modules
 
-- Pole Inspection
+- Pole Inspection (implemented)
 - NVR Inspection
 - UPS Inspection
 - Solar Inspection
@@ -1490,6 +1533,7 @@ The ACCC Dynamic Inspection Platform is built on the following principles:
 - Configuration-driven forms
 - DB-driven device options
 - Per-Project Database Isolation
+- Sequential single-handle DB access (ADR-014)
 - Reusable components
 - Strong typing with TypeScript
 - Modular folder structure

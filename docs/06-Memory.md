@@ -2,11 +2,11 @@
 
 # Project Memory
 
-Version: 1.9.0
+Version: 1.9.1
 
 Status: Living Document
 
-Last Updated: August 2026
+Last Updated: 2026-08-04
 
 ---
 
@@ -64,7 +64,7 @@ Approximately 95%
 
 Current Version
 
-1.9.1 (Unreleased)
+1.9.1
 
 Current Sprint
 
@@ -116,14 +116,15 @@ Active Development
 ## Reports & Export (v1.9.0)
 
 - Reports screen with live banded table preview (ReportTablePreview)
-- Project-wide export: CSV, Excel (xlsx), PDF — via `exportInspections`
-- Banded headers: CSV repeats band per column; Excel merges bands + autofilter + frozen rows; PDF `<th colspan>` band rows
+- Project-wide export: CSV, Excel (xlsx) — via `exportInspections`
+- Banded headers: CSV repeats band per column; Excel merges bands + autofilter + frozen rows
 - Live template columns (sections/fields read at export time)
 - Device rows: one per device, filled with device section's own columns
 - Derived columns: Latitude/Longitude (splitLatLong), Status (PoleID + InspectionRecords), Photos count
-- Single-inspection export from Inspection List (PDF/Excel/CSV) via `exportInspection`
-- Single unified export service (`buildReportTable`, `buildCsv`, `buildExcelBase64`, `buildProjectPdfHtml`, `buildInspectionPdfHtml`, `loadInspectionFormData`)
+- Single-inspection export from Inspection List (Excel/CSV) via `exportInspection`
+- Single unified export service (`buildReportTable`, `buildCsv`, `buildExcelBase64`, `createExportFile`, `shareExportFile`, `openExportFile`, `exportInspections`, `exportInspection`)
 - Legacy `exportProjectData` + Home Export button removed; exports live in Reports
+- PDF report export is NOT currently implemented (removed in the v1.9.1 baseline; planned as a future enhancement)
 
 ## Inspection Engine
 
@@ -169,9 +170,8 @@ Active Development
 - Photo Storage (in project folder)
 - Photo Preview Modal
 - Green Watermark Overlay (Pole ID, District+Block, GPS, Timestamp)
-- Watermark Burn-In (react-native-view-shot, on-screen)
-- Gallery Save (async/non-blocking)
-- Download Folder Save (Download/Inspection/{District}/)
+- Watermark Burn-In (hidden WebView canvas, serial queue via `useWatermarkProcessor`)
+- SAF Photo Storage (expo-file-system; watermarked copies saved to DCIM/ACCC Inspection/<project>)
 - GPS Mandatory for Photo Capture
 - Pole ID + Block Read Fresh from DB Before Capture
 - Minimum 1 Photo Required for Validation
@@ -253,7 +253,7 @@ Active Development
 - Each project gets its own SQLite database file (inspection.db) stored in Projects/<ProjectName>/inspection.db
 - Photos and exports stored in the same project folder
 - Global DB (accc_global.db) only stores Projects list + Divisions/Districts/Blocks
-- Project DB contains full schema (17+ tables) with all inspection data, templates, sections, fields, options, photos, device data
+- Project DB contains full schema (18 tables) with all inspection data, templates, sections, fields, options, photos, device data
 - Each project DB is created with full seed data (default template, sections, fields, options, device options)
 - ProjectDBManager utility handles creating, opening, and deleting project databases
 - TemplateSyncHelper deleted (no longer needed with isolated databases)
@@ -326,7 +326,7 @@ Global DB (accc_global.db) — 4 tables:
 - Districts
 - Blocks
 
-Project DB (Projects/<ProjectName>/inspection.db) — 20+ tables per project:
+Project DB (Projects/<ProjectName>/inspection.db) — 18 tables per project:
 - InspectionTemplates
 - InspectionSections
 - InspectionFields
@@ -465,6 +465,7 @@ These decisions should not be changed without Product Owner approval.
 
 Current known work items
 
+- PDF report export
 - Photo Reports
 - Cloud Synchronization
 
@@ -476,7 +477,7 @@ No issue should be removed until resolved.
 
 Highest Priority
 
-Reporting Completion (Phase 5) — Photo Reports, Analytics Dashboard
+Reporting Completion (Phase 5) — PDF report export, Photo Reports, Analytics Dashboard
 
 Second Priority
 
@@ -600,9 +601,9 @@ App renamed to "ACCC Dynamic Inspection Platform", bundle ID changed to com.accc
 
 Reports & Export v2 — Reports screen with live banded preview, project-wide CSV/Excel/PDF export (unified exportData.ts service), single-inspection export from Inspection List, derived Latitude/Longitude + Status columns, device rows per inspection, legacy exportProjectData + Home Export button + dashboard CSV card removed
 
-1.9.1 (Unreleased)
+1.9.1
 
-Smart Dashboard (SmartCardGenerator, DashboardCardManager, InspectionDataBus, useDashboardAutoRefresh, CardMode), Template Transfer v2.0 (replace-in-place import, v1.0 backward compatibility, reset preserves DeviceRecords), Inspection List Block search and display (testable filterByQuery helper)
+Smart Dashboard (SmartCardGenerator, DashboardCardManager, Dashboard settings screen, InspectionDataBus, useDashboardAutoRefresh, CardMode, Project Information card), Template Transfer v2.0 (replace-in-place import, v1.0 backward compatibility, reset preserves DeviceRecords), Inspection List Block search and display (testable filterByQuery helper), Project clone (cloneProjectDb atomic clone), Duplicate Pole ID detection, WebView-canvas watermark + SAF photo storage, Reports screen with Excel/CSV export
 
 Future versions shall be added after every release.
 
@@ -612,6 +613,7 @@ Future versions shall be added after every release.
 
 Reporting Completion (Phase 5)
 
+- PDF report export
 - Photo Reports
 - Analytics Dashboard / Project / District Statistics
 
