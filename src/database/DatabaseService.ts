@@ -13,28 +13,21 @@ export function getInitError(): string | null {
 
 export async function initializeDatabase() {
   if (initializing) {
-    logger.info("[DatabaseService] initializeDatabase() — already in progress, skipping");
+    logger.debug("[DatabaseService] initializeDatabase() — already in progress, skipping");
     return;
   }
   initializing = true;
   initError = null;
 
-  logger.info("[DatabaseService] initializeDatabase() — START");
-
   try {
     await getGlobalDatabase();
 
     await createGlobalSchema();
+    logger.info("Global schema migrated");
 
     await seedGlobalDatabase();
 
-    const db = await getGlobalDatabase();
-    const tables = await db.getAllAsync(
-      "SELECT name FROM sqlite_master WHERE type='table';"
-    );
-
-    logger.info("📋 [DatabaseService] Global Database Tables:", JSON.stringify(tables));
-    logger.info("✅ [DatabaseService] Database initialized.");
+    logger.info("✅ Database initialized");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     initError = msg;
@@ -43,6 +36,4 @@ export async function initializeDatabase() {
   } finally {
     initializing = false;
   }
-
-  logger.info("[DatabaseService] initializeDatabase() — END");
 }

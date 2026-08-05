@@ -26,24 +26,24 @@ import { DashboardCardRepository } from "./repositories/DashboardCardRepository"
 import { logger } from "@/src/utils/logger";
 
 export async function createGlobalSchema() {
-    logger.info("📄 [schema] createGlobalSchema() — START");
+    logger.debug("📄 [schema] createGlobalSchema() — START");
 
     const db = await getGlobalDatabase();
-    logger.info("[schema] Got global DB handle");
+    logger.debug("[schema] Got global DB handle");
 
-    logger.info("[schema] Creating Divisions table...");
+    logger.debug("[schema] Creating Divisions table...");
     await db.execAsync(createDivisionsTable);
-    logger.info("[schema] Divisions table done");
+    logger.debug("[schema] Divisions table done");
 
-    logger.info("[schema] Creating Districts table...");
+    logger.debug("[schema] Creating Districts table...");
     await db.execAsync(createDistrictsTable);
-    logger.info("[schema] Districts table done");
+    logger.debug("[schema] Districts table done");
 
-    logger.info("[schema] Creating Blocks table...");
+    logger.debug("[schema] Creating Blocks table...");
     await db.execAsync(createBlocksTable);
-    logger.info("[schema] Blocks table done");
+    logger.debug("[schema] Blocks table done");
 
-    logger.info("[schema] Creating Projects table...");
+    logger.debug("[schema] Creating Projects table...");
     await db.execAsync(`
         CREATE TABLE IF NOT EXISTS Projects (
             ProjectID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,89 +60,89 @@ export async function createGlobalSchema() {
                 REFERENCES Districts(DistrictID)
         );
     `);
-    logger.info("[schema] Projects table done");
+    logger.debug("[schema] Projects table done");
 
     // Migration: Add DBPath column to existing Projects table
     try {
         await db.execAsync(`ALTER TABLE Projects ADD COLUMN DBPath TEXT;`);
-        logger.info("[schema] Migration: DBPath column added to Projects");
+        logger.debug("[schema] Migration: DBPath column added to Projects");
     } catch {
-        logger.info("[schema] Migration: DBPath column already exists (ok)");
+        logger.debug("[schema] Migration: DBPath column already exists (ok)");
     }
 
     // Migration: Add SAFPath column to existing Projects table
     try {
         await db.execAsync(`ALTER TABLE Projects ADD COLUMN SAFPath TEXT;`);
-        logger.info("[schema] Migration: SAFPath column added to Projects");
+        logger.debug("[schema] Migration: SAFPath column added to Projects");
     } catch {
-        logger.info("[schema] Migration: SAFPath column already exists (ok)");
+        logger.debug("[schema] Migration: SAFPath column already exists (ok)");
     }
 
     // Migration: Add IsActive column to existing Divisions table
     try {
         await db.execAsync(`ALTER TABLE Divisions ADD COLUMN IsActive INTEGER NOT NULL DEFAULT 1;`);
-        logger.info("[schema] Migration: IsActive column added to Divisions");
+        logger.debug("[schema] Migration: IsActive column added to Divisions");
     } catch {
-        logger.info("[schema] Migration: IsActive column already exists in Divisions (ok)");
+        logger.debug("[schema] Migration: IsActive column already exists in Divisions (ok)");
     }
 
     // Migration: Add IsActive column to existing Districts table
     try {
         await db.execAsync(`ALTER TABLE Districts ADD COLUMN IsActive INTEGER NOT NULL DEFAULT 1;`);
-        logger.info("[schema] Migration: IsActive column added to Districts");
+        logger.debug("[schema] Migration: IsActive column added to Districts");
     } catch {
-        logger.info("[schema] Migration: IsActive column already exists in Districts (ok)");
+        logger.debug("[schema] Migration: IsActive column already exists in Districts (ok)");
     }
 
-    logger.info("✅ [schema] createGlobalSchema() — END");
+    logger.debug("✅ [schema] createGlobalSchema() — END");
 }
 
 export async function createProjectSchema() {
-    logger.info("📄 [schema] createProjectSchema() — START");
+    logger.debug("📄 [schema] createProjectSchema() — START");
 
     const db = await getDatabase();
-    logger.info("[schema] Got project DB handle");
+    logger.debug("[schema] Got project DB handle");
 
-    logger.info("[schema] Creating inspection templates table...");
+    logger.debug("[schema] Creating inspection templates table...");
     await db.execAsync(createInspectionTemplatesTable);
 
-    logger.info("[schema] Creating inspection sections table...");
+    logger.debug("[schema] Creating inspection sections table...");
     await db.execAsync(createInspectionSectionsTable);
 
-    logger.info("[schema] Creating inspection fields table...");
+    logger.debug("[schema] Creating inspection fields table...");
     await db.execAsync(createInspectionFieldsTable);
 
-    logger.info("[schema] Creating field options table...");
+    logger.debug("[schema] Creating field options table...");
     await db.execAsync(createFieldOptionsTable);
 
-    logger.info("[schema] Creating repeatable groups table...");
+    logger.debug("[schema] Creating repeatable groups table...");
     await db.execAsync(createRepeatableGroupsTable);
 
-    logger.info("[schema] Creating repeatable group fields table...");
+    logger.debug("[schema] Creating repeatable group fields table...");
     await db.execAsync(createRepeatableGroupFieldsTable);
 
-    logger.info("[schema] Creating inspections table...");
+    logger.debug("[schema] Creating inspections table...");
     await db.execAsync(createInspectionsTable);
 
-    logger.info("[schema] Creating inspection values table...");
+    logger.debug("[schema] Creating inspection values table...");
     await db.execAsync(createInspectionValuesTable);
 
-    logger.info("[schema] Creating repeatable records table...");
+    logger.debug("[schema] Creating repeatable records table...");
     await db.execAsync(createRepeatableRecordsTable);
 
-    logger.info("[schema] Creating repeatable values table...");
+    logger.debug("[schema] Creating repeatable values table...");
     await db.execAsync(createRepeatableValuesTable);
 
-    logger.info("[schema] Creating cameras table...");
+    logger.debug("[schema] Creating cameras table...");
     await db.execAsync(createCamerasTable);
 
-    logger.info("[schema] Creating switches table...");
+    logger.debug("[schema] Creating switches table...");
     await db.execAsync(createSwitchesTable);
 
-    logger.info("[schema] Creating photos table...");
+    logger.debug("[schema] Creating photos table...");
     await db.execAsync(createPhotosTable);
 
-    logger.info("[schema] Creating DeviceOptions table...");
+    logger.debug("[schema] Creating DeviceOptions table...");
     await db.execAsync(`
         CREATE TABLE IF NOT EXISTS DeviceOptions (
             OptionID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -158,7 +158,7 @@ export async function createProjectSchema() {
         );
     `);
 
-    logger.info("[schema] Creating DeviceFieldDefinitions table...");
+    logger.debug("[schema] Creating DeviceFieldDefinitions table...");
     await db.execAsync(`
         CREATE TABLE IF NOT EXISTS DeviceFieldDefinitions (
             FieldDefID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,10 +176,10 @@ export async function createProjectSchema() {
         );
     `);
 
-    logger.info("[schema] Creating device records table...");
+    logger.debug("[schema] Creating device records table...");
     await db.execAsync(createDeviceRecordsTable);
 
-    logger.info("[schema] Creating ProjectDeviceTypes table...");
+    logger.debug("[schema] Creating ProjectDeviceTypes table...");
     await db.execAsync(`
         CREATE TABLE IF NOT EXISTS ProjectDeviceTypes (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,14 +190,14 @@ export async function createProjectSchema() {
         );
     `);
 
-    logger.info("[schema] Creating DashboardCards table...");
+    logger.debug("[schema] Creating DashboardCards table...");
     await db.execAsync(createDashboardCardsTable);
 
-    logger.info("✅ [schema] createProjectSchema() — END");
+    logger.debug("✅ [schema] createProjectSchema() — END");
 }
 
 export async function migrateProjectSchema(projectId: number) {
-    logger.info("[schema] migrateProjectSchema() — START");
+    logger.debug("[schema] migrateProjectSchema() — START");
 
     const db = await getDatabase();
 
@@ -205,13 +205,13 @@ export async function migrateProjectSchema(projectId: number) {
         `SELECT SectionID FROM InspectionSections WHERE SectionKey = 'remarks' LIMIT 1`
     );
     if (remarksSection) {
-        logger.info("[schema] migrateProjectSchema() — remarks section already exists (ok)");
+        logger.debug("[schema] migrateProjectSchema() — remarks section already exists (ok)");
     } else {
         const categorization = await db.getFirstAsync<{ SectionID: number; TemplateID: number; DisplayOrder: number }>(
             `SELECT SectionID, TemplateID, DisplayOrder FROM InspectionSections WHERE SectionKey = 'categorization' LIMIT 1`
         );
         if (!categorization) {
-            logger.info("[schema] migrateProjectSchema() — categorization section not found, skipping");
+            logger.debug("[schema] migrateProjectSchema() — categorization section not found, skipping");
         } else {
             const result = await db.runAsync(
                 `INSERT INTO InspectionSections
@@ -247,7 +247,7 @@ export async function migrateProjectSchema(projectId: number) {
             await db.runAsync(
                 `UPDATE FieldOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldID IN (SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_category')`
             );
-            logger.info("[schema] Migration: Deactivated Categorization section (pole_category)");
+            logger.debug("[schema] Migration: Deactivated Categorization section (pole_category)");
         }
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — categorization deactivation failed (non-fatal):", e);
@@ -261,7 +261,7 @@ export async function migrateProjectSchema(projectId: number) {
             await db.runAsync(
                 `UPDATE InspectionFields SET IsRequired = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'switch_count'`
             );
-            logger.info("[schema] Migration: Switch Count is now optional");
+            logger.debug("[schema] Migration: Switch Count is now optional");
         }
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — switch_count optional migration failed (non-fatal):", e);
@@ -275,7 +275,7 @@ export async function migrateProjectSchema(projectId: number) {
             await db.runAsync(
                 `UPDATE InspectionFields SET FieldName = 'Site ID', Placeholder = 'Enter Site ID', UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_id'`
             );
-            logger.info("[schema] Migration: Renamed Pole ID field label to Site ID");
+            logger.debug("[schema] Migration: Renamed Pole ID field label to Site ID");
         }
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — pole_id label migration failed (non-fatal):", e);
@@ -301,37 +301,37 @@ export async function migrateProjectSchema(projectId: number) {
 
     try {
         await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN BreakdownField TEXT;`);
-        logger.info("[schema] Migration: BreakdownField column added to DashboardCards");
+        logger.debug("[schema] Migration: BreakdownField column added to DashboardCards");
     } catch {
-        logger.info("[schema] Migration: BreakdownField column already exists in DashboardCards (ok)");
+        logger.debug("[schema] Migration: BreakdownField column already exists in DashboardCards (ok)");
     }
 
     try {
         await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN SectionLabel TEXT;`);
-        logger.info("[schema] Migration: SectionLabel column added to DashboardCards");
+        logger.debug("[schema] Migration: SectionLabel column added to DashboardCards");
     } catch {
-        logger.info("[schema] Migration: SectionLabel column already exists in DashboardCards (ok)");
+        logger.debug("[schema] Migration: SectionLabel column already exists in DashboardCards (ok)");
     }
 
     try {
         await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN AggregateField TEXT;`);
-        logger.info("[schema] Migration: AggregateField column added to DashboardCards");
+        logger.debug("[schema] Migration: AggregateField column added to DashboardCards");
     } catch {
-        logger.info("[schema] Migration: AggregateField column already exists in DashboardCards (ok)");
+        logger.debug("[schema] Migration: AggregateField column already exists in DashboardCards (ok)");
     }
 
     try {
         await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN DeviceType TEXT;`);
-        logger.info("[schema] Migration: DeviceType column added to DashboardCards");
+        logger.debug("[schema] Migration: DeviceType column added to DashboardCards");
     } catch {
-        logger.info("[schema] Migration: DeviceType column already exists in DashboardCards (ok)");
+        logger.debug("[schema] Migration: DeviceType column already exists in DashboardCards (ok)");
     }
 
     try {
         await db.execAsync(`ALTER TABLE DashboardCards ADD COLUMN CardMode TEXT NOT NULL DEFAULT 'entitycount';`);
-        logger.info("[schema] Migration: CardMode column added to DashboardCards");
+        logger.debug("[schema] Migration: CardMode column added to DashboardCards");
     } catch {
-        logger.info("[schema] Migration: CardMode column already exists in DashboardCards (ok)");
+        logger.debug("[schema] Migration: CardMode column already exists in DashboardCards (ok)");
     }
 
     try {
@@ -352,7 +352,7 @@ export async function migrateProjectSchema(projectId: number) {
             ), 'entitycount')
             WHERE CardMode = 'entitycount' AND BreakdownField IS NOT NULL AND BreakdownField != '' AND AggregateField IS NULL;
         `);
-        logger.info("[schema] Migration: CardMode backfill complete for DashboardCards");
+        logger.debug("[schema] Migration: CardMode backfill complete for DashboardCards");
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — CardMode backfill failed (non-fatal):", e);
     }
@@ -369,11 +369,11 @@ export async function migrateProjectSchema(projectId: number) {
           logger.info("[schema] migrateProjectSchema \u2014 migrateDeviceCards failed (non-fatal):", e);
       }
 
-    logger.info("✅ [schema] migrateProjectSchema() — END");
+    logger.debug("✅ [schema] migrateProjectSchema() — END");
 }
 
 export async function createSchema() {
-    logger.info("[schema] createSchema() — START");
+    logger.debug("[schema] createSchema() — START");
 
     const db = await getDatabase();
 
@@ -381,15 +381,15 @@ export async function createSchema() {
         "SELECT name FROM sqlite_master WHERE type='table'"
     );
     const tableNames = tables.map(t => t.name);
-    logger.info("[schema] createSchema — existing tables:", JSON.stringify(tableNames));
+    logger.debug("[schema] createSchema — existing tables:", JSON.stringify(tableNames));
 
     if (tableNames.includes("Divisions")) {
-        logger.info("[schema] createSchema — detected global DB (has Divisions)");
+        logger.debug("[schema] createSchema — detected global DB (has Divisions)");
         await createGlobalSchema();
     } else {
-        logger.info("[schema] createSchema — detected project DB (no Divisions)");
+        logger.debug("[schema] createSchema — detected project DB (no Divisions)");
         await createProjectSchema();
     }
 
-    logger.info("[schema] createSchema() — END");
+    logger.debug("[schema] createSchema() — END");
 }

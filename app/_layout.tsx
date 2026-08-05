@@ -22,78 +22,78 @@ export default function RootLayout() {
   const [dbError, setDbError] = useState<string | null>(null);
 
   useEffect(() => {
-async function init() {
-  await SystemUI.setBackgroundColorAsync("#F5F5F5");
+    async function init() {
+      await SystemUI.setBackgroundColorAsync("#F5F5F5");
 
-  try {
-    await initializeDatabase();
-    setDbReady(true);
-  } catch (e) {
-    const msg = getInitError() || (e instanceof Error ? e.message : String(e));
-    logger.error("[RootLayout] DB init failed:", msg);
-    setDbError(msg);
-    setDbReady(true);
-  }
-}
+      try {
+        await initializeDatabase();
+        setDbReady(true);
+      } catch (e) {
+        const msg = getInitError() || (e instanceof Error ? e.message : String(e));
+        logger.error("[RootLayout] DB init failed:", msg);
+        setDbError(msg);
+        setDbReady(true);
+      }
+    }
 
-logger.info(`[perf] RootLayout mount: ${Date.now() - START}ms`);
+    logger.debug(`[perf] RootLayout mount: ${Date.now() - START}ms`);
     init();
   }, []);
 
   useEffect(() => {
     if (loaded || error) {
-      logger.info(`[perf] SplashScreen hidden: ${Date.now() - START}ms`);
+      logger.debug(`[perf] SplashScreen hidden: ${Date.now() - START}ms`);
       SplashScreen.hideAsync();
     }
   }, [loaded, error]);
 
   if (!loaded || !dbReady) {
-  return null;
-}
+    return null;
+  }
 
-if (dbError) {
+  if (dbError) {
+    return (
+      <PaperProvider>
+        <SafeAreaProvider>
+          <StatusBar
+            style="light"
+            translucent={false}
+            backgroundColor="#D32F2F"
+          />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: {
+                backgroundColor: "#F5F5F5",
+              },
+            }}
+          />
+        </SafeAreaProvider>
+      </PaperProvider>
+    );
+  }
+
+  logger.info(`Application ready: ${Date.now() - START}ms`);
   return (
     <PaperProvider>
-      <SafeAreaProvider>
-        <StatusBar
-          style="light"
-          translucent={false}
-          backgroundColor="#D32F2F"
-        />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: {
-              backgroundColor: "#F5F5F5",
-            },
-          }}
-        />
-      </SafeAreaProvider>
+      <InspectionProvider>
+        <SafeAreaProvider>
+          <StatusBar
+            style="light"
+            translucent={false}
+            backgroundColor="#0B5ED7"
+          />
+
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: {
+                backgroundColor: "#F5F5F5",
+              },
+            }}
+          />
+        </SafeAreaProvider>
+      </InspectionProvider>
     </PaperProvider>
   );
-}
-
-logger.info(`[perf] UI first render: ${Date.now() - START}ms`);
-return (
-  <PaperProvider>
-    <InspectionProvider>
-      <SafeAreaProvider>
-        <StatusBar
-          style="light"
-          translucent={false}
-          backgroundColor="#0B5ED7"
-        />
-
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: {
-              backgroundColor: "#F5F5F5",
-            },
-          }}
-        />
-      </SafeAreaProvider>
-    </InspectionProvider>
-  </PaperProvider>
-);
 }

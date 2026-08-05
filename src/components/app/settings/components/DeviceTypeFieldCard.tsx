@@ -1,7 +1,7 @@
 import React from "react";
 import { View } from "react-native";
 import { Card, Text, IconButton, Button } from "react-native-paper";
-import { DeviceFieldDefinition } from "../../../src/database/repositories/DeviceFieldDefinitionsRepository";
+import { DeviceFieldDefinition } from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 
 interface Props {
   item: DeviceFieldDefinition;

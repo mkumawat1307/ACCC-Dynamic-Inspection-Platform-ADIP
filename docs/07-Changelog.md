@@ -44,7 +44,16 @@ Patch → Bug fixes
 - Categorization section removed from the Inspection Form: new DBs no longer seed it, and existing project DBs deactivate it (`IsActive = 0, IsDefault = 0` on both the section and its `pole_category` field) so the admin "Reset to Default" cannot bring it back. The `pole_category` field and its options are removed from the seed.
 - The Photos column — and the "Summary" section band it produced — removed from report exports (Excel/CSV) and the report preview. Preview, Excel, and CSV all consume the single `ReportTable`, so one change removed it everywhere.
 
-## [1.9.1] - 04-Aug-2026
+### Fixed
+
+- Text-type inspection fields on Smart Cards used an invalid MaterialCommunityIcons name (`"format"`); they now use the valid `"text-short"` icon, removing the console warning.
+- `migrateLegacyProjectDb` built a malformed double-absolute legacy path; it now resolves `SQLite/Projects/<Name>` and skips silently (early-return) when the legacy folder doesn't exist, removing the spurious startup warning.
+
+### Changed
+
+- Startup logging streamlined: boot now emits exactly five concise `info` lines (`Global schema migrated`, `Seed completed`, `Database initialized`, `Project database opened`, `Application ready`). Per-table creation, START/END markers, and no-op migration logs are downgraded to `debug`; `new Error()` stack-trace dumps and mojibake (corrupted emoji/dash) text removed; `failed (non-fatal)` warnings remain visible.
+- Non-route support files moved out of `app/` into `src/components/app/` (mirrored layout), so Expo Router no longer auto-routes them; route imports updated to `@/src/components/app/...`.
+- Logger gained a dev-only `trace` level (gated like `debug`).
 
 ### Added
 

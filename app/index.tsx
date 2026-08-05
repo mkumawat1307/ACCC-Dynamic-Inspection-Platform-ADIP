@@ -14,8 +14,8 @@ import { useRouter, useFocusEffect } from "expo-router";
 
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
-import { DeleteProjectDialog, CloneProjectDialog } from "@/app/components/ProjectDialogs";
-import { styles } from "@/app/index.styles";
+import { DeleteProjectDialog, CloneProjectDialog } from "@/src/components/app/components/ProjectDialogs";
+import { styles } from "@/src/components/app/index.styles";
 import { useInspection } from "@/src/context/InspectionContext";
 import { createProjectDb, cloneProjectDb, deleteProjectDb, getProjectDbPath } from "@/src/database/helpers/ProjectDBManager";
 

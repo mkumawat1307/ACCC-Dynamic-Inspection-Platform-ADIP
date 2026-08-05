@@ -28,8 +28,8 @@ import { useInspection } from "@/src/context/InspectionContext";
 
 import { useExportFlow } from "@/src/components/export/useExportFlow";
 
-import DeleteInspectionsDialog from "./components/DeleteInspectionsDialog";
-import InspectionExportDialogs from "./components/ExportDialogs";
+import DeleteInspectionsDialog from "@/src/components/app/inspection/components/DeleteInspectionsDialog";
+import InspectionExportDialogs from "@/src/components/app/inspection/components/ExportDialogs";
 
 export default function InspectionListScreen() {
 

@@ -32,7 +32,7 @@ describe("DatabaseService", () => {
     mockDb.getAllAsync.mockResolvedValue([{ name: "Projects" }, { name: "Divisions" }]);
     const { initializeDatabase } = require("@/src/database/DatabaseService");
     await initializeDatabase();
-    expect(getGlobalDatabase).toHaveBeenCalledTimes(2);
+    expect(getGlobalDatabase).toHaveBeenCalledTimes(1);
     expect(createGlobalSchema).toHaveBeenCalled();
     expect(seedGlobalDatabase).toHaveBeenCalled();
   });
@@ -40,7 +40,7 @@ describe("DatabaseService", () => {
   it("skips initialization if already in progress", async () => {
     const { initializeDatabase } = require("@/src/database/DatabaseService");
     await Promise.all([initializeDatabase(), initializeDatabase()]);
-    expect(getGlobalDatabase).toHaveBeenCalledTimes(2);
+    expect(getGlobalDatabase).toHaveBeenCalledTimes(1);
   });
 
   it("throws and sets initError on failure", async () => {

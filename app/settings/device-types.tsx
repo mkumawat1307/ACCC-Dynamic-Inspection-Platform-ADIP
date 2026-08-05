@@ -6,9 +6,9 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import DeviceFieldDefinitionsRepository, { DeviceFieldDefinition } from "../../src/database/repositories/DeviceFieldDefinitionsRepository";
 import { getDatabase } from "../../src/database/db";
-import { FieldDialog, AddTypeDialog, DeleteFieldDialog, DeleteTypeDialog } from "./components/DeviceTypeDialogs";
-import { styles } from "./device-types.styles";
-import DeviceTypeBody from "./components/DeviceTypeBody";
+import { FieldDialog, AddTypeDialog, DeleteFieldDialog, DeleteTypeDialog } from "@/src/components/app/settings/components/DeviceTypeDialogs";
+import { styles } from "@/src/components/app/settings/device-types.styles";
+import DeviceTypeBody from "@/src/components/app/settings/components/DeviceTypeBody";
 
 export default function DeviceTypesScreen() {
   const router = useRouter();
