@@ -12,14 +12,14 @@ import {
   Text,
   ActivityIndicator,
 } from "react-native-paper";
-import { WebView } from "react-native-webview";
 import * as FileSystem from "expo-file-system/legacy";
+import { useFocusEffect, useRouter } from "expo-router";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Photo } from "@/src/models/Photo";
 import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
-import { usePhotoCapture } from "./usePhotoCapture";
+import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "./useWatermarkProcessor";
 import PhotoCard from "./PhotoCard";
 import PhotoPreviewModal from "./PhotoPreviewModal";
@@ -34,6 +34,7 @@ interface Props {
 
 export default function PhotoSection({ inspectionId, locked = false }: Props) {
   const { project, poleId: contextPoleId } = useInspection();
+  const router = useRouter();
 
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +42,6 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null);
 
   useEffect(() => {
-    loadPhotos();
     loadBlock();
   }, [inspectionId]);
 
@@ -67,26 +67,34 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
     }
   }, [inspectionId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadPhotos();
+    }, [loadPhotos])
+  );
+
   const {
     watermarkState,
     watermarkHtml,
     webViewRef,
     handleWebViewMessage,
-    enqueueWatermark,
     clearWatermarkState,
     retryWatermark,
   } = useWatermarkProcessor({ project, onPhotosUpdated: loadPhotos });
 
-  const { capturing, capturePhoto } = usePhotoCapture({
-    inspectionId,
-    project,
-    contextPoleId,
-    block,
-    onPhotoCaptured: (newPhotoId, assetUri, fileName, lines) => {
-      enqueueWatermark(newPhotoId, assetUri, fileName, lines);
-      loadPhotos();
-    },
-  });
+  const handleCapture = useCallback(() => {
+    if (locked) {
+      Alert.alert(
+        "Pole ID Required",
+        "Please enter Pole ID first before filling the inspection details."
+      );
+      return;
+    }
+    router.push({
+      pathname: "/inspection/capture",
+      params: { inspectionId: String(inspectionId) },
+    });
+  }, [locked, inspectionId, router]);
 
   async function deletePhoto(photoId: number) {
     const state = watermarkState[photoId];
@@ -136,16 +144,11 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
 
   return (
     <View style={styles.container}>
-      {watermarkHtml && (
-        <WebView
-          ref={webViewRef}
-          source={{ html: watermarkHtml }}
-          style={styles.watermarkWebView}
-          javaScriptEnabled
-          originWhitelist={["*"]}
-          onMessage={handleWebViewMessage}
-        />
-      )}
+      <WatermarkMergeWebView
+        html={watermarkHtml}
+        webViewRef={webViewRef}
+        onMessage={handleWebViewMessage}
+      />
 
       <PhotoPreviewModal
         photo={previewPhoto}
@@ -160,8 +163,8 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
         photoCount={photos.length}
         hasMinPhotos={hasMinPhotos}
         allComplete={allComplete}
-        capturing={capturing}
-        onCapture={locked ? () => Alert.alert("Pole ID Required", "Please enter Pole ID first before filling the inspection details.") : capturePhoto}
+        capturing={false}
+        onCapture={handleCapture}
       />
 
       {photos.length === 0 && (
@@ -193,12 +196,6 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
 const styles = StyleSheet.create({
   container: {
     marginTop: 8,
-  },
-  watermarkWebView: {
-    position: "absolute",
-    top: -9999,
-    width: 1,
-    height: 1,
   },
   loading: {
     paddingVertical: 30,

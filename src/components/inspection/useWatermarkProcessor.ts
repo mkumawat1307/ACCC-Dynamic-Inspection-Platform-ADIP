@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { logger } from "@/src/utils/logger";
 import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
@@ -29,6 +29,22 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const failedJobsRef = useRef<Map<number, WatermarkJob>>(new Map());
   const processingRef = useRef(false);
   const webViewRef = useRef<WebView>(null);
+
+  useEffect(() => {
+    setWatermarkState(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const key of Object.keys(next)) {
+        const id = Number(key);
+        if (next[id] === "pending" || next[id] === "processing") {
+          next[id] = "failed";
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function clearWatermarkState(photoId: number) {
     setWatermarkState(prev => {
