@@ -175,16 +175,32 @@ describe("schema.ts createSchema", () => {
     await migrateProjectSchema(1);
 
     expect(mockRunAsync).toHaveBeenCalledWith(
-      "UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionKey = 'categorization'"
+      "UPDATE InspectionSections SET IsActive = 0, IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionKey = 'categorization'"
     );
     expect(mockRunAsync).toHaveBeenCalledWith(
-      "UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'"
+      "UPDATE InspectionFields SET IsActive = 0, IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'"
     );
     expect(mockRunAsync).toHaveBeenCalledWith(
       expect.stringContaining("UPDATE FieldOptions SET IsActive = 0")
     );
     expect(mockRunAsync).toHaveBeenCalledWith(
       "UPDATE InspectionFields SET IsRequired = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'switch_count'"
+    );
+  });
+
+  it("migrateProjectSchema renames Pole ID field label to Site ID", async () => {
+    mockGetFirstAsync
+      .mockResolvedValueOnce({ SectionID: 99 })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ FieldID: 6, FieldName: "Pole ID" });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+
+    await migrateProjectSchema(1);
+
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      "UPDATE InspectionFields SET FieldName = 'Site ID', Placeholder = 'Enter Site ID', UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_id'"
     );
   });
 

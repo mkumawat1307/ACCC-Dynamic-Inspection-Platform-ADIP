@@ -241,15 +241,6 @@ async function buildReportTableInternal(
     }
   }
 
-  const summarySection: ReportSection = {
-    index: sections.length,
-    name: "Summary",
-    sectionKey: "summary",
-    isRepeatable: false,
-    columns: [{ key: "photos", label: "Photos", isDeviceColumn: false, sectionIndex: sections.length }],
-  };
-  sections.push(summarySection);
-
   const allColumns: ReportColumn[] = [];
   for (const s of sections) allColumns.push(...s.columns);
 
@@ -285,13 +276,6 @@ async function buildReportTableInternal(
     idList ? idList : [projectId]
   );
 
-  const photos = await db.getAllAsync<{ InspectionID: number; FileName: string }>(
-    idList
-      ? `SELECT InspectionID, FileName FROM Photos WHERE InspectionID IN (${placeholders}) ORDER BY PhotoID`
-      : `SELECT p.InspectionID, p.FileName FROM Photos p JOIN Inspections i ON p.InspectionID = i.InspectionID WHERE i.ProjectID = ? ORDER BY p.PhotoID`,
-    idList ? idList : [projectId]
-  );
-
   const valueMapByInspection = new Map<number, Map<number, string>>();
   for (const v of values) {
     if (!valueMapByInspection.has(v.InspectionID)) valueMapByInspection.set(v.InspectionID, new Map());
@@ -304,24 +288,15 @@ async function buildReportTableInternal(
     recordsByInspection.get(r.InspectionID)!.push(r);
   }
 
-  const photosByInspection = new Map<number, string>();
-  for (const p of photos) {
-    const current = photosByInspection.get(p.InspectionID) ?? "";
-    photosByInspection.set(p.InspectionID, current ? `${current}, ${p.FileName}` : p.FileName);
-  }
-
   const dateFallback = getCurrentInspectionDate();
-
   const rowsOut: ReportRow[] = [];
 
   const scalarCell = (
     c: ReportColumn,
     valueMap: Map<number, string>,
     lat: string,
-    lng: string,
-    photoNames: string
+    lng: string
   ): string => {
-    if (c.key === "photos") return photoNames;
     if (c.key === "gps_lat") return lat;
     if (c.key === "gps_lng") return lng;
     if (c.key === "date") return valueMap.get(c.fieldId ?? -1) || dateFallback;
@@ -332,7 +307,6 @@ async function buildReportTableInternal(
     const valueMap = valueMapByInspection.get(insp.InspectionID) ?? new Map<number, string>();
     const gpsValue = valueMap.get(gpsFieldId ?? -1) ?? "";
     const [lat, lng] = splitLatLong(gpsValue);
-    const photoNames = photosByInspection.get(insp.InspectionID) ?? "";
 
     const inspRecords = recordsByInspection.get(insp.InspectionID) ?? [];
     const recordsByType = new Map<string, typeof inspRecords>();
@@ -348,7 +322,7 @@ async function buildReportTableInternal(
     if (deviceSections.length === 0) {
       const baseRow: string[] = allColumns.map((c) => {
         if (c.isDeviceColumn) return "";
-        return scalarCell(c, valueMap, lat, lng, photoNames);
+        return scalarCell(c, valueMap, lat, lng);
       });
       rowsOut.push({ cells: baseRow, isDeviceRow: false });
       continue;
@@ -374,9 +348,9 @@ async function buildReportTableInternal(
         }
         const columnSection = sections[c.sectionIndex];
         if (REPEATED_SECTION_KEYS.has(columnSection.sectionKey)) {
-          return scalarCell(c, valueMap, lat, lng, photoNames);
+          return scalarCell(c, valueMap, lat, lng);
         }
-        return isFirstRow ? scalarCell(c, valueMap, lat, lng, photoNames) : "";
+        return isFirstRow ? scalarCell(c, valueMap, lat, lng) : "";
       });
       rowsOut.push({ cells, isDeviceRow: true });
     }

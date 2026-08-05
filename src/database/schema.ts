@@ -239,10 +239,10 @@ export async function migrateProjectSchema(projectId: number) {
         );
         if (categorizeField) {
             await db.runAsync(
-                `UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionKey = 'categorization'`
+                `UPDATE InspectionSections SET IsActive = 0, IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionKey = 'categorization'`
             );
             await db.runAsync(
-                `UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'`
+                `UPDATE InspectionFields SET IsActive = 0, IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'`
             );
             await db.runAsync(
                 `UPDATE FieldOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldID IN (SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_category')`
@@ -265,6 +265,20 @@ export async function migrateProjectSchema(projectId: number) {
         }
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — switch_count optional migration failed (non-fatal):", e);
+    }
+
+    try {
+        const poleIdField = await db.getFirstAsync<{ FieldID: number; FieldName: string }>(
+            `SELECT FieldID, FieldName FROM InspectionFields WHERE FieldKey = 'pole_id' AND FieldName = 'Pole ID' LIMIT 1`
+        );
+        if (poleIdField) {
+            await db.runAsync(
+                `UPDATE InspectionFields SET FieldName = 'Site ID', Placeholder = 'Enter Site ID', UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_id'`
+            );
+            logger.info("[schema] Migration: Renamed Pole ID field label to Site ID");
+        }
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — pole_id label migration failed (non-fatal):", e);
     }
 
     try {

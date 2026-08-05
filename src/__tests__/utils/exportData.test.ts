@@ -79,12 +79,10 @@ describe("buildReportTable", () => {
     expect(table.sections.map((s: { name: string }) => s.name)).toEqual([
       "General Information",
       "Camera Information",
-      "Summary",
     ]);
     expect(table.headers).toEqual([
       "Pole ID", "Latitude", "Longitude",
       "Camera Count", "Camera Type",
-      "Photos",
     ]);
     expect(table.rows).toEqual([]);
   });
@@ -109,8 +107,8 @@ describe("buildReportTable", () => {
     const table = await buildReportTable(1);
 
     expect(table.rows).toEqual([
-      { cells: ["P001", "12.9716", "77.5946", "", "", ""], isDeviceRow: false },
-      { cells: ["P002", "", "", "", "", ""], isDeviceRow: false },
+      { cells: ["P001", "12.9716", "77.5946", "", ""], isDeviceRow: false },
+      { cells: ["P002", "", "", "", ""], isDeviceRow: false },
     ]);
   });
 
@@ -127,17 +125,14 @@ describe("buildReportTable", () => {
       .mockResolvedValueOnce([
         { InspectionID: 1, DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "IP" }) },
         { InspectionID: 1, DeviceType: "Camera", DeviceNo: 2, DeviceData: JSON.stringify({ CameraType: "PTZ" }) },
-      ])
-      .mockResolvedValueOnce([
-        { InspectionID: 1, FileName: "photo1.jpg" },
       ]);
 
     const { buildReportTable } = require("@/src/utils/exportData");
     const table = await buildReportTable(1);
 
     expect(table.rows).toEqual([
-      { cells: ["P001", "12.9716", "77.5946", "2", "IP", "photo1.jpg"], isDeviceRow: true },
-      { cells: ["P001", "12.9716", "77.5946", "", "PTZ", ""], isDeviceRow: true },
+      { cells: ["P001", "12.9716", "77.5946", "2", "IP"], isDeviceRow: true },
+      { cells: ["P001", "12.9716", "77.5946", "", "PTZ"], isDeviceRow: true },
     ]);
     expect(table.inspectionCount).toBe(1);
   });
@@ -194,7 +189,7 @@ describe("buildReportTable", () => {
 
     expect(counts.inspectionCount).toBe(2);
     expect(counts.rowCount).toBe(2);
-    expect(counts.columnCount).toBe(6);
+    expect(counts.columnCount).toBe(5);
   });
 
   it("aligns device rows by index across device sections", async () => {
@@ -225,11 +220,11 @@ describe("buildReportTable", () => {
     const table = await buildReportTable(1);
 
     expect(table.headers).toEqual([
-      "Pole ID", "Camera Count", "Camera Type", "Switch Count", "Switch Type", "Photos",
+      "Pole ID", "Camera Count", "Camera Type", "Switch Count", "Switch Type",
     ]);
     expect(table.rows).toEqual([
-      { cells: ["P001", "2", "IP", "1", "S1", ""], isDeviceRow: true },
-      { cells: ["P001", "", "PTZ", "", "", ""], isDeviceRow: true },
+      { cells: ["P001", "2", "IP", "1", "S1"], isDeviceRow: true },
+      { cells: ["P001", "", "PTZ", "", ""], isDeviceRow: true },
     ]);
   });
 
@@ -257,10 +252,10 @@ describe("buildReportTable", () => {
     const { buildReportTable } = require("@/src/utils/exportData");
     const table = await buildReportTable(1);
 
-    expect(table.headers).toEqual(["Pole ID", "UPS Count", "UPS Model", "UPS Status", "Photos"]);
+    expect(table.headers).toEqual(["Pole ID", "UPS Count", "UPS Model", "UPS Status"]);
     expect(table.rows).toEqual([
-      { cells: ["P001", "2", "APC-1", "OK", ""], isDeviceRow: true },
-      { cells: ["P001", "", "APC-2", "Fault", ""], isDeviceRow: true },
+      { cells: ["P001", "2", "APC-1", "OK"], isDeviceRow: true },
+      { cells: ["P001", "", "APC-2", "Fault"], isDeviceRow: true },
     ]);
   });
 
@@ -296,8 +291,8 @@ describe("buildReportTable", () => {
     const table = await buildReportTable(1);
 
     expect(table.rows).toEqual([
-      { cells: ["P001", "31-Jul-2026", "Good", "Smart", "2", "IP", "note", "photo1.jpg"], isDeviceRow: true },
-      { cells: ["P001", "31-Jul-2026", "", "Smart", "", "PTZ", "", ""], isDeviceRow: true },
+      { cells: ["P001", "31-Jul-2026", "Good", "Smart", "2", "IP", "note"], isDeviceRow: true },
+      { cells: ["P001", "31-Jul-2026", "", "Smart", "", "PTZ", ""], isDeviceRow: true },
     ]);
   });
 
@@ -316,10 +311,9 @@ describe("buildReportTable", () => {
     expect(table.headers).toEqual([
       "Pole ID", "Latitude", "Longitude",
       "Camera Count", "Camera Type",
-      "Photos",
     ]);
     expect(table.rows).toEqual([
-      { cells: ["P002", "", "", "", "", ""], isDeviceRow: false },
+      { cells: ["P002", "", "", "", ""], isDeviceRow: false },
     ]);
   });
 
@@ -339,7 +333,7 @@ describe("buildReportTable", () => {
     const table = await buildReportTable(1, 1);
 
     expect(table.rows).toEqual([
-      { cells: ["P001", "12.9716", "77.5946", "", "", ""], isDeviceRow: false },
+      { cells: ["P001", "12.9716", "77.5946", "", ""], isDeviceRow: false },
     ]);
   });
 
@@ -364,8 +358,8 @@ describe("buildReportTable", () => {
     const table = await buildReportTable(1, [1, 3]);
 
     expect(table.rows).toEqual([
-      { cells: ["P001", "12.9716", "77.5946", "", "", ""], isDeviceRow: false },
-      { cells: ["P003", "28.7041", "77.1025", "", "", ""], isDeviceRow: false },
+      { cells: ["P001", "12.9716", "77.5946", "", ""], isDeviceRow: false },
+      { cells: ["P003", "28.7041", "77.1025", "", ""], isDeviceRow: false },
     ]);
   });
 
@@ -395,10 +389,10 @@ describe("buildReportTable", () => {
     const table = await buildReportTable(1);
 
     expect(table.headers).toEqual([
-      "Pole ID", "Camera Count", "Camera Type", "Switch Count", "Switch Type", "Photos",
+      "Pole ID", "Camera Count", "Camera Type", "Switch Count", "Switch Type",
     ]);
     expect(table.rows).toEqual([
-      { cells: ["P001", "1", "IP", "2", "", ""], isDeviceRow: true },
+      { cells: ["P001", "1", "IP", "2", ""], isDeviceRow: true },
     ]);
   });
 
@@ -424,9 +418,9 @@ describe("buildReportTable", () => {
     const { buildReportTable } = require("@/src/utils/exportData");
     const table = await buildReportTable(1);
 
-    expect(table.headers).toEqual(["Pole ID", "Router Count", "Router Model", "Photos"]);
+    expect(table.headers).toEqual(["Pole ID", "Router Count", "Router Model"]);
     expect(table.rows).toEqual([
-      { cells: ["P001", "1", "R1", ""], isDeviceRow: true },
+      { cells: ["P001", "1", "R1"], isDeviceRow: true },
     ]);
   });
 
@@ -455,10 +449,10 @@ describe("buildReportTable", () => {
     const table = await buildReportTable(1);
 
     expect(table.headers).toEqual([
-      "Pole ID", "Date", "Camera Count", "Camera Type", "Photos",
+      "Pole ID", "Date", "Camera Count", "Camera Type",
     ]);
     expect(table.rows).toEqual([
-      { cells: ["P001", fallback, "2", "IP", ""], isDeviceRow: true },
+      { cells: ["P001", fallback, "2", "IP"], isDeviceRow: true },
     ]);
   });
 });
