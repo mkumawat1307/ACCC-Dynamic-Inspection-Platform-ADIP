@@ -121,8 +121,9 @@ DB handle, in order:
       `today_poles`→`today_sites`, `total_pole_status`→`total_site_status`,
       `today_pole_status`→`today_site_status`).
    b. `UPDATE DashboardCards SET Title='Total Sites' WHERE CardKey='total_sites' AND Title='Total Poles'`,
-      `SET Title='Today's Sites' WHERE CardKey='today_sites' AND Title='Today's Poles'`,
-      `SET Title='Site Availability' WHERE CardKey IN ('total_site_status','today_site_status')`.
+      `SET Title='Today''s Sites' WHERE CardKey='today_sites' AND Title='Today''s Poles'`,
+      `SET Title='Site Availability' WHERE CardKey IN ('total_site_status','today_site_status')`
+      (apostrophes doubled — SQLite string-literal escaping).
    c. `UPDATE DashboardCards SET DistinctColumn='i.SiteID' WHERE DistinctColumn='i.PoleID'`.
    d. `UPDATE DashboardCards SET BreakdownField='site_avail' WHERE BreakdownField='pole_avail'`.
 6. `UPDATE DashboardCards SET CardKey=REPLACE(CardKey,'_pole_','_site_') WHERE CardKey LIKE 'smart_pole_%'`
