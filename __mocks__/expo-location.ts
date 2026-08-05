@@ -5,20 +5,34 @@ const Accuracy = {
   Highest: 6,
 };
 
-let permissionStatus: PermissionResponse["status"] = "granted";
-let mockCoords: { latitude: number; longitude: number } | null = null;
-let mockLastKnown: { latitude: number; longitude: number } | null = null;
+let permissionStatus: "granted" | "denied" | "undetermined" = "granted";
+let mockCoords: {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  timestamp: number;
+} | null = null;
+let mockLastKnown: {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  timestamp: number;
+} | null = null;
+let mockAddresses: Array<{ street?: string; city?: string; region?: string }> | null = null;
+let watchCallback: ((loc: unknown) => void) | null = null;
 
-type PermissionResponse = {
+function now(): number {
+  return Date.now();
+}
+
+export { Accuracy };
+
+export async function requestForegroundPermissionsAsync(): Promise<{
   status: "granted" | "denied" | "undetermined";
   granted: boolean;
   expires: "never" | number;
   canAskAgain: boolean;
-};
-
-export { Accuracy };
-
-export async function requestForegroundPermissionsAsync(): Promise<PermissionResponse> {
+}> {
   return {
     status: permissionStatus,
     granted: permissionStatus === "granted",
@@ -29,33 +43,83 @@ export async function requestForegroundPermissionsAsync(): Promise<PermissionRes
 
 export async function getCurrentPositionAsync(
   _options?: { accuracy?: number }
-): Promise<{ coords: { latitude: number; longitude: number } }> {
+): Promise<{
+  coords: { latitude: number; longitude: number; accuracy: number };
+  timestamp: number;
+}> {
   if (!mockCoords) {
     throw new Error("Location not available");
   }
-  return { coords: mockCoords };
+  return { coords: { ...mockCoords }, timestamp: mockCoords.timestamp };
 }
 
 export async function getLastKnownPositionAsync(): Promise<{
-  coords: { latitude: number; longitude: number };
+  coords: { latitude: number; longitude: number; accuracy: number };
+  timestamp: number;
 } | null> {
-  return mockLastKnown ? { coords: mockLastKnown } : null;
+  return mockLastKnown
+    ? { coords: { ...mockLastKnown }, timestamp: mockLastKnown.timestamp }
+    : null;
 }
 
-export function __setPermissionStatus(status: PermissionResponse["status"]) {
+export async function watchPositionAsync(
+  _options: unknown,
+  callback: (loc: unknown) => void
+): Promise<{ remove: () => void }> {
+  watchCallback = callback;
+  return {
+    remove: () => {
+      watchCallback = null;
+    },
+  };
+}
+
+export async function reverseGeocodeAsync(
+  _coords: unknown
+): Promise<Array<{ street?: string; city?: string; region?: string }> | null> {
+  return mockAddresses;
+}
+
+export function __setPermissionStatus(status: "granted" | "denied" | "undetermined") {
   permissionStatus = status;
 }
 
-export function __setMockLocation(latitude: number, longitude: number) {
-  mockCoords = { latitude, longitude };
+export function __setMockLocation(latitude: number, longitude: number, accuracy = 0) {
+  mockCoords = { latitude, longitude, accuracy, timestamp: now() };
 }
 
-export function __setMockLastKnown(latitude: number, longitude: number) {
-  mockLastKnown = { latitude, longitude };
+export function __setMockLastKnown(
+  latitude: number,
+  longitude: number,
+  accuracy = 0,
+  ageMs = 0
+) {
+  mockLastKnown = { latitude, longitude, accuracy, timestamp: now() - ageMs };
+}
+
+export function __setMockReverseGeocode(
+  addresses: Array<{ street?: string; city?: string; region?: string }> | null
+) {
+  mockAddresses = addresses;
+}
+
+export function __emitWatchLocation(
+  latitude: number,
+  longitude: number,
+  accuracy = 0
+) {
+  if (watchCallback) {
+    watchCallback({
+      coords: { latitude, longitude, accuracy, timestamp: now() },
+      timestamp: now(),
+    });
+  }
 }
 
 export function __resetLocationState() {
   permissionStatus = "granted";
   mockCoords = null;
   mockLastKnown = null;
+  mockAddresses = null;
+  watchCallback = null;
 }
