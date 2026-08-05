@@ -25,8 +25,8 @@ img.onload=function(){
   ctx.drawImage(img,0,0);
 
   var baseSize=Math.min(img.naturalWidth,img.naturalHeight);
-  var fSize=Math.max(40,Math.round(baseSize/35));
-  var lh=Math.round(fSize*1.4),padY=Math.round(fSize*0.5),rPad=Math.round(fSize*0.6),gap=Math.round(fSize*0.7);
+  var fSize=Math.max(20,Math.round(baseSize/70));
+  var lh=Math.round(fSize*1.2),padY=Math.round(fSize*0.35),rPad=Math.round(fSize*0.4),gap=Math.max(16,Math.round(fSize*0.6));
   var lines=${safeLines};
   ctx.font='bold '+fSize+'px monospace';
   var mw=0;
@@ -38,15 +38,22 @@ img.onload=function(){
   var rw=mw+rPad*2,rh=lines.length*lh+padY*2;
   var rx=gap,ry=cv.height-rh-gap;
 
-  ctx.fillStyle='rgba(0,0,0,0.6)';
-  roundRect(ctx,rx,ry,rw,rh,10);
+  ctx.fillStyle='rgba(0,0,0,0.5)';
+  roundRect(ctx,rx,ry,rw,rh,8);
   ctx.fill();
 
   ctx.fillStyle='#76FF03';
   ctx.font='bold '+fSize+'px monospace';
+  ctx.shadowColor='rgba(0,0,0,0.9)';
+  ctx.shadowBlur=2;
+  ctx.shadowOffsetX=1;
+  ctx.shadowOffsetY=1;
   for(var i=0;i<lines.length;i++){
-    ctx.fillText(lines[i],rx+rPad,ry+padY+i*lh+fSize-4);
+    ctx.fillText(lines[i],rx+rPad,ry+padY+i*lh+Math.round(fSize*0.8));
   }
+  ctx.shadowBlur=0;
+  ctx.shadowOffsetX=0;
+  ctx.shadowOffsetY=0;
 
   cv.toBlob(function(blob){
     var fr=new FileReader();

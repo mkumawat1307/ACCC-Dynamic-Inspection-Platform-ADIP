@@ -23,33 +23,33 @@ function collectStrings(node: unknown, out: string[] = []): string[] {
 }
 
 describe("computeWatermarkMetrics (mirrors watermarkHtml.ts canvas math)", () => {
-  it("clamps to fSize 40 for 1080x1920", () => {
+  it("clamps to fSize 20 for 1080x1920", () => {
     expect(computeWatermarkMetrics(1080, 1920)).toEqual({
-      fSize: 40,
-      lh: 56,
-      padY: 20,
-      rPad: 24,
-      gap: 28,
+      fSize: 20,
+      lh: 24,
+      padY: 7,
+      rPad: 8,
+      gap: 16,
     });
   });
 
   it("scales up for 4000x3000", () => {
     expect(computeWatermarkMetrics(4000, 3000)).toEqual({
-      fSize: 86,
-      lh: 120,
-      padY: 43,
-      rPad: 52,
-      gap: 60,
+      fSize: 43,
+      lh: 52,
+      padY: 15,
+      rPad: 17,
+      gap: 26,
     });
   });
 
   it("scales beyond the floor for 7000x7000", () => {
     expect(computeWatermarkMetrics(7000, 7000)).toEqual({
-      fSize: 200,
-      lh: 280,
-      padY: 100,
-      rPad: 120,
-      gap: 140,
+      fSize: 100,
+      lh: 120,
+      padY: 35,
+      rPad: 40,
+      gap: 60,
     });
   });
 });

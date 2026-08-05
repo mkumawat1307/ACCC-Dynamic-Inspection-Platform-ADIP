@@ -14,13 +14,13 @@ export function computeWatermarkMetrics(
   height: number
 ): WatermarkMetrics {
   const baseSize = Math.min(width, height);
-  const fSize = Math.max(40, Math.round(baseSize / 35));
+  const fSize = Math.max(20, Math.round(baseSize / 70));
   return {
     fSize,
-    lh: Math.round(fSize * 1.4),
-    padY: Math.round(fSize * 0.5),
-    rPad: Math.round(fSize * 0.6),
-    gap: Math.round(fSize * 0.7),
+    lh: Math.round(fSize * 1.2),
+    padY: Math.round(fSize * 0.35),
+    rPad: Math.round(fSize * 0.4),
+    gap: Math.max(16, Math.round(fSize * 0.6)),
   };
 }
 
@@ -53,7 +53,7 @@ export default function WatermarkOverlay({
           left: m.gap,
           paddingVertical: m.padY,
           paddingHorizontal: m.rPad,
-          borderRadius: 10,
+          borderRadius: 8,
         },
       ]}
     >
@@ -66,6 +66,9 @@ export default function WatermarkOverlay({
             color: "#76FF03",
             fontWeight: "bold",
             fontFamily: "monospace",
+            textShadowColor: "rgba(0,0,0,0.9)",
+            textShadowOffset: { width: 1, height: 1 },
+            textShadowRadius: 2,
           }}
         >
           {line}
@@ -78,6 +81,6 @@ export default function WatermarkOverlay({
 const styles = StyleSheet.create({
   box: {
     position: "absolute",
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
 });
