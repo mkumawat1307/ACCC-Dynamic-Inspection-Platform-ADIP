@@ -10,6 +10,8 @@ import { Project } from "@/src/models/Project";
 import { openProjectDb, deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
 import { clearActiveProject } from "@/src/database/db";
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
+import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
+import { logger } from "@/src/utils/logger";
 
 export interface InspectionContextType {
   project: Project | null;
@@ -52,6 +54,9 @@ const openProject = useCallback(async (p: Project) => {
     await openProjectDb(p.DBPath, p.ProjectID);
   }
   setProject(p);
+  migrateProjectPhotoFolder(p).catch((err) => {
+    logger.warn(`[FolderManager] Migration failed for project ${p.ProjectName}:`, err);
+  });
 }, []);
 
 const closeProject = useCallback(async () => {

@@ -780,7 +780,7 @@ Store metadata
 
 Burn watermark into gallery photos via a hidden WebView canvas (green #76FF03 on light black background)
 
-Save watermarked photos through the Storage Access Framework to the device gallery (DCIM/ACCC Inspection/<project>)
+Save watermarked photos through the Storage Access Framework to the device gallery (DCIM/ACCC Inspection/<District>_<ProjectName>; legacy folders migrate automatically on project open)
 
 ---
 

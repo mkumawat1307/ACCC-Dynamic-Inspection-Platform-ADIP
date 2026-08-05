@@ -515,7 +515,7 @@ Current files
 - location.ts (getCurrentLocation with permissions)
 - logger.ts (prod-safe console wrapper)
 - InspectionDataBus.ts (pub/sub for inspection changes)
-- storageManager.ts (SAF photo storage — ensureTreeUri/getProjectDir/writePhoto/deletePhoto)
+- storageManager.ts (SAF photo storage — ensureTreeUri/resolveInspectionRootDir/getProjectDir/writePhoto/deletePhoto; per-project folders named `<District>_<ProjectName>` under DCIM/ACCC Inspection)
 - watermarkHtml.ts (canvas watermark page builder)
 - exportData.ts (unified export service: banded Excel/CSV for projects and single inspections)
 - templateData.ts (template JSON export and import, v2 + legacy v1)
@@ -830,7 +830,7 @@ Primary Information
 - Description
 - InspectorName
 - DBPath (path to the project's isolated inspection.db)
-- SAFPath (path to the project's photo folder under DCIM/ACCC Inspection)
+- SAFPath (path to the project's photo folder under DCIM/ACCC Inspection/<District>_<ProjectName>)
 - CreatedAt
 - UpdatedAt
 
@@ -1264,7 +1264,7 @@ Render watermark on hidden WebView canvas (buildWatermarkPage)
 
 ↓
 
-Post base64 back → write to SAF gallery (DCIM/ACCC Inspection/<Project>)
+Post base64 back → write to SAF gallery (DCIM/ACCC Inspection/<District>_<ProjectName>; legacy folders migrate lazily on project open)
 
 ↓
 

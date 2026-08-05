@@ -157,7 +157,7 @@ The platform aims to:
 - Local Storage
 - Metadata
 - Green Watermark (Pole ID, District, GPS, Timestamp)
-- WebView canvas watermark burn-in + SAF gallery storage (DCIM/ACCC Inspection/<project>)
+- WebView canvas watermark burn-in + SAF gallery storage (DCIM/ACCC Inspection/<District>_<ProjectName>)
 - GPS Mandatory
 - Minimum 1 Photo Required
 

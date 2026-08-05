@@ -83,6 +83,19 @@ export default class PhotoRepository {
     );
   }
 
+  static async remapFilePaths(uriMap: Record<string, string>): Promise<number> {
+    const db = await getDatabase();
+    let updated = 0;
+    for (const [oldUri, newUri] of Object.entries(uriMap)) {
+      const result = await db.runAsync(
+        `UPDATE Photos SET FilePath = ? WHERE FilePath = ?`,
+        [newUri, oldUri]
+      );
+      updated += result.changes;
+    }
+    return updated;
+  }
+
   static async delete(
     photoId: number
   ): Promise<void> {

@@ -171,7 +171,7 @@ Active Development
 - Photo Preview Modal
 - Green Watermark Overlay (Pole ID, District+Block, GPS, Timestamp)
 - Watermark Burn-In (hidden WebView canvas, serial queue via `useWatermarkProcessor`)
-- SAF Photo Storage (expo-file-system; watermarked copies saved to DCIM/ACCC Inspection/<project>)
+- SAF Photo Storage (expo-file-system; watermarked copies saved to DCIM/ACCC Inspection/<District>_<ProjectName>; legacy folders migrate lazily on project open)
 - GPS Mandatory for Photo Capture
 - Pole ID + Block Read Fresh from DB Before Capture
 - Minimum 1 Photo Required for Validation

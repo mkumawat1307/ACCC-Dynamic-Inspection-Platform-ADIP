@@ -1011,7 +1011,7 @@ Users shall be able to:
 - Store photos with inspection records.
 - Associate photos with inspection components.
 - View watermarked photos in gallery.
-- View watermarked photos saved via SAF (DCIM/ACCC Inspection/<project>).
+- View watermarked photos saved via SAF (DCIM/ACCC Inspection/<District>_<ProjectName>; legacy folders migrate automatically on project open).
 
 ---
 

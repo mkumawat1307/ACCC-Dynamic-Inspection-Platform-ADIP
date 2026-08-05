@@ -20,3 +20,8 @@ declare module "expo-document-picker" {
   export function __setMockResult(result: { canceled: boolean; assets?: { uri: string; name?: string; size?: number }[] }): void;
   export function __resetPickerState(): void;
 }
+
+declare module "expo-file-system/legacy" {
+  export function __resetFsState(): void;
+  export function __setPermissionGranted(value: boolean): void;
+}
