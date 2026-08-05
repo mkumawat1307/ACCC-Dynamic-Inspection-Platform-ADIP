@@ -24,21 +24,49 @@ export function isLocationFresh(
   return nowMs - timestamp < staleMs;
 }
 
-export interface ReverseGeocodeResult {
-  label: string;
+export type GeocodedAddress = Location.LocationGeocodedAddress;
+
+export const MAX_ADDRESS_LINE_LENGTH = 44;
+export const MAX_ADDRESS_LINES = 3;
+
+export function truncateAddressLine(line: string): string {
+  const trimmed = line.trim();
+  if (trimmed.length <= MAX_ADDRESS_LINE_LENGTH) return trimmed;
+  return `${trimmed.slice(0, MAX_ADDRESS_LINE_LENGTH - 3)}...`;
+}
+
+export function formatAddressLines(address: GeocodedAddress | null): string[] {
+  if (!address) return [];
+
+  const streetNumber = address.streetNumber?.trim() ?? "";
+  const street = address.street?.trim() ?? "";
+  const road = (streetNumber && street ? `${streetNumber} ${street}` : street) || "";
+  const line1 = address.name?.trim() || road;
+
+  const area = address.subregion?.trim() || address.district?.trim() || "";
+
+  const city = address.city?.trim() || "";
+  const region = address.region?.trim() || "";
+  const place = city && region ? `${city}, ${region}` : city || region;
+
+  const lines: string[] = [];
+  for (const raw of [line1, area, place]) {
+    const t = raw.trim();
+    if (!t) continue;
+    lines.push(truncateAddressLine(t));
+    if (lines.length === MAX_ADDRESS_LINES) break;
+  }
+  return lines;
 }
 
 export async function reverseGeocode(
   latitude: number,
   longitude: number
-): Promise<ReverseGeocodeResult | null> {
+): Promise<GeocodedAddress | null> {
   try {
     const results = await Location.reverseGeocodeAsync({ latitude, longitude });
     if (!results || results.length === 0) return null;
-    const first = results[0];
-    const parts = [first.street, first.city, first.region].filter(Boolean) as string[];
-    if (parts.length === 0) return null;
-    return { label: parts.join(", ") };
+    return results[0];
   } catch {
     return null;
   }

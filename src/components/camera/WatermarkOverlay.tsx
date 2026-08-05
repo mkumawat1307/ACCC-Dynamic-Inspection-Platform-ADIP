@@ -33,6 +33,7 @@ interface Props {
   districtBlock: string;
   dateLine: string;
   gpsLine: string;
+  addressLines?: string[];
 }
 
 export default function WatermarkOverlay({
@@ -42,9 +43,10 @@ export default function WatermarkOverlay({
   districtBlock,
   dateLine,
   gpsLine,
+  addressLines,
 }: Props) {
   const m = computeWatermarkMetrics(width, height);
-  const lines = [poleId, districtBlock, dateLine, gpsLine];
+  const lines = [poleId, districtBlock, dateLine, gpsLine, ...(addressLines ?? [])];
   return (
     <View
       pointerEvents="none"

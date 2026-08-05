@@ -47,11 +47,11 @@ describe("reverseGeocode", () => {
     expect(await reverseGeocode(1, 2)).toBeNull();
   });
 
-  it("builds a label from address parts", async () => {
+  it("returns the raw geocoded address object", async () => {
     __setMockReverseGeocode([{ street: "Main St", city: "Anytown", region: "CA" }]);
     const { reverseGeocode } = require("@/src/utils/geo");
     const res = await reverseGeocode(1, 2);
-    expect(res?.label).toBe("Main St, Anytown, CA");
+    expect(res).toEqual({ street: "Main St", city: "Anytown", region: "CA" });
   });
 
   it("returns null when geocoding throws (offline)", async () => {
@@ -59,5 +59,76 @@ describe("reverseGeocode", () => {
     jest.spyOn(Location, "reverseGeocodeAsync").mockRejectedValueOnce(new Error("offline"));
     const { reverseGeocode } = require("@/src/utils/geo");
     expect(await reverseGeocode(1, 2)).toBeNull();
+  });
+});
+
+describe("truncateAddressLine", () => {
+  const { truncateAddressLine, MAX_ADDRESS_LINE_LENGTH } = require("@/src/utils/geo");
+
+  it("keeps short lines unchanged", () => {
+    expect(truncateAddressLine("  Station Road  ")).toBe("Station Road");
+  });
+
+  it("truncates long lines with an ellipsis", () => {
+    const long = "x".repeat(MAX_ADDRESS_LINE_LENGTH + 10);
+    const out = truncateAddressLine(long);
+    expect(out.length).toBe(MAX_ADDRESS_LINE_LENGTH);
+    expect(out.endsWith("...")).toBe(true);
+  });
+});
+
+describe("formatAddressLines", () => {
+  const { formatAddressLines } = require("@/src/utils/geo");
+
+  it("returns [] for a null address", () => {
+    expect(formatAddressLines(null)).toEqual([]);
+  });
+
+  it("builds landmark, area, and place lines", () => {
+    const addr = {
+      name: "Near Collector Office",
+      district: "Alwar",
+      city: "Alwar",
+      region: "Rajasthan",
+      postalCode: "301001",
+      country: "India",
+    };
+    expect(formatAddressLines(addr)).toEqual([
+      "Near Collector Office",
+      "Alwar",
+      "Alwar, Rajasthan",
+    ]);
+  });
+
+  it("does not include country or postal code", () => {
+    const out = formatAddressLines({
+      street: "Station Rd",
+      city: "Jaipur",
+      region: "Rajasthan",
+      postalCode: "302001",
+      country: "India",
+    });
+    expect(out.join(" ")).not.toContain("India");
+    expect(out.join(" ")).not.toContain("302001");
+  });
+
+  it("combines street number and street into the road line", () => {
+    const out = formatAddressLines({
+      streetNumber: "21",
+      street: "Park Street",
+      region: "West Bengal",
+    });
+    expect(out[0]).toBe("21 Park Street");
+  });
+
+  it("caps the number of emitted lines at three", () => {
+    const out = formatAddressLines({
+      name: "A",
+      subregion: "B",
+      district: "C",
+      city: "D",
+      region: "E",
+    });
+    expect(out.length).toBe(3);
   });
 });

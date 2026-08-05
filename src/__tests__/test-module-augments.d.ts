@@ -12,7 +12,17 @@ declare module "expo-location" {
   export function __emitWatchLocation(latitude: number, longitude: number, accuracy?: number): void;
   export function __resetLocationState(): void;
   export function __setMockReverseGeocode(
-    addresses: Array<{ street?: string; city?: string; region?: string }> | null
+    addresses: Array<{
+      city?: string | null;
+      district?: string | null;
+      streetNumber?: string | null;
+      street?: string | null;
+      region?: string | null;
+      subregion?: string | null;
+      country?: string | null;
+      postalCode?: string | null;
+      name?: string | null;
+    }> | null
   ): void;
 }
 

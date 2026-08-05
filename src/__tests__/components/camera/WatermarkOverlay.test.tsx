@@ -80,4 +80,49 @@ describe("WatermarkOverlay", () => {
       "Acquiring GPS…",
     ]);
   });
+
+  it("renders the reverse-geocoded address lines after the GPS line", () => {
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <WatermarkOverlay
+          width={1080}
+          height={1920}
+          poleId="SIK/001"
+          districtBlock="Alwar, XYZ"
+          dateLine="05-Aug-2026 05:33 PM"
+          gpsLine="27.608829, 75.151686"
+          addressLines={["Near Collector Office", "Station Road", "Alwar, Rajasthan"]}
+        />
+      );
+    });
+    const texts = collectStrings(tree.toJSON());
+    expect(texts).toEqual([
+      "SIK/001",
+      "Alwar, XYZ",
+      "05-Aug-2026 05:33 PM",
+      "27.608829, 75.151686",
+      "Near Collector Office",
+      "Station Road",
+      "Alwar, Rajasthan",
+    ]);
+  });
+
+  it("does not render an address section when no address lines are given", () => {
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(
+        <WatermarkOverlay
+          width={1080}
+          height={1920}
+          poleId="P-101"
+          districtBlock="North, B3"
+          dateLine="04-Aug-2026 10:00 AM"
+          gpsLine="Acquiring GPS…"
+        />
+      );
+    });
+    const texts = collectStrings(tree.toJSON());
+    expect(texts).toHaveLength(4);
+  });
 });

@@ -20,7 +20,11 @@ import WatermarkOverlay from "@/src/components/camera/WatermarkOverlay";
 import { useCaptureFlow } from "@/src/components/camera/useCaptureFlow";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
-import { reverseGeocode } from "@/src/utils/geo";
+import {
+  useAddressLookup,
+  RESOLVING_ADDRESS,
+  ADDRESS_UNAVAILABLE,
+} from "@/src/components/camera/useAddressLookup";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
@@ -33,6 +37,7 @@ export default function CaptureScreen() {
 
   const cameraRef = useRef<React.ElementRef<typeof CameraView>>(null);
   const gps = useGpsTracker();
+  const addressLines = useAddressLookup(gps.coords);
 
   const [cameraSize, setCameraSize] = useState({ width: 0, height: 0 });
   const [values, setValues] = useState<{ pole_id: string; block: string }>({
@@ -40,7 +45,6 @@ export default function CaptureScreen() {
     block: "",
   });
   const [now, setNow] = useState(() => new Date());
-  const [address, setAddress] = useState<string | null>(null);
   const [shutterBusy, setShutterBusy] = useState(false);
   const [confirmedPhoto, setConfirmedPhoto] = useState<Photo | null>(null);
 
@@ -85,19 +89,6 @@ export default function CaptureScreen() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
-
-  useEffect(() => {
-    if (!gps.coords) return;
-    let cancelled = false;
-    reverseGeocode(gps.coords.latitude, gps.coords.longitude)
-      .then((res) => {
-        if (!cancelled) setAddress(res?.label ?? null);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [gps.coords]);
 
   useEffect(() => {
     if (flow.phase !== "merging" || flow.pending == null) return;
@@ -207,6 +198,7 @@ export default function CaptureScreen() {
         `${project?.DistrictName || ""}, ${block}`,
         formatWatermarkDate(timestamp),
         formatLatLngWM(coords.latitude, coords.longitude),
+        ...addressLines,
       ];
 
       flow.beginCapture({ photoId, tempUri: result.uri, fileName, lines, timestamp });
@@ -242,6 +234,13 @@ export default function CaptureScreen() {
   const gpsLine = gps.coords
     ? formatLatLngWM(gps.coords.latitude, gps.coords.longitude)
     : "Acquiring GPS…";
+
+  const resolvedAddress =
+    addressLines.length > 0 &&
+    addressLines[0] !== RESOLVING_ADDRESS &&
+    addressLines[0] !== ADDRESS_UNAVAILABLE
+      ? addressLines.join("\n")
+      : null;
 
   if (permissionDenied) {
     return (
@@ -297,6 +296,7 @@ export default function CaptureScreen() {
                   districtBlock={`${project?.DistrictName || ""}, ${values.block || "NA"}`}
                   dateLine={formatWatermarkDate(now.toISOString())}
                   gpsLine={gpsLine}
+                  addressLines={addressLines}
                 />
               )}
 
@@ -344,7 +344,7 @@ export default function CaptureScreen() {
               style={styles.mergeImage}
               resizeMode="contain"
             />
-            {address && <Text style={styles.address}>{address}</Text>}
+            {resolvedAddress && <Text style={styles.address}>{resolvedAddress}</Text>}
             <View style={styles.confirmButtons}>
               <Button mode="outlined" icon="refresh" onPress={handleRetake}>
                 Retake
