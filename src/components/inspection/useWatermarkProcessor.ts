@@ -6,7 +6,7 @@ import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageManager";
 import { buildWatermarkPage } from "@/src/utils/watermarkHtml";
-import { WatermarkState } from "./photoUtils";
+import { useInspection } from "@/src/context/InspectionContext";
 
 interface WatermarkJob {
   photoId: number;
@@ -22,10 +22,11 @@ interface UseWatermarkProcessorOptions {
 }
 
 export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermarkProcessorOptions) {
-  const [watermarkState, setWatermarkState] = useState<Record<number, WatermarkState>>({});
+  const { photoStates: watermarkState, setPhotoStates: setWatermarkState } = useInspection();
   const [watermarkHtml, setWatermarkHtml] = useState<string | null>(null);
 
   const queueRef = useRef<WatermarkJob[]>([]);
+  const failedJobsRef = useRef<Map<number, WatermarkJob>>(new Map());
   const processingRef = useRef(false);
   const webViewRef = useRef<WebView>(null);
 
@@ -36,6 +37,14 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
       return next;
     });
     queueRef.current = queueRef.current.filter(j => j.photoId !== photoId);
+    failedJobsRef.current.delete(photoId);
+  }
+
+  function retryWatermark(photoId: number) {
+    const job = failedJobsRef.current.get(photoId);
+    if (!job) return;
+    failedJobsRef.current.delete(photoId);
+    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines);
   }
 
   function handleJobFailure(job: WatermarkJob) {
@@ -45,6 +54,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
       setWatermarkState(prev => ({ ...prev, [job.photoId]: "pending" }));
     } else {
       queueRef.current.shift();
+      failedJobsRef.current.set(job.photoId, job);
       setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
     }
     processingRef.current = false;
@@ -58,6 +68,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
 
     const job = queueRef.current[idx];
     queueRef.current.splice(idx, 1);
+    failedJobsRef.current.delete(photoId);
 
     if (job?.inputPath) {
       try {
@@ -144,6 +155,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     handleWebViewMessage,
     enqueueWatermark,
     clearWatermarkState,
+    retryWatermark,
   };
 }
 

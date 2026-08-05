@@ -5,7 +5,9 @@ import {
   formatWatermarkDate,
   formatLatLngWM,
   generateFileName,
+  validatePhotosForSave,
 } from "@/src/components/inspection/photoUtils";
+import { Photo } from "@/src/models/Photo";
 
 describe("formatDate", () => {
   it("returns empty string for null input", () => {
@@ -136,5 +138,90 @@ describe("generateFileName", () => {
     const long = "A".repeat(30);
     const result = generateFileName(long, "BlockA", "P001", "2024-06-15T10:30:00");
     expect(result).toMatch(new RegExp(`^A{20}_BlockA_P001_`));
+  });
+});
+
+function makePhoto(id: number, filePath: string): Photo {
+  return {
+    PhotoID: id,
+    InspectionID: 1,
+    PhotoType: "Pole",
+    FileName: `${id}.jpg`,
+    FilePath: filePath,
+    Latitude: 1,
+    Longitude: 1,
+    CapturedAt: "2024-06-15T10:30:00",
+    Remarks: null,
+  };
+}
+
+describe("validatePhotosForSave", () => {
+  it("blocks when no photos exist", () => {
+    expect(validatePhotosForSave([], {})).toEqual({ canSave: false, reason: "no_photos" });
+  });
+
+  it("blocks while a photo is processing", () => {
+    const photos = [makePhoto(1, "file:///tmp/1.jpg")];
+    expect(validatePhotosForSave(photos, { 1: "processing" })).toEqual({
+      canSave: false,
+      reason: "processing",
+    });
+  });
+
+  it("blocks while a photo is pending", () => {
+    const photos = [makePhoto(1, "file:///tmp/1.jpg")];
+    expect(validatePhotosForSave(photos, { 1: "pending" })).toEqual({
+      canSave: false,
+      reason: "pending",
+    });
+  });
+
+  it("blocks when a photo failed", () => {
+    const photos = [makePhoto(1, "file:///tmp/1.jpg")];
+    expect(validatePhotosForSave(photos, { 1: "failed" })).toEqual({
+      canSave: false,
+      reason: "failed",
+    });
+  });
+
+  it("blocks when a photo has no state and a temp file path", () => {
+    const photos = [makePhoto(1, "file:///tmp/1.jpg")];
+    expect(validatePhotosForSave(photos, {})).toEqual({
+      canSave: false,
+      reason: "unprocessed",
+    });
+  });
+
+  it("allows a single completed photo", () => {
+    const photos = [makePhoto(1, "content://media/1.jpg")];
+    expect(validatePhotosForSave(photos, { 1: "completed" })).toEqual({
+      canSave: true,
+      reason: null,
+    });
+  });
+
+  it("treats content:// photos without state as processed (prior session)", () => {
+    const photos = [makePhoto(1, "content://media/1.jpg")];
+    expect(validatePhotosForSave(photos, {})).toEqual({ canSave: true, reason: null });
+  });
+
+  it("allows when all photos are completed", () => {
+    const photos = [
+      makePhoto(1, "content://media/1.jpg"),
+      makePhoto(2, "content://media/2.jpg"),
+    ];
+    expect(
+      validatePhotosForSave(photos, { 1: "completed", 2: "completed" })
+    ).toEqual({ canSave: true, reason: null });
+  });
+
+  it("blocks when any one of many photos is still processing", () => {
+    const photos = [
+      makePhoto(1, "content://media/1.jpg"),
+      makePhoto(2, "file:///tmp/2.jpg"),
+    ];
+    expect(
+      validatePhotosForSave(photos, { 1: "completed", 2: "processing" })
+    ).toEqual({ canSave: false, reason: "processing" });
   });
 });
