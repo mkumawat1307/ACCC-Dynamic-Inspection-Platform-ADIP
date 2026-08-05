@@ -134,8 +134,11 @@ class MockDatabase {
       const whereClause = updateMatch[3];
       const table = this.tables.get(tableName) ?? [];
       const setParts = setClause.split(",").map((s) => s.trim());
+      const setParamCount = setClause.match(/\?/g)?.length ?? 0;
       let paramIdx = 0;
-      const filter = whereClause ? parseWhere(whereClause, params) : () => true;
+      const filter = whereClause
+        ? parseWhere(whereClause, params.slice(setParamCount))
+        : () => true;
       let changes = 0;
       for (const row of table) {
         if (filter(row)) {

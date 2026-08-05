@@ -22,6 +22,21 @@ export default class PhotoRepository {
 
   }
 
+  static async getById(photoId: number): Promise<Photo | null> {
+
+    const db = await getDatabase();
+
+    return await db.getFirstAsync<Photo>(
+      `
+      SELECT *
+      FROM Photos
+      WHERE PhotoID = ?;
+      `,
+      [photoId]
+    );
+
+  }
+
   static async create(
     photo: Photo
   ): Promise<number> {
