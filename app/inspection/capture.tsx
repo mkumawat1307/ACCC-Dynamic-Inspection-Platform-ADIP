@@ -266,42 +266,49 @@ export default function CaptureScreen() {
 
       <View style={styles.body}>
         {flow.phase === "preview" && (
-          <View
-            style={styles.cameraWrap}
-            onLayout={(e) =>
-              setCameraSize({
-                width: e.nativeEvent.layout.width,
-                height: e.nativeEvent.layout.height,
-              })
-            }
-          >
-            {permission?.granted ? (
-              <CameraView ref={cameraRef} facing="back" style={styles.fill} />
-            ) : (
-              <View style={[styles.fill, styles.center]}>
-                <ActivityIndicator size="large" />
+          <>
+            <View
+              style={styles.cameraWrap}
+              onLayout={(e) =>
+                setCameraSize({
+                  width: e.nativeEvent.layout.width,
+                  height: e.nativeEvent.layout.height,
+                })
+              }
+            >
+              {permission?.granted ? (
+                <CameraView
+                  ref={cameraRef}
+                  facing="back"
+                  ratio="4:3"
+                  style={styles.fill}
+                />
+              ) : (
+                <View style={[styles.fill, styles.center]}>
+                  <ActivityIndicator size="large" />
+                </View>
+              )}
+
+              {cameraSize.width > 0 && (
+                <WatermarkOverlay
+                  width={cameraSize.width}
+                  height={cameraSize.height}
+                  poleId={values.pole_id || "NA"}
+                  districtBlock={`${project?.DistrictName || ""}, ${values.block || "NA"}`}
+                  dateLine={formatWatermarkDate(now.toISOString())}
+                  gpsLine={gpsLine}
+                />
+              )}
+
+              <View style={styles.gpsPill}>
+                <Text style={styles.gpsPillText}>
+                  {gps.status === "fixed"
+                    ? "GPS OK"
+                    : gps.status === "denied"
+                    ? "GPS denied"
+                    : "Acquiring GPS…"}
+                </Text>
               </View>
-            )}
-
-            {cameraSize.width > 0 && (
-              <WatermarkOverlay
-                width={cameraSize.width}
-                height={cameraSize.height}
-                poleId={values.pole_id || "NA"}
-                districtBlock={`${project?.DistrictName || ""}, ${values.block || "NA"}`}
-                dateLine={formatWatermarkDate(now.toISOString())}
-                gpsLine={gpsLine}
-              />
-            )}
-
-            <View style={styles.gpsPill}>
-              <Text style={styles.gpsPillText}>
-                {gps.status === "fixed"
-                  ? "GPS OK"
-                  : gps.status === "denied"
-                  ? "GPS denied"
-                  : "Acquiring GPS…"}
-              </Text>
             </View>
 
             <View style={styles.controls}>
@@ -315,7 +322,7 @@ export default function CaptureScreen() {
                 Capture
               </Button>
             </View>
-          </View>
+          </>
         )}
 
         {flow.phase === "merging" && flow.pending && (
@@ -389,7 +396,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cameraWrap: {
-    flex: 1,
+    width: "100%",
+    aspectRatio: 3 / 4,
     backgroundColor: "#000000",
   },
   fill: {
@@ -415,10 +423,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   controls: {
-    position: "absolute",
-    bottom: 24,
-    left: 0,
-    right: 0,
+    paddingVertical: 24,
     alignItems: "center",
   },
   mergeImage: {

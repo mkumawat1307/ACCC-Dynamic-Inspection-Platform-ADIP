@@ -36,6 +36,8 @@ Patch → Bug fixes
 - The field labelled "Pole ID" in the Inspection Form is now renamed to "Site ID" (new DBs are seeded with the new label/placeholder; existing project DBs are migrated automatically via `migrateProjectSchema`). The underlying field key remains `pole_id`.
 - Switch Count is now optional (no longer required) in the Inspection Form — applied to new DBs and existing project DBs (`IsRequired = 0`).
 - Live Watermark UI compacted: font rendered ~50% smaller (`baseSize/70`, floor 20, previously `baseSize/35` clamped at 40), tighter metrics, slimmer edge padding, 8px corner radius, and the black backdrop dropped to 50% opacity. The green (#76FF03) bold monospace text now carries a thin black outline shadow for legibility. Both the on-screen `WatermarkOverlay` and the merged/saved image (canvas in `watermarkHtml.ts`) share the identical metric math, so the preview and the final saved photo match pixel-for-pixel.
+- Saved-photo watermark sizing aligned with the live preview: the shared formula now uses `baseSize/20` (was `baseSize/70`), so the watermark burned into the saved image renders at ~5% of the image width — the same proportion the preview shows — instead of ~1.4%. WYSIWYG restored.
+- Camera preview is now a 4:3 (portrait 3:4) box (`CameraView ratio="4:3"`) instead of a full-screen viewfinder, so the watermark overlay's framing matches the captured photo; the Capture button moved to a bar below the 4:3 box rather than overlaying the viewfinder.
 
 ### Removed
 

@@ -25,7 +25,7 @@ img.onload=function(){
   ctx.drawImage(img,0,0);
 
   var baseSize=Math.min(img.naturalWidth,img.naturalHeight);
-  var fSize=Math.max(20,Math.round(baseSize/70));
+  var fSize=Math.max(20,Math.round(baseSize/20));
   var lh=Math.round(fSize*1.2),padY=Math.round(fSize*0.35),rPad=Math.round(fSize*0.4),gap=Math.max(16,Math.round(fSize*0.6));
   var lines=${safeLines};
   ctx.font='bold '+fSize+'px monospace';
