@@ -59,13 +59,6 @@
         }
       ],
       [
-        "expo-image-picker",
-        {
-          "photosPermission": "Attach photos of the pole to the inspection",
-          "cameraPermission": "Take photos of the pole and equipment"
-        }
-      ],
-      [
         "expo-media-library",
         {
           "photosPermission": "Allow ACCC Dynamic Inspection Platform to access attached photos",
