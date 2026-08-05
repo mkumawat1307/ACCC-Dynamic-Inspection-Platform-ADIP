@@ -4,6 +4,9 @@ declare module "expo-location" {
   export function __setPermissionStatus(status: "granted" | "denied" | "undetermined"): void;
   export function __setMockLocation(latitude: number, longitude: number): void;
   export function __resetLocationState(): void;
+  export function __setMockReverseGeocode(
+    addresses: Array<{ street?: string; city?: string; region?: string }> | null
+  ): void;
 }
 
 declare module "expo-document-picker" {
