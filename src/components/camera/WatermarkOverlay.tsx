@@ -6,7 +6,8 @@ export interface WatermarkMetrics {
   lh: number;
   padY: number;
   rPad: number;
-  gap: number;
+  gapX: number;
+  gapY: number;
 }
 
 export function computeWatermarkMetrics(
@@ -14,13 +15,14 @@ export function computeWatermarkMetrics(
   height: number
 ): WatermarkMetrics {
   const baseSize = Math.min(width, height);
-  const fSize = Math.max(20, Math.round(baseSize / 20));
+  const fSize = Math.max(22, Math.round(baseSize / 18));
   return {
     fSize,
-    lh: Math.round(fSize * 1.2),
+    lh: Math.round(fSize * 1.15),
     padY: Math.round(fSize * 0.35),
     rPad: Math.round(fSize * 0.4),
-    gap: Math.max(16, Math.round(fSize * 0.6)),
+    gapX: Math.max(16, Math.round(fSize * 0.75)),
+    gapY: Math.max(20, Math.round(fSize * 1.0)),
   };
 }
 
@@ -49,8 +51,8 @@ export default function WatermarkOverlay({
       style={[
         styles.box,
         {
-          bottom: m.gap,
-          left: m.gap,
+          bottom: m.gapY,
+          left: m.gapX,
           paddingVertical: m.padY,
           paddingHorizontal: m.rPad,
           borderRadius: 8,

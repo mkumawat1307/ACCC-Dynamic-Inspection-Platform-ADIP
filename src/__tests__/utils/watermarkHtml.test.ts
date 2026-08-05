@@ -46,4 +46,16 @@ describe("buildWatermarkPage", () => {
     const html = buildWatermarkPage("data", ["Only one"], 1);
     expect(html).toContain('["Only one"]');
   });
+
+  it("uses the same watermark metrics as the preview overlay (WYSIWYG)", () => {
+    const html = buildWatermarkPage("data", ["Line 1"], 1);
+    expect(html).toContain("var fSize=Math.max(22,Math.round(baseSize/18));");
+    expect(html).toContain("var lh=Math.round(fSize*1.15)");
+    expect(html).toContain("padY=Math.round(fSize*0.35)");
+    expect(html).toContain("rPad=Math.round(fSize*0.4)");
+    expect(html).toContain("gapX=Math.max(16,Math.round(fSize*0.75))");
+    expect(html).toContain("gapY=Math.max(20,Math.round(fSize*1.0))");
+    expect(html).toContain("var rx=gapX,ry=cv.height-rh-gapY;");
+    expect(html).toContain("roundRect(ctx,rx,ry,rw,rh,8)");
+  });
 });

@@ -25,8 +25,8 @@ img.onload=function(){
   ctx.drawImage(img,0,0);
 
   var baseSize=Math.min(img.naturalWidth,img.naturalHeight);
-  var fSize=Math.max(20,Math.round(baseSize/20));
-  var lh=Math.round(fSize*1.2),padY=Math.round(fSize*0.35),rPad=Math.round(fSize*0.4),gap=Math.max(16,Math.round(fSize*0.6));
+  var fSize=Math.max(22,Math.round(baseSize/18));
+  var lh=Math.round(fSize*1.15),padY=Math.round(fSize*0.35),rPad=Math.round(fSize*0.4),gapX=Math.max(16,Math.round(fSize*0.75)),gapY=Math.max(20,Math.round(fSize*1.0));
   var lines=${safeLines};
   ctx.font='bold '+fSize+'px monospace';
   var mw=0;
@@ -36,7 +36,7 @@ img.onload=function(){
   }
 
   var rw=mw+rPad*2,rh=lines.length*lh+padY*2;
-  var rx=gap,ry=cv.height-rh-gap;
+  var rx=gapX,ry=cv.height-rh-gapY;
 
   ctx.fillStyle='rgba(0,0,0,0.5)';
   roundRect(ctx,rx,ry,rw,rh,8);
