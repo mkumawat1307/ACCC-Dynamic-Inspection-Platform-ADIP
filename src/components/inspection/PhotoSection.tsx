@@ -74,6 +74,7 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
     handleWebViewMessage,
     enqueueWatermark,
     clearWatermarkState,
+    retryWatermark,
   } = useWatermarkProcessor({ project, onPhotosUpdated: loadPhotos });
 
   const { capturing, capturePhoto } = usePhotoCapture({
@@ -182,6 +183,7 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
           state={watermarkState[photo.PhotoID!]}
           onPreview={setPreviewPhoto}
           onDelete={deletePhoto}
+          onRetry={retryWatermark}
         />
       ))}
     </View>

@@ -11,6 +11,7 @@ interface PhotoCardProps {
   state?: WatermarkState;
   onPreview: (photo: Photo) => void;
   onDelete: (photoId: number) => void;
+  onRetry?: (photoId: number) => void;
 }
 
 export default function PhotoCard({
@@ -19,6 +20,7 @@ export default function PhotoCard({
   state,
   onPreview,
   onDelete,
+  onRetry,
 }: PhotoCardProps) {
   return (
     <Card key={photo.PhotoID} style={styles.card}>
@@ -37,6 +39,14 @@ export default function PhotoCard({
           )}
           {state === "failed" && (
             <Text style={styles.failedIcon}>{"!"}</Text>
+          )}
+          {state === "failed" && onRetry && (
+            <IconButton
+              icon="refresh"
+              iconColor="#F57C00"
+              size={20}
+              onPress={() => onRetry(photo.PhotoID!)}
+            />
           )}
           <IconButton
             icon="eye"

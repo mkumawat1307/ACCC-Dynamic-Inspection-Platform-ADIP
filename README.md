@@ -114,36 +114,34 @@ The app is fully offline — there is no server, no network dependency, and no a
 
 ## 5. Installation
 
-Prerequisites: Node.js (LTS), Yarn 1.x, and either the Expo Go app or an Android emulator/device.
+Prerequisites: Node.js (LTS), Android Studio/Android SDK, and either the Expo Go app or an Android emulator/device.
 
-```bash
-# 1. Clone / enter the repo
+```powershell
+# 1. Enter the repo
 cd "ACCC inspection/frontend"
 
-# 2. Install dependencies (uses yarn 1.22; preinstall guard blocks unsafe installs)
-yarn install
+# 2. Install dependencies (uses npm/npx; yarn is not on PATH)
+npm install
 ```
 
-> **Package manager**: `package.json` pins the `packageManager`; `.npmrc` sets `save-exact=true`. Do not use `npm install` in this repo.
+> **Package manager**: `package.json` pins the `packageManager`. Do not use `yarn` in this repo.
 
 ---
 
 ## 6. Running the App
 
-```bash
+```powershell
 cd frontend
-yarn start              # Start the Expo dev server
-yarn android            # Run on Android device/emulator (or scan QR in Expo Go)
-yarn ios                # Run on iOS simulator (Expo Go / dev build)
-yarn web                # Run the web build
+npx expo start              # Start the Expo dev server
+npx expo run:android        # Run on Android device/emulator (or scan QR in Expo Go)
 ```
 
 Health checks:
 
-```bash
-yarn lint               # ESLint (expo lint)
-yarn test               # Jest (224+ tests)
-npx tsc --noEmit        # TypeScript typecheck
+```powershell
+npx expo lint               # ESLint (expo lint)
+npx jest                    # Jest (507 tests)
+npx tsc --noEmit            # TypeScript typecheck
 ```
 
 > Note: the app is designed and tested for **Android**. iOS and web builds exist but are secondary targets.
@@ -357,22 +355,25 @@ Declared in `app.json` (Android manifest / iOS plist) and requested at runtime:
 
 ## 18. Build Instructions
 
-```bash
+```powershell
 cd frontend
 
-# Development build / Expo Go
-yarn start
+# 1. Verify checks
+npx tsc --noEmit
+npx jest
 
-# Android production APK (EAS)
-npx eas-cli build --platform android --profile production
-
-# Or a local APK (if you use Expo prebuild)
-npx expo prebuild --platform android
+# 2. Local production APK (Gradle)
 cd android
-./gradlew assembleRelease
+.\gradlew.bat clean
+.\gradlew.bat assembleRelease
+
+# Output APK:
+# android/app/build/outputs/apk/release/app-release.apk
 ```
 
-The project is set up for **EAS builds** with the Expo SDK 54 toolchain. The generated Android app id is `com.accc.dynamicinspection`.
+The `android/` folder is checked in with release signing configured via `android/keystore.properties` (gitignored). The generated Android app id is `com.accc.dynamicinspection`.
+
+If you need to regenerate the Android native project, run `npx expo prebuild --platform android` from `frontend/` before the Gradle build.
 
 ---
 
@@ -392,7 +393,7 @@ The project is set up for **EAS builds** with the Expo SDK 54 toolchain. The gen
 - Cause: `createExportFile` returns `null` when the project has no inspection data. Add at least one inspection.
 
 **Tests / lint**
-- Run `yarn test`, `yarn lint`, and `npx tsc --noEmit`. Coverage thresholds are enforced per-directory in `jest.config.js`.
+- Run `npx jest`, `npx expo lint`, and `npx tsc --noEmit`. Coverage thresholds are enforced per-directory in `jest.config.js`.
 
 **Reinstalling mocks**
 - `__mocks__/expo-sqlite.ts` and `__mocks__/expo-file-system.ts` are in-memory test doubles; keep their path-aware behavior in sync if you extend tests (see `docs/03-Rules.md`).

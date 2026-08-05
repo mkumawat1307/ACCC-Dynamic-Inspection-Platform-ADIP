@@ -141,6 +141,30 @@ describe("InspectionProvider", () => {
     });
     expect(result.current.poleId).toBe("P001");
   });
+
+  it("initializes photoStates as empty", () => {
+    const result = renderHookInProvider(() => useInspection());
+    expect(result.current.photoStates).toEqual({});
+  });
+
+  it("sets photoStates", () => {
+    const result = renderHookInProvider(() => useInspection());
+    TestRenderer.act(() => {
+      result.current.setPhotoStates({ 1: "completed", 2: "processing" });
+    });
+    expect(result.current.photoStates).toEqual({ 1: "completed", 2: "processing" });
+  });
+
+  it("clears photoStates when closing the project", async () => {
+    const result = renderHookInProvider(() => useInspection());
+    TestRenderer.act(() => {
+      result.current.setPhotoStates({ 1: "completed" });
+    });
+    await TestRenderer.act(async () => {
+      await result.current.closeProject();
+    });
+    expect(result.current.photoStates).toEqual({});
+  });
 });
 
 describe("useInspection", () => {

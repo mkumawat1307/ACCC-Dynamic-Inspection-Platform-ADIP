@@ -31,6 +31,7 @@ import { logger } from "@/src/utils/logger";
 import { getDatabase } from "@/src/database/db";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
+import { validatePhotosForSave } from "@/src/components/inspection/photoUtils";
 
 export default function NewInspectionScreen({
   title = "New Inspection",
@@ -53,11 +54,16 @@ const {
   setInspectionId,
   inspectionId,
   setPoleId,
+  photoStates,
 } = useInspection();
 
 const [sections, setSections] = useState<InspectionSection[]>([]);
 const [expandedSections, setExpandedSections] = useState<number[]>([1]);
 const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
+
+const photosProcessing = Object.values(photoStates).some(
+  (state) => state === "processing" || state === "pending"
+);
 
 const validateBeforeExit = async (): Promise<boolean> => {
   if (!inspectionId) return true;
@@ -226,11 +232,11 @@ const handleSave = async () => {
       inspectionId
     );
 
-  if (photos.length < 1) {
-    Alert.alert(
-      "Inspection Incomplete",
-      "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section."
-    );
+  const photoValidation = validatePhotosForSave(photos, photoStates);
+
+  if (!photoValidation.canSave) {
+    const message = getPhotoBlockMessage(photoValidation.reason);
+    Alert.alert("Inspection Incomplete", message);
     return;
   }
 
@@ -250,6 +256,19 @@ const handleSave = async () => {
     ]
   );
 };
+
+function getPhotoBlockMessage(reason: string | null): string {
+  switch (reason) {
+    case "processing":
+    case "pending":
+    case "unprocessed":
+      return "Photos are still being processed.\n\nPlease wait for watermarking to complete before saving.";
+    case "failed":
+      return "One or more photos failed to process.\n\nPlease retry or remove the failed photos before saving.";
+    default:
+      return "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section.";
+  }
+}
 
 const handleCancel = () => {
 
@@ -381,12 +400,13 @@ return (
     mode="contained"
     icon="content-save"
     onPress={handleSave}
+    disabled={photosProcessing}
     style={{
       flex: 1,
       marginLeft: 8,
     }}
   >
-    Save
+    {photosProcessing ? "Processing Photos..." : "Save"}
   </Button>
 
 </View>

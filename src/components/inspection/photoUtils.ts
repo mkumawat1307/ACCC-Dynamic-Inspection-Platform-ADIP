@@ -1,4 +1,43 @@
+import { Photo } from "@/src/models/Photo";
+
 export type WatermarkState = "pending" | "processing" | "completed" | "failed";
+
+export type PhotoSaveBlockReason =
+  | "no_photos"
+  | "processing"
+  | "pending"
+  | "failed"
+  | "unprocessed";
+
+export interface PhotoSaveValidation {
+  canSave: boolean;
+  reason: PhotoSaveBlockReason | null;
+}
+
+export function validatePhotosForSave(
+  photos: Photo[],
+  states: Record<number, WatermarkState>
+): PhotoSaveValidation {
+  if (photos.length === 0) {
+    return { canSave: false, reason: "no_photos" };
+  }
+
+  for (const photo of photos) {
+    const state = photo.PhotoID != null ? states[photo.PhotoID] : undefined;
+
+    if (state === "processing") return { canSave: false, reason: "processing" };
+    if (state === "pending") return { canSave: false, reason: "pending" };
+    if (state === "failed") return { canSave: false, reason: "failed" };
+
+    const isProcessed =
+      state === "completed" ||
+      (state === undefined && (photo.FilePath ?? "").startsWith("content://"));
+
+    if (!isProcessed) return { canSave: false, reason: "unprocessed" };
+  }
+
+  return { canSave: true, reason: null };
+}
 
 export function formatDate(dateStr: string | null): string {
   if (!dateStr) return "";
