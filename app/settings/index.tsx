@@ -61,7 +61,7 @@ export default function SettingsScreen() {
           "meter_box_status", "meter_status", "meter_power_status", "meter_serial",
           "connectivity_type",
           "camera_count", "switch_count",
-          "pole_category", "remarks",
+          "remarks",
         ];
         const placeholders = defaultKeys.map(() => "?").join(",");
         await db.runAsync(

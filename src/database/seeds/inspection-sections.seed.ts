@@ -89,13 +89,6 @@ export async function seedInspectionSections() {
             repeatable: 1,
         },
         {
-            key: "categorization",
-            name: "Categorization",
-            description: "Pole categorization",
-            icon: "document-text",
-            repeatable: 0,
-        },
-        {
             key: "remarks",
             name: "Remarks",
             description: "Remarks",

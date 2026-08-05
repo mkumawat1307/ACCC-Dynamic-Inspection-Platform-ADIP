@@ -42,11 +42,8 @@ export const poleInspectionFields = [
   { SectionKey: "camera_information", FieldName: "Camera Count", FieldKey: "camera_count", FieldType: "number", Placeholder: "Enter Camera Count", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 1, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: null, DataSource: null, Width: 12, Icon: "camera" },
 
   // VIII. Switch
-  { SectionKey: "switch_information", FieldName: "Switch Count", FieldKey: "switch_count", FieldType: "number", Placeholder: "Enter Switch Count", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 1, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: null, DataSource: null, Width: 12, Icon: "git-network" },
+  { SectionKey: "switch_information", FieldName: "Switch Count", FieldKey: "switch_count", FieldType: "number", Placeholder: "Enter Switch Count", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 0, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: null, DataSource: null, Width: 12, Icon: "git-network" },
 
-  // IX. Categorization
-  { SectionKey: "categorization", FieldName: "Site Category", FieldKey: "pole_category", FieldType: "dropdown", Placeholder: "Select Site Category", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 0, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: "options", DataSource: "pole_category", Width: 12, Icon: null },
-
-  // X. Remarks
+  // IX. Remarks
   { SectionKey: "remarks", FieldName: "Remarks", FieldKey: "remarks", FieldType: "multiline", Placeholder: "Enter remarks or observations", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 0, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: null, DataSource: null, Width: 12, Icon: null }
 ];
