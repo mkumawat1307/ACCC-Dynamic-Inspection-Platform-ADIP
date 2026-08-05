@@ -1,24 +1,29 @@
 const originalLog = console.log;
 const originalWarn = console.warn;
 const originalError = console.error;
+const originalTrace = console.trace;
 
 let logCalls: unknown[][] = [];
 let warnCalls: unknown[][] = [];
 let errorCalls: unknown[][] = [];
+let traceCalls: unknown[][] = [];
 
 beforeEach(() => {
   logCalls = [];
   warnCalls = [];
   errorCalls = [];
+  traceCalls = [];
   console.log = (...args: unknown[]) => { logCalls.push(args); };
   console.warn = (...args: unknown[]) => { warnCalls.push(args); };
   console.error = (...args: unknown[]) => { errorCalls.push(args); };
+  console.trace = (...args: unknown[]) => { traceCalls.push(args); };
 });
 
 afterEach(() => {
   console.log = originalLog;
   console.warn = originalWarn;
   console.error = originalError;
+  console.trace = originalTrace;
   jest.resetModules();
 });
 
@@ -77,4 +82,18 @@ it("does not log debug when __DEV__ is false", () => {
   const { logger } = require("@/src/utils/logger");
   logger.debug("should not appear");
   expect(logCalls).toEqual([]);
+});
+
+it("logs trace when __DEV__ is true", () => {
+  global.__DEV__ = true;
+  const { logger } = require("@/src/utils/logger");
+  logger.trace("trace info");
+  expect(traceCalls).toEqual([["trace info"]]);
+});
+
+it("does not log trace when __DEV__ is false", () => {
+  global.__DEV__ = false;
+  const { logger } = require("@/src/utils/logger");
+  logger.trace("should not appear");
+  expect(traceCalls).toEqual([]);
 });

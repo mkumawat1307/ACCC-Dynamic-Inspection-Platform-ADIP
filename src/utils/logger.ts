@@ -13,4 +13,7 @@ export const logger = {
   debug: (...args: unknown[]) => {
     if (!IS_PROD) console.log(...args);
   },
+  trace: (...args: unknown[]) => {
+    if (!IS_PROD) console.trace(...args);
+  },
 };

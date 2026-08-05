@@ -60,7 +60,7 @@ function iconForType(type: string): string {
     case "time":
       return "clock-outline";
     case "text":
-      return "format";
+      return "text-short";
     case "multiline":
       return "format-align-left";
     default:

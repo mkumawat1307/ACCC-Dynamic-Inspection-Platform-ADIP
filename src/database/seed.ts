@@ -14,19 +14,16 @@ import { seedDeviceFieldDefinitions } from "./seeds/device-field-definitions.see
 import { logger } from "@/src/utils/logger";
 
 export async function seedGlobalDatabase() {
-    logger.info("ðŸŒ± [seed] seedGlobalDatabase() â€” START");
+    logger.debug("[seed] seedGlobalDatabase() — START");
 
-    logger.info("[seed] Calling getGlobalDatabase()...");
     await getGlobalDatabase();
-    logger.info("[seed] getGlobalDatabase() returned handle");
 
-    logger.info("[seed] Calling seedDivisions()...");
     await seedDivisions();
-    logger.info("âœ… [seed] seedGlobalDatabase() â€” END");
+    logger.info("✅ Seed completed");
 }
 
 export async function seedProjectDatabase() {
-    logger.info("ðŸŒ± [seed] seedProjectDatabase() â€” START");
+    logger.debug("[seed] seedProjectDatabase() — START");
     await getDatabase();
     await seedInspectionTemplate();
     await seedInspectionSections();
@@ -36,7 +33,7 @@ export async function seedProjectDatabase() {
     await seedRepeatableGroupFields();
     await seedDeviceOptions();
     await seedDeviceFieldDefinitions();
-    logger.info("âœ… [seed] seedProjectDatabase() â€” END");
+    logger.debug("[seed] seedProjectDatabase() — END");
 }
 
 export async function seedDatabase() {

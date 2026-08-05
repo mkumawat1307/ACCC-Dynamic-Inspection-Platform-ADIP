@@ -11,7 +11,7 @@ import {
   BackHandler,
   View,
 } from "react-native";
-import { styles } from "./new.styles";
+import { styles } from "@/src/components/app/inspection/new.styles";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Card,

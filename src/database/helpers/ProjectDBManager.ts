@@ -74,7 +74,7 @@ export async function createProjectDb(
   projectDbPath: string,
   projectId: number
 ): Promise<void> {
-  logger.info("[ProjectDBManager] createProjectDb — START");
+  logger.debug("[ProjectDBManager] createProjectDb — START");
 
   const folderPath = projectDbPath.replace(/inspection\.db$/, "");
   await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
@@ -94,7 +94,6 @@ export async function createProjectDb(
   await seedDashboardCards(projectId);
 
   await clearActiveProject();
-
   logger.info(`✅ [ProjectDBManager] Project created: ${projectName}`);
 }
 
@@ -104,7 +103,7 @@ export async function cloneProjectDb(
   projectDbPath: string,
   newProjectId: number
 ): Promise<void> {
-  logger.info("[ProjectDBManager] cloneProjectDb — START");
+  logger.debug("[ProjectDBManager] cloneProjectDb — START");
 
   const settings: Partial<
     Record<(typeof SETTINGS_TABLES)[number], SettingsRow[]>
@@ -237,12 +236,11 @@ export async function cloneProjectDb(
   } finally {
     await clearActiveProject();
   }
-
   logger.info(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
 }
 
 export async function openProjectDb(dbPath: string, projectId: number): Promise<void> {
-  logger.info("[ProjectDBManager] openProjectDb — START");
+  logger.debug("[ProjectDBManager] openProjectDb — START");
   await setActiveProject(dbPath);
 
   const db = await getDatabase();
@@ -253,32 +251,31 @@ export async function openProjectDb(dbPath: string, projectId: number): Promise<
     await clearActiveProject();
     throw new Error(`Project database is empty or missing schema: ${dbPath}`);
   }
-
-  logger.info("[ProjectDBManager] openProjectDb — valid");
+  logger.debug("[ProjectDBManager] openProjectDb — valid");
 
   await migrateProjectSchema(projectId);
-
-  logger.info("[ProjectDBManager] openProjectDb — migrations applied");
+  logger.debug("[ProjectDBManager] openProjectDb — migrations applied");
+  logger.info(`[ProjectDBManager] Project database opened: ${dbPath}`);
 }
 
 export async function deleteProjectDb(dbPath: string): Promise<void> {
-  logger.info("[ProjectDBManager] deleteProjectDb — START");
+  logger.debug("[ProjectDBManager] deleteProjectDb — START");
   if (dbPath) {
     const folderPath = dbPath.replace(/inspection\.db$/, "");
     await FileSystem.deleteAsync(folderPath);
   }
-  logger.info("[ProjectDBManager] deleteProjectDb — END");
+  logger.debug("[ProjectDBManager] deleteProjectDb — END");
 }
 
 export async function deleteProjectFolder(projectName: string): Promise<void> {
-  logger.info("[ProjectDBManager] deleteProjectFolder — START");
+  logger.debug("[ProjectDBManager] deleteProjectFolder — START");
   const folderPath = getProjectFolderPath(projectName);
   await FileSystem.deleteAsync(folderPath);
-  logger.info("[ProjectDBManager] deleteProjectFolder — END");
+  logger.debug("[ProjectDBManager] deleteProjectFolder — END");
 }
 
 export async function listProjectFolders(): Promise<string[]> {
-  logger.info("[ProjectDBManager] listProjectFolders — START");
+  logger.debug("[ProjectDBManager] listProjectFolders — START");
 
   try {
     await FileSystem.makeDirectoryAsync(getProjectsBasePath(), { intermediates: true });
@@ -295,7 +292,7 @@ export async function listProjectFolders(): Promise<string[]> {
   }
 
   const result = items.filter((item) => !item.startsWith("."));
-  logger.info("[ProjectDBManager] Returning", result.length, "project folders");
-  logger.info("[ProjectDBManager] listProjectFolders — END");
+  logger.debug("[ProjectDBManager] Returning", result.length, "project folders");
+  logger.debug("[ProjectDBManager] listProjectFolders — END");
   return result;
 }

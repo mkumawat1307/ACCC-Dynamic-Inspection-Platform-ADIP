@@ -6,8 +6,8 @@ import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
 import { useRouter } from "expo-router";
 import { useTemplateFlow } from "@/src/components/template/useTemplateFlow";
 import { getDatabase } from "@/src/database/db";
-import TemplateExportDialogs from "./components/TemplateExportDialogs";
-import TemplateImportDialogs from "./components/TemplateImportDialogs";
+import TemplateExportDialogs from "@/src/components/app/settings/components/TemplateExportDialogs";
+import TemplateImportDialogs from "@/src/components/app/settings/components/TemplateImportDialogs";
 
 export default function SettingsScreen() {
   const router = useRouter();
