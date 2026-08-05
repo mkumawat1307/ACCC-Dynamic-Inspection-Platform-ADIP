@@ -120,7 +120,7 @@ Active Development
 - Banded headers: CSV repeats band per column; Excel merges bands + autofilter + frozen rows
 - Live template columns (sections/fields read at export time)
 - Device rows: one per device, filled with device section's own columns
-- Derived columns: Latitude/Longitude (splitLatLong), Status (PoleID + InspectionRecords), Photos count
+- Derived columns: Latitude/Longitude (splitLatLong), Status (PoleID + InspectionRecords)
 - Single-inspection export from Inspection List (Excel/CSV) via `exportInspection`
 - Single unified export service (`buildReportTable`, `buildCsv`, `buildExcelBase64`, `createExportFile`, `shareExportFile`, `openExportFile`, `exportInspections`, `exportInspection`)
 - Legacy `exportProjectData` + Home Export button removed; exports live in Reports

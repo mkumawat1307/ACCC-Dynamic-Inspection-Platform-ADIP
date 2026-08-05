@@ -31,6 +31,17 @@ Patch → Bug fixes
 - In-app live-watermark camera: photo capture now uses an in-app camera viewfinder with a live watermark overlay (ID, district/block, date-time, GPS), acquires GPS during preview (shutter gated on an acceptable fix), and shows a confirm screen with Retake / Keep while the watermark merges in the background. Final images are produced by the same WebView canvas pipeline as before, so output is pixel-identical to the previous watermark.
 - Canonical SAF photo folders: watermarked photos are saved to the canonical `<District>_<ProjectName>` folder under `DCIM/ACCC Inspection/` (spaces preserved; only folder-illegal characters are replaced with `_`; a project with no district uses its project name alone). Existing legacy photo folders (project-name-only and old alphanumeric-stripped labels) are migrated lazily — per project, on project open — with photo paths remapped automatically.
 
+### Changed
+
+- The field labelled "Pole ID" in the Inspection Form is now renamed to "Site ID" (new DBs are seeded with the new label/placeholder; existing project DBs are migrated automatically via `migrateProjectSchema`). The underlying field key remains `pole_id`.
+- Switch Count is now optional (no longer required) in the Inspection Form — applied to new DBs and existing project DBs (`IsRequired = 0`).
+- Live Watermark UI compacted: font rendered ~50% smaller (`baseSize/70`, floor 20, previously `baseSize/35` clamped at 40), tighter metrics, slimmer edge padding, 8px corner radius, and the black backdrop dropped to 50% opacity. The green (#76FF03) bold monospace text now carries a thin black outline shadow for legibility. Both the on-screen `WatermarkOverlay` and the merged/saved image (canvas in `watermarkHtml.ts`) share the identical metric math, so the preview and the final saved photo match pixel-for-pixel.
+
+### Removed
+
+- Categorization section removed from the Inspection Form: new DBs no longer seed it, and existing project DBs deactivate it (`IsActive = 0, IsDefault = 0` on both the section and its `pole_category` field) so the admin "Reset to Default" cannot bring it back. The `pole_category` field and its options are removed from the seed.
+- The Photos column — and the "Summary" section band it produced — removed from report exports (Excel/CSV) and the report preview. Preview, Excel, and CSV all consume the single `ReportTable`, so one change removed it everywhere.
+
 ## [1.9.1] - 04-Aug-2026
 
 ### Added

@@ -138,7 +138,7 @@ The platform aims to:
 - Project-wide export: CSV, Excel (xlsx)
 - Banded headers (section groups) across both formats
 - Single-inspection export (Excel/CSV) from the Inspection List
-- Derived Latitude/Longitude, Status, and Photos-count columns
+- Derived Latitude/Longitude and Status columns
 - Legacy dashboard/Home export removed — exports live in Reports
 
 ---
