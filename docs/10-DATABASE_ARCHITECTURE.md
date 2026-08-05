@@ -24,7 +24,7 @@ documentDirectory/
       inspection.db           # Project DB: template, sections, fields, inspections, photos, devices
 ```
 
-Photos are stored separately via the Storage Access Framework under `DCIM/ACCC Inspection/<ProjectName>/` (see `src/utils/storageManager.ts`); the SAF tree URI is cached in AsyncStorage per device and the project folder is created on demand.
+Photos are stored separately via the Storage Access Framework under `DCIM/ACCC Inspection/<District>_<ProjectName>/` (see `src/utils/storageManager.ts`); the SAF tree URI is cached in AsyncStorage per device and the project folder is created on demand. Existing legacy photo folders (project-name-only or old alphanumeric-stripped labels) are migrated lazily to the canonical folder on project open (see `src/utils/folderManager.ts`).
 
 ## Global Database (`accc_global.db`)
 

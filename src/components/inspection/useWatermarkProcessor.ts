@@ -5,6 +5,7 @@ import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageManager";
+import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import { buildWatermarkPage } from "@/src/utils/watermarkHtml";
 import { useInspection } from "@/src/context/InspectionContext";
 
@@ -135,9 +136,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
       if (!job) return;
 
       (async () => {
-        const dName = (project?.DistrictName || "").replace(/[^a-zA-Z0-9]/g, "");
-        const pName = (project?.ProjectName || "").replace(/[^a-zA-Z0-9]/g, "");
-        const label = `${dName}_${pName}`;
+        const label = project ? canonicalProjectLabel(project) : "";
 
         const treeUri = await ensureTreeUri();
         const projectDir = await getProjectDir(treeUri, label);

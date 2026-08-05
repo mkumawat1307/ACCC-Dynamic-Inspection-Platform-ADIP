@@ -74,7 +74,7 @@ The app is fully offline — there is no server, no network dependency, and no a
 
 **Photo capture & watermarking**
 - Camera capture with GPS + timestamp watermark rendered on a hidden canvas (WebView).
-- Photos stored in `DCIM/ACCC Inspection/<Project>` via SAF.
+- Photos stored in `DCIM/ACCC Inspection/<District>_<ProjectName>` via SAF; legacy folders migrate on project open.
 - Watermark queue with retry and per-photo status (pending / done / error).
 
 **Dashboard**
@@ -340,7 +340,7 @@ Declared in `app.json` (Android manifest / iOS plist) and requested at runtime:
 |---|---|---|
 | `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` | GPS watermark on captured photos | On photo capture |
 | `CAMERA` | Capture inspection photos | On photo capture |
-| `WRITE_EXTERNAL_STORAGE` (SAF tree) | Save photos to `DCIM/ACCC Inspection/<Project>` | On first photo save (SAF directory picker) |
+| `WRITE_EXTERNAL_STORAGE` (SAF tree) | Save photos to `DCIM/ACCC Inspection/<District>_<ProjectName>` | On first photo save (SAF directory picker) |
 | iOS `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSLocationWhenInUseUsageDescription` | Equivalent iOS usage strings | As above (iOS secondary target) |
 
 ---

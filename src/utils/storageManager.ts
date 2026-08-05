@@ -32,15 +32,20 @@ async function verifyDir(cacheKey: string): Promise<string | null> {
   }
 }
 
-export async function getProjectDir(
-  treeUri: string,
-  projectLabel: string
-): Promise<string> {
+export async function resolveInspectionRootDir(treeUri: string): Promise<string> {
   let acccDir = await verifyDir(ACCC_DIR_KEY);
   if (!acccDir) {
     acccDir = await FileSystem.StorageAccessFramework.makeDirectoryAsync(treeUri, "ACCC Inspection");
     await AsyncStorage.setItem(ACCC_DIR_KEY, acccDir);
   }
+  return acccDir;
+}
+
+export async function getProjectDir(
+  treeUri: string,
+  projectLabel: string
+): Promise<string> {
+  const acccDir = await resolveInspectionRootDir(treeUri);
 
   const projDirKey = `proj_dir_${projectLabel}`;
   let projDir = await verifyDir(projDirKey);

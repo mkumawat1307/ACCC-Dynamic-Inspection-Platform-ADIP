@@ -29,6 +29,7 @@ Patch → Bug fixes
 ### Added
 
 - In-app live-watermark camera: photo capture now uses an in-app camera viewfinder with a live watermark overlay (ID, district/block, date-time, GPS), acquires GPS during preview (shutter gated on an acceptable fix), and shows a confirm screen with Retake / Keep while the watermark merges in the background. Final images are produced by the same WebView canvas pipeline as before, so output is pixel-identical to the previous watermark.
+- Canonical SAF photo folders: watermarked photos are saved to the canonical `<District>_<ProjectName>` folder under `DCIM/ACCC Inspection/` (spaces preserved; only folder-illegal characters are replaced with `_`; a project with no district uses its project name alone). Existing legacy photo folders (project-name-only and old alphanumeric-stripped labels) are migrated lazily — per project, on project open — with photo paths remapped automatically.
 
 ## [1.9.1] - 04-Aug-2026
 
