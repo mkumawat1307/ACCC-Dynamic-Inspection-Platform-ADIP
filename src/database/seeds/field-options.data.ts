@@ -479,28 +479,4 @@ export const fieldOptions: FieldOptionSeed[] = [
     OptionValue: "5",
     DisplayOrder: 6,
   },
-
-  // =====================================================
-  // Pole Category (pole_category)
-  // =====================================================
-
-  {
-    FieldKey: "pole_category",
-    OptionLabel: "AMC",
-    OptionValue: "AMC",
-    DisplayOrder: 1,
-  },
-  {
-    FieldKey: "pole_category",
-    OptionLabel: "LSY",
-    OptionValue: "LSY",
-    DisplayOrder: 2,
-  },
-  {
-    FieldKey: "pole_category",
-    OptionLabel: "Judicial",
-    OptionValue: "Judicial",
-    DisplayOrder: 3,
-  },
-
 ];

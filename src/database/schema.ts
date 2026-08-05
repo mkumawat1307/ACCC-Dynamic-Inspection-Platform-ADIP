@@ -234,6 +234,40 @@ export async function migrateProjectSchema(projectId: number) {
     }
 
     try {
+        const categorizeField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_category' LIMIT 1`
+        );
+        if (categorizeField) {
+            await db.runAsync(
+                `UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionKey = 'categorization'`
+            );
+            await db.runAsync(
+                `UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'`
+            );
+            await db.runAsync(
+                `UPDATE FieldOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldID IN (SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_category')`
+            );
+            logger.info("[schema] Migration: Deactivated Categorization section (pole_category)");
+        }
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — categorization deactivation failed (non-fatal):", e);
+    }
+
+    try {
+        const switchField = await db.getFirstAsync<{ FieldID: number; IsRequired: number }>(
+            `SELECT FieldID, IsRequired FROM InspectionFields WHERE FieldKey = 'switch_count' LIMIT 1`
+        );
+        if (switchField && switchField.IsRequired === 1) {
+            await db.runAsync(
+                `UPDATE InspectionFields SET IsRequired = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'switch_count'`
+            );
+            logger.info("[schema] Migration: Switch Count is now optional");
+        }
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — switch_count optional migration failed (non-fatal):", e);
+    }
+
+    try {
         await db.execAsync(createDashboardCardsTable);
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — DashboardCards table creation failed (non-fatal):", e);

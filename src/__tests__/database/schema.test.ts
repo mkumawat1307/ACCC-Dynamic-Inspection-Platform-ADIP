@@ -164,6 +164,30 @@ describe("schema.ts createSchema", () => {
     expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
   });
 
+  it("migrateProjectSchema deactivates Categorization section and makes Switch Count optional", async () => {
+    mockGetFirstAsync
+      .mockResolvedValueOnce({ SectionID: 99 })
+      .mockResolvedValueOnce({ FieldID: 4 })
+      .mockResolvedValueOnce({ FieldID: 5, IsRequired: 1 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+
+    await migrateProjectSchema(1);
+
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      "UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionKey = 'categorization'"
+    );
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      "UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'"
+    );
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE FieldOptions SET IsActive = 0")
+    );
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      "UPDATE InspectionFields SET IsRequired = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'switch_count'"
+    );
+  });
+
   it("migrateProjectSchema splits remarks into its own section", async () => {
     mockGetFirstAsync
       .mockResolvedValueOnce(null)
