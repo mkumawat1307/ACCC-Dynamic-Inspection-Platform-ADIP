@@ -115,7 +115,7 @@ All database access is routed through `src/database/db.ts`, which enforces a **s
 
 ## Device APIs
 
-- expo-image-picker (camera capture)
+- expo-camera (in-app camera + live watermark overlay)
 - expo-location (GPS)
 - expo-media-library / Storage Access Framework (photos)
 - expo-document-picker / expo-sharing / expo-intent-launcher (import/export)
@@ -285,7 +285,7 @@ ACCC-Dynamic-Inspection-Platform/
 │   │   ├── components/
 │   │   │   ├── inspection/         (FieldRenderer, SectionRenderer, GeneralInformation,
 │   │   │   │                        CameraSection, DeviceSection, PhotoSection,
-│   │   │   │                        renderFieldInput, photoUtils, usePhotoCapture,
+│   │   │   │                        renderFieldInput, photoUtils,
 │   │   │   │                        useWatermarkProcessor, PhotoCard, PhotoPreviewModal)
 │   │   │   ├── dashboard/          (DashboardCardGrid, DashboardCardManager,
 │   │   │   │                        DashboardActionCard, StatBreakdownCard)
@@ -362,7 +362,7 @@ Contains reusable UI components.
 
 Examples
 
-- `inspection/` — FieldRenderer, SectionRenderer, GeneralInformation, CameraSection, DeviceSection, PhotoSection, renderFieldInput, photoUtils, usePhotoCapture, useWatermarkProcessor, PhotoCard, PhotoPreviewModal, PhotoSectionHeader
+- `inspection/` — FieldRenderer, SectionRenderer, GeneralInformation, CameraSection, DeviceSection, PhotoSection, renderFieldInput, photoUtils, useWatermarkProcessor, PhotoCard, PhotoPreviewModal, PhotoSectionHeader
 - `dashboard/` — DashboardCardGrid, DashboardCardManager, DashboardActionCard, StatBreakdownCard
 - `export/` — useExportFlow
 - `reports/` — ReportTablePreview

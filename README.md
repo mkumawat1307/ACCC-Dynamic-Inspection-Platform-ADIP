@@ -237,7 +237,7 @@ Core runtime dependencies (from `package.json`):
 | `expo-router` (~6.0.24) | File-based routing with typed routes |
 | `expo-sqlite` (~16.0.10) | Local SQLite storage |
 | `expo-file-system` | File read/write for exports & photos |
-| `expo-image-picker` | Camera capture for inspection photos |
+| `expo-camera` | In-app camera viewfinder with live watermark overlay |
 | `expo-media-library` | Media library permissions |
 | `expo-location` | GPS capture for watermarks |
 | `expo-document-picker` | Template import file picking |
