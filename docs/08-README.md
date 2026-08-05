@@ -300,7 +300,7 @@ Core tables (22 total: 4 global + 18 per project):
 - src/constants/ui.ts — Design tokens (SPACING, COLORS, RADIUS)
 - src/components/export/useExportFlow.ts — Export state machine (choose/export/success/error)
 - app/inspection/components/ExportDialogs.tsx — Export format chooser + progress/success/error dialogs
-- src/components/inspection/usePhotoCapture.ts — Camera + GPS capture pipeline
+- src/components/camera/useGpsTracker.ts — GPS acquisition/lifecycle hook for the in-app capture screen
 - src/components/inspection/useWatermarkProcessor.ts — Serial WebView watermark queue + SAF save
 - src/components/inspection/photoUtils.ts — Photo naming/format helpers
 - src/utils/storageManager.ts — SAF photo storage helpers

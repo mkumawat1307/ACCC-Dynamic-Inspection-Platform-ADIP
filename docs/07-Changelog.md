@@ -24,6 +24,12 @@ Patch → Bug fixes
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- In-app live-watermark camera: photo capture now uses an in-app camera viewfinder with a live watermark overlay (ID, district/block, date-time, GPS), acquires GPS during preview (shutter gated on an acceptable fix), and shows a confirm screen with Retake / Keep while the watermark merges in the background. Final images are produced by the same WebView canvas pipeline as before, so output is pixel-identical to the previous watermark.
+
 ## [1.9.1] - 04-Aug-2026
 
 ### Added
