@@ -53,6 +53,12 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Take photos of the pole and equipment"
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Attach photos of the pole to the inspection",
