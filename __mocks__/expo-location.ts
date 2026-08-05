@@ -18,7 +18,19 @@ let mockLastKnown: {
   accuracy: number;
   timestamp: number;
 } | null = null;
-let mockAddresses: Array<{ street?: string; city?: string; region?: string }> | null = null;
+type MockAddress = {
+  city?: string | null;
+  district?: string | null;
+  streetNumber?: string | null;
+  street?: string | null;
+  region?: string | null;
+  subregion?: string | null;
+  country?: string | null;
+  postalCode?: string | null;
+  name?: string | null;
+};
+
+let mockAddresses: MockAddress[] | null = null;
 let watchCallback: ((loc: unknown) => void) | null = null;
 
 function now(): number {
@@ -76,7 +88,7 @@ export async function watchPositionAsync(
 
 export async function reverseGeocodeAsync(
   _coords: unknown
-): Promise<Array<{ street?: string; city?: string; region?: string }> | null> {
+): Promise<MockAddress[] | null> {
   return mockAddresses;
 }
 
@@ -97,9 +109,7 @@ export function __setMockLastKnown(
   mockLastKnown = { latitude, longitude, accuracy, timestamp: now() - ageMs };
 }
 
-export function __setMockReverseGeocode(
-  addresses: Array<{ street?: string; city?: string; region?: string }> | null
-) {
+export function __setMockReverseGeocode(addresses: MockAddress[] | null) {
   mockAddresses = addresses;
 }
 
