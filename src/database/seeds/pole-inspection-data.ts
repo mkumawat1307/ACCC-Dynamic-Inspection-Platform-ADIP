@@ -45,7 +45,7 @@ export const poleInspectionFields = [
   { SectionKey: "switch_information", FieldName: "Switch Count", FieldKey: "switch_count", FieldType: "number", Placeholder: "Enter Switch Count", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 1, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: null, DataSource: null, Width: 12, Icon: "git-network" },
 
   // IX. Categorization
-  { SectionKey: "categorization", FieldName: "Pole Category", FieldKey: "pole_category", FieldType: "dropdown", Placeholder: "Select Pole Category", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 0, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: "options", DataSource: "pole_category", Width: 12, Icon: null },
+  { SectionKey: "categorization", FieldName: "Site Category", FieldKey: "pole_category", FieldType: "dropdown", Placeholder: "Select Site Category", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 0, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: "options", DataSource: "pole_category", Width: 12, Icon: null },
 
   // X. Remarks
   { SectionKey: "remarks", FieldName: "Remarks", FieldKey: "remarks", FieldType: "multiline", Placeholder: "Enter remarks or observations", DefaultValue: null, HelpText: null, ValidationRule: null, IsRequired: 0, DisplayOrder: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, DataSourceType: null, DataSource: null, Width: 12, Icon: null }
