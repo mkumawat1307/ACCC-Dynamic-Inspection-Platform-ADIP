@@ -14,7 +14,7 @@ export function computeWatermarkMetrics(
   height: number
 ): WatermarkMetrics {
   const baseSize = Math.min(width, height);
-  const fSize = Math.max(20, Math.round(baseSize / 70));
+  const fSize = Math.max(20, Math.round(baseSize / 20));
   return {
     fSize,
     lh: Math.round(fSize * 1.2),
