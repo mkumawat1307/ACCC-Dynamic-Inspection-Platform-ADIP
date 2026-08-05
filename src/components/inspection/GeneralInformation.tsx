@@ -255,7 +255,7 @@ return (
                     ) {
                       Alert.alert(
                         "Inspection Already Exists",
-                        `Pole ID ${text} already exists.`,
+                        `SITE ID ${text} already exists.`,
                         [
                           {
                             text: "Edit Existing",
@@ -329,7 +329,7 @@ return (
           >
             <ActivityIndicator size="small" />
             <Text style={{ marginLeft: 8, fontSize: 13 }}>
-              Checking Pole ID...
+              Checking SITE ID...
             </Text>
           </View>
         )}
