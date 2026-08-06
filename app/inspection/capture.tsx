@@ -266,6 +266,7 @@ export default function CaptureScreen() {
       <Appbar.Header>
         <Appbar.BackAction onPress={handleBack} />
         <Appbar.Content title="Capture Photo" />
+        <Appbar.Action icon="cog" onPress={() => router.push("/settings/watermark")} />
       </Appbar.Header>
 
       <View style={styles.body}>
