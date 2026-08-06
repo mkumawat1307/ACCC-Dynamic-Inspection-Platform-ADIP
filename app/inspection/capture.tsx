@@ -198,6 +198,7 @@ export default function CaptureScreen() {
     if (shutterBusy) return;
 
     let coords = gps.coords;
+    let accuracyM = gps.accuracyM;
     if (!coords) {
       const fix = await gps.captureGps(GPS_GRACE_MS);
       if (!fix) {
@@ -209,6 +210,7 @@ export default function CaptureScreen() {
         return;
       }
       coords = { latitude: fix.latitude, longitude: fix.longitude };
+      accuracyM = fix.accuracyM;
     }
 
     const tCapture = perfNow();
@@ -256,7 +258,7 @@ export default function CaptureScreen() {
         timestampIso: timestamp,
         latitude: coords.latitude,
         longitude: coords.longitude,
-        accuracyM: gps.accuracyM,
+        accuracyM,
         addressLines,
         settings,
       });

@@ -177,11 +177,11 @@ describe("WatermarkOverlay", () => {
       (s): s is Record<string, unknown> => typeof s === "object" && s !== null && "bottom" in s
     );
     expect(box).toMatchObject({
-      bottom: 48,
-      right: 36,
-      paddingVertical: 17,
-      paddingHorizontal: 19,
-      borderRadius: 10,
+      bottom: 30,
+      right: 23,
+      paddingVertical: 11,
+      paddingHorizontal: 12,
+      borderRadius: 6,
     });
   });
 });
