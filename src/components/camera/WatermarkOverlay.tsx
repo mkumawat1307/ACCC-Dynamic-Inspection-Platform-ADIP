@@ -1,39 +1,21 @@
 import React from "react";
 import { StyleSheet, View, Text } from "react-native";
-
-export interface WatermarkMetrics {
-  fSize: number;
-  lh: number;
-  padY: number;
-  rPad: number;
-  gapX: number;
-  gapY: number;
-}
-
-export function computeWatermarkMetrics(
-  width: number,
-  height: number
-): WatermarkMetrics {
-  const baseSize = Math.min(width, height);
-  const fSize = Math.max(22, Math.round(baseSize / 18));
-  return {
-    fSize,
-    lh: Math.round(fSize * 1.15),
-    padY: Math.round(fSize * 0.35),
-    rPad: Math.round(fSize * 0.4),
-    gapX: Math.max(16, Math.round(fSize * 0.75)),
-    gapY: Math.max(20, Math.round(fSize * 1.0)),
-  };
-}
+import {
+  computeWatermarkMetrics,
+  toWatermarkStyleConfig,
+} from "@/src/utils/watermarkStyle";
+import { WatermarkSettings } from "@/src/utils/watermarkSettings";
 
 interface Props {
   width: number;
   height: number;
   lines: string[];
+  settings: WatermarkSettings;
 }
 
-export default function WatermarkOverlay({ width, height, lines }: Props) {
-  const m = computeWatermarkMetrics(width, height);
+export default function WatermarkOverlay({ width, height, lines, settings }: Props) {
+  const config = toWatermarkStyleConfig(settings);
+  const m = computeWatermarkMetrics(width, height, config);
   return (
     <View
       pointerEvents="none"
@@ -41,10 +23,12 @@ export default function WatermarkOverlay({ width, height, lines }: Props) {
         styles.box,
         {
           bottom: m.gapY,
-          left: m.gapX,
+          [config.position === "bottomRight" ? "right" : "left"]: m.gapX,
           paddingVertical: m.padY,
           paddingHorizontal: m.rPad,
-          borderRadius: 8,
+          borderRadius: m.corner,
+          backgroundColor: `rgba(0,0,0,${config.bgOpacity})`,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.35)",
         },
       ]}
     >
@@ -54,9 +38,9 @@ export default function WatermarkOverlay({ width, height, lines }: Props) {
           style={{
             fontSize: m.fSize,
             lineHeight: m.lh,
-            color: "#76FF03",
+            color: config.textColor,
             fontWeight: "bold",
-            fontFamily: "monospace",
+            fontFamily: "sans-serif",
             textShadowColor: "rgba(0,0,0,0.9)",
             textShadowOffset: { width: 1, height: 1 },
             textShadowRadius: 2,
@@ -72,6 +56,5 @@ export default function WatermarkOverlay({ width, height, lines }: Props) {
 const styles = StyleSheet.create({
   box: {
     position: "absolute",
-    backgroundColor: "rgba(0,0,0,0.5)",
   },
 });

@@ -20,6 +20,7 @@ import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/useAddressLookup";
 import { composeWatermarkLines } from "@/src/utils/watermarkLayout";
+import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
@@ -208,7 +209,7 @@ export default function CaptureScreen() {
       });
 
       flow.beginCapture({ photoId, tempUri: result.uri, fileName, lines, timestamp });
-      enqueueWatermark(photoId, result.uri, fileName, lines);
+      enqueueWatermark(photoId, result.uri, fileName, lines, toWatermarkStyleConfig(settings));
     } catch (error) {
       logger.error("Capture Error:", error);
       Alert.alert("Error", "Failed to capture photo.");
@@ -306,6 +307,7 @@ export default function CaptureScreen() {
                   width={cameraSize.width}
                   height={cameraSize.height}
                   lines={previewLines}
+                  settings={settings}
                 />
               )}
 
