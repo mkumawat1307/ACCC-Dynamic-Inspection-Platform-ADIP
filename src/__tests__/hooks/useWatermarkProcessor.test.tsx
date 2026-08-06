@@ -37,6 +37,7 @@ import { Project } from "@/src/models/Project";
 import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageManager";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import * as FileSystem from "expo-file-system/legacy";
+import { WebView } from "react-native-webview";
 
 const project = {
   ProjectID: 1,
@@ -105,6 +106,64 @@ describe("useWatermarkProcessor folder target", () => {
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 150));
     });
+    unmount();
+  });
+});
+
+describe("useWatermarkProcessor persistent renderer protocol", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("waits for webview __ready before posting a photo via postMessage", async () => {
+    jest.useFakeTimers();
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    const postMessage = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { postMessage } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    expect(postMessage).not.toHaveBeenCalled();
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(sent.photoId).toBe(1);
+    expect(sent.base64).toBe("BASE64DATA");
+    expect(sent.lines).toEqual(["line"]);
+
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    unmount();
+  });
+
+  it("sets webViewReady when the __ready signal arrives", () => {
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    expect(result.current.webViewReady).toBe(false);
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    expect(result.current.webViewReady).toBe(true);
     unmount();
   });
 });

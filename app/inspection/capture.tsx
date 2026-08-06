@@ -54,9 +54,9 @@ export default function CaptureScreen() {
 
   const flow = useCaptureFlow();
   const {
-    watermarkHtml,
     webViewRef,
     handleWebViewMessage,
+    handleWebViewLoadEnd,
     enqueueWatermark,
     clearWatermarkState,
     retryWatermark,
@@ -384,9 +384,9 @@ export default function CaptureScreen() {
       </View>
 
       <WatermarkMergeWebView
-        html={watermarkHtml}
         webViewRef={webViewRef}
         onMessage={handleWebViewMessage}
+        onLoadEnd={handleWebViewLoadEnd}
       />
     </SafeAreaView>
   );
