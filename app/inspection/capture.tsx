@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, BackHandler, Image, StyleSheet, View } from "react-native";
-import { CameraView, useCameraPermissions, FlashMode } from "expo-camera";
+import { CameraView, useCameraPermissions, CameraType, FlashMode } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Button, Text, ActivityIndicator, IconButton } from "react-native-paper";
@@ -22,7 +22,7 @@ import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/use
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
-import { FLASH_ICONS, FLASH_LABELS, nextFlashMode } from "@/src/components/camera/cameraControls";
+import { FLASH_ICONS, FLASH_LABELS, nextFlashMode, FACING_ICONS, FACING_LABELS, nextFacing } from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
@@ -51,6 +51,7 @@ export default function CaptureScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [flash, setFlash] = useState<FlashMode>("off");
+  const [facing, setFacing] = useState<CameraType>("back");
 
   const flow = useCaptureFlow();
   const {
@@ -302,7 +303,7 @@ export default function CaptureScreen() {
               {permission?.granted ? (
                 <CameraView
                   ref={cameraRef}
-                  facing="back"
+                  facing={facing}
                   ratio="4:3"
                   flash={flash}
                   style={styles.fill}
@@ -330,6 +331,12 @@ export default function CaptureScreen() {
             </View>
 
             <View style={styles.cameraToolbar}>
+              <IconButton
+                icon={FACING_ICONS[facing]}
+                accessibilityLabel={FACING_LABELS[facing]}
+                testID="camera-facing"
+                onPress={() => setFacing(nextFacing)}
+              />
               <IconButton
                 icon={FLASH_ICONS[flash]}
                 accessibilityLabel={FLASH_LABELS[flash]}
