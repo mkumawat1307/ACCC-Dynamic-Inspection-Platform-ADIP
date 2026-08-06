@@ -4,6 +4,7 @@ jest.mock("react-native-webview", () => ({
     source?: { html?: string };
     onLoadEnd?: () => void;
     onMessage?: () => void;
+    onRenderProcessGone?: () => void;
     pointerEvents?: string;
   }) => {
     const { View } = require("react-native");
@@ -13,6 +14,7 @@ jest.mock("react-native-webview", () => ({
         source={props.source}
         onLoadEnd={props.onLoadEnd}
         onMessage={props.onMessage}
+        onRenderProcessGone={props.onRenderProcessGone}
         pointerEvents={props.pointerEvents}
       />
     );
@@ -106,6 +108,32 @@ describe("WatermarkMergeWebView", () => {
     expect(typeof wv.props.onMessage).toBe("function");
     wv.props.onLoadEnd();
     expect(onLoadEnd).toHaveBeenCalledTimes(1);
+    await TestRenderer.act(async () => {
+      tree.unmount();
+    });
+  });
+
+  it("forwards onRenderProcessGone to the WebView for Android process-death detection", async () => {
+    const ref = React.createRef<WebView>();
+    const onRenderProcessGone = jest.fn();
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(
+        <WatermarkMergeWebView
+          webViewRef={ref}
+          onMessage={() => {}}
+          onRenderProcessGone={onRenderProcessGone}
+        />
+      );
+    });
+    const wv = tree.root.find(
+      (i) => i.props.testID === "wv" && typeof (i as { type?: unknown }).type === "string"
+    ) as unknown as {
+      props: { onRenderProcessGone: () => void };
+    };
+    expect(typeof wv.props.onRenderProcessGone).toBe("function");
+    wv.props.onRenderProcessGone();
+    expect(onRenderProcessGone).toHaveBeenCalledTimes(1);
     await TestRenderer.act(async () => {
       tree.unmount();
     });

@@ -7,12 +7,14 @@ interface Props {
   webViewRef: React.RefObject<WebView | null>;
   onMessage: (event: any) => void;
   onLoadEnd?: () => void;
+  onRenderProcessGone?: (event: any) => void;
 }
 
 export default function WatermarkMergeWebView({
   webViewRef,
   onMessage,
   onLoadEnd,
+  onRenderProcessGone,
 }: Props) {
   const html = useMemo(() => buildWatermarkRendererPage(), []);
   return (
@@ -30,6 +32,7 @@ export default function WatermarkMergeWebView({
         originWhitelist={["*"]}
         onMessage={onMessage}
         onLoadEnd={onLoadEnd}
+        onRenderProcessGone={onRenderProcessGone}
       />
     </View>
   );
