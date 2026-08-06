@@ -8,6 +8,8 @@ import {
   GPS_GRACE_MS,
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
   GPS_ONE_SHOT_TIMEOUT_COLD_MS,
+  GPS_REFRESH_AGE_MS,
+  GPS_ACCURACY_REFRESH_M,
 } from "./captureConfig";
 
 export interface GpsFix {
@@ -57,6 +59,7 @@ export function useGpsTracker() {
   const fixRef = useRef<GpsFix | null>(null);
   const waitersRef = useRef<WaitEntry[]>([]);
   const subRef = useRef<{ remove: () => void } | null>(null);
+  const cancelledRef = useRef(false);
 
   const acceptFix = useCallback((fix: GpsFix) => {
     fixRef.current = fix;
@@ -69,6 +72,22 @@ export function useGpsTracker() {
     });
     waitersRef.current = [];
   }, []);
+
+  const oneShotFix = useCallback(async (): Promise<GpsFix | null> => {
+    try {
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      if (loc && isAcceptableFix(loc)) {
+        const fix = toFix(loc);
+        if (!cancelledRef.current) acceptFix(fix);
+        return fix;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, [acceptFix]);
 
   const captureGps = useCallback(
     (graceMs: number = GPS_GRACE_MS): Promise<GpsFix | null> => {
@@ -87,6 +106,11 @@ export function useGpsTracker() {
     },
     []
   );
+
+  const refreshNow = useCallback(async (): Promise<GpsFix | null> => {
+    const f = await oneShotFix();
+    return f ?? fixRef.current;
+  }, [oneShotFix]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,24 +183,25 @@ export function useGpsTracker() {
 
       interval = setInterval(() => {
         const current = fixRef.current;
-        if (current && !isLocationFresh(current.timestamp, Date.now(), GPS_STALE_MS)) {
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-            .then((loc: LocationLike) => {
-              if (!cancelled && loc && isAcceptableFix(loc)) acceptFix(toFix(loc));
-            })
-            .catch(() => {});
+        if (
+          current &&
+          (!isLocationFresh(current.timestamp, Date.now(), GPS_REFRESH_AGE_MS) ||
+            current.accuracyM > GPS_ACCURACY_REFRESH_M)
+        ) {
+          oneShotFix();
         }
-      }, GPS_STALE_MS);
+      }, GPS_REFRESH_AGE_MS);
     })();
 
     return () => {
       cancelled = true;
+      cancelledRef.current = true;
       subRef.current?.remove();
       if (interval) clearInterval(interval);
     };
-  }, [acceptFix]);
+  }, [acceptFix, oneShotFix]);
 
   const ageMs = fixRef.current ? Date.now() - fixRef.current.timestamp : null;
 
-  return { status, coords, accuracyM, ageMs, captureGps };
+  return { status, coords, accuracyM, ageMs, currentFix: fixRef.current, captureGps, refreshNow };
 }
