@@ -90,6 +90,12 @@ module.exports = {
       functions: 80,
       branches: 70,
     },
+    "src/utils/watermarkLayout.ts": {
+      lines: 80,
+      statements: 80,
+      functions: 80,
+      branches: 70,
+    },
     "src/database/repositories/FieldRepository.ts": {
       lines: 80,
       statements: 80,

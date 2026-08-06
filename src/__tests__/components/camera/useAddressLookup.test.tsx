@@ -9,7 +9,6 @@ import {
 import {
   useAddressLookup,
   RESOLVING_ADDRESS,
-  ADDRESS_UNAVAILABLE,
 } from "@/src/components/camera/useAddressLookup";
 
 jest.mock("expo-location");
@@ -66,10 +65,10 @@ describe("useAddressLookup", () => {
       setDriverCoords!({ latitude: 27.6, longitude: 75.15 });
     });
     await flush();
-    expect(lastLines).toEqual(["Near Collector Office", "Alwar", "Alwar, Rajasthan"]);
+    expect(lastLines).toEqual(["Near Collector Office", "Alwar"]);
   });
 
-  it("shows Address Unavailable when geocoding fails", async () => {
+  it("hides the address when geocoding fails (never shows errors)", async () => {
     __setMockReverseGeocode(null);
     await TestRenderer.act(async () => {
       tree = TestRenderer.create(<DriverHost />);
@@ -78,7 +77,7 @@ describe("useAddressLookup", () => {
       setDriverCoords!({ latitude: 27.6, longitude: 75.15 });
     });
     await flush();
-    expect(lastLines).toEqual([ADDRESS_UNAVAILABLE]);
+    expect(lastLines).toEqual([]);
   });
 
   it("reuses the cached address within 10 m without a new geocode", async () => {
@@ -91,14 +90,14 @@ describe("useAddressLookup", () => {
       setDriverCoords!({ latitude: 0, longitude: 0 });
     });
     await flush();
-    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown"]);
     const callsAfterFirst = spy.mock.calls.length;
 
     await TestRenderer.act(async () => {
       setDriverCoords!({ latitude: 0.00003, longitude: 0 });
     });
     await flush();
-    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown"]);
     expect(spy.mock.calls.length).toBe(callsAfterFirst);
   });
 
@@ -119,7 +118,7 @@ describe("useAddressLookup", () => {
     });
     await flush();
     expect(spy.mock.calls.length).toBeGreaterThan(callsAfterFirst);
-    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown"]);
   });
 
   it("enters the resolving state again for a fresh location", async () => {
@@ -131,7 +130,7 @@ describe("useAddressLookup", () => {
       setDriverCoords!({ latitude: 0, longitude: 0 });
     });
     await flush();
-    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown"]);
 
     const pending = new Promise<never>(() => {});
     jest

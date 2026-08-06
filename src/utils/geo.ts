@@ -35,28 +35,47 @@ export function truncateAddressLine(line: string): string {
   return `${trimmed.slice(0, MAX_ADDRESS_LINE_LENGTH - 3)}...`;
 }
 
+function stripPlusCode(text: string): string {
+  return text
+    .trim()
+    .replace(/^[A-Za-z0-9]+\+[A-Za-z0-9]+(?:\s+|$)/, "")
+    .trim();
+}
+
 export function formatAddressLines(address: GeocodedAddress | null): string[] {
   if (!address) return [];
+
+  const parts: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (raw: string): void => {
+    const cleaned = stripPlusCode(raw);
+    const t = truncateAddressLine(cleaned);
+    if (!t) return;
+    const key = t.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    parts.push(t);
+  };
 
   const streetNumber = address.streetNumber?.trim() ?? "";
   const street = address.street?.trim() ?? "";
   const road = (streetNumber && street ? `${streetNumber} ${street}` : street) || "";
-  const line1 = address.name?.trim() || road;
+  const name = address.name?.trim() ?? "";
+  const nameOrRoad = stripPlusCode(name) || road;
+  add(nameOrRoad);
 
-  const area = address.subregion?.trim() || address.district?.trim() || "";
+  const district = address.district?.trim() ?? "";
+  const subregion = address.subregion?.trim() ?? "";
+  const city = address.city?.trim() ?? "";
+  const region = address.region?.trim() ?? "";
 
-  const city = address.city?.trim() || "";
-  const region = address.region?.trim() || "";
-  const place = city && region ? `${city}, ${region}` : city || region;
+  add(district);
+  add(city);
+  if (subregion && !/division$/i.test(subregion)) add(subregion);
+  if (!city) add(region);
 
-  const lines: string[] = [];
-  for (const raw of [line1, area, place]) {
-    const t = raw.trim();
-    if (!t) continue;
-    lines.push(truncateAddressLine(t));
-    if (lines.length === MAX_ADDRESS_LINES) break;
-  }
-  return lines;
+  return parts.slice(0, MAX_ADDRESS_LINES);
 }
 
 export async function reverseGeocode(

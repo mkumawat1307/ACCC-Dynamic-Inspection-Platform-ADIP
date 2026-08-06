@@ -3,7 +3,6 @@ import { formatAddressLines, haversineMeters, reverseGeocode } from "@/src/utils
 
 export const ADDRESS_CACHE_RADIUS_M = 10;
 export const RESOLVING_ADDRESS = "Resolving Address...";
-export const ADDRESS_UNAVAILABLE = "Address Unavailable";
 
 interface CachedAddress {
   latitude: number;
@@ -40,14 +39,14 @@ export function useAddressLookup(
         if (cancelled) return;
         const addrLines = formatAddressLines(address);
         if (addrLines.length === 0) {
-          setLines([ADDRESS_UNAVAILABLE]);
+          setLines([]);
           return;
         }
         cacheRef.current = { latitude, longitude, lines: addrLines };
         setLines(addrLines);
       })
       .catch(() => {
-        if (!cancelled) setLines([ADDRESS_UNAVAILABLE]);
+        if (!cancelled) setLines([]);
       });
     return () => {
       cancelled = true;
