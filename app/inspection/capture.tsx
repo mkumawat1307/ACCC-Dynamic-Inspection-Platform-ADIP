@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, BackHandler, Image, StyleSheet, View } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { CameraView, useCameraPermissions, FlashMode } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Appbar, Button, Text, ActivityIndicator } from "react-native-paper";
+import { Appbar, Button, Text, ActivityIndicator, IconButton } from "react-native-paper";
 import * as FileSystem from "expo-file-system/legacy";
 import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
@@ -22,6 +22,7 @@ import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/use
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
+import { FLASH_ICONS, FLASH_LABELS, nextFlashMode } from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
@@ -49,6 +50,7 @@ export default function CaptureScreen() {
 
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [flash, setFlash] = useState<FlashMode>("off");
 
   const flow = useCaptureFlow();
   const {
@@ -302,6 +304,7 @@ export default function CaptureScreen() {
                   ref={cameraRef}
                   facing="back"
                   ratio="4:3"
+                  flash={flash}
                   style={styles.fill}
                 />
               ) : (
@@ -324,6 +327,15 @@ export default function CaptureScreen() {
                   {gpsPillText(gps.status, gps.accuracyM)}
                 </Text>
               </View>
+            </View>
+
+            <View style={styles.cameraToolbar}>
+              <IconButton
+                icon={FLASH_ICONS[flash]}
+                accessibilityLabel={FLASH_LABELS[flash]}
+                testID="camera-flash"
+                onPress={() => setFlash(nextFlashMode)}
+              />
             </View>
 
             <View style={styles.controls}>
@@ -437,6 +449,13 @@ const styles = StyleSheet.create({
   gpsPillText: {
     color: "#76FF03",
     fontSize: 12,
+  },
+  cameraToolbar: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 4,
   },
   controls: {
     paddingVertical: 24,
