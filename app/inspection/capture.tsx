@@ -28,6 +28,7 @@ import {
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
+import { perfNow, perfLog } from "@/src/utils/perf";
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -159,6 +160,7 @@ export default function CaptureScreen() {
       coords = { latitude: fix.latitude, longitude: fix.longitude };
     }
 
+    const tCapture = perfNow();
     const result = await cameraRef.current?.takePictureAsync({
       quality: PHOTO_QUALITY,
       skipProcessing: false,
@@ -167,6 +169,7 @@ export default function CaptureScreen() {
       Alert.alert("Error", "Failed to capture photo.");
       return;
     }
+    perfLog("capture", "takePictureAndWrite", tCapture);
 
     setShutterBusy(true);
     try {
@@ -191,7 +194,9 @@ export default function CaptureScreen() {
         Remarks: null,
       };
 
+      const tDbInsert = perfNow();
       const photoId = await PhotoRepository.create(photo);
+      perfLog("capture", `photo=${photoId} sqliteCreate`, tDbInsert);
 
       const lines = [
         poleId,
