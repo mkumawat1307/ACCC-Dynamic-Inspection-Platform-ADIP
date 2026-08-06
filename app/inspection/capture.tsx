@@ -80,14 +80,31 @@ export default function CaptureScreen() {
 
   const pinchResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: (_evt, gestureState) => gestureState.numberActiveTouches >= 2,
-      onMoveShouldSetPanResponder: (_evt, gestureState) => gestureState.numberActiveTouches >= 2,
-      onPanResponderGrant: (_evt, _gestureState) => {
+      onStartShouldSetPanResponder: (_evt, gestureState) =>
+        gestureState.numberActiveTouches >= 2,
+      onMoveShouldSetPanResponder: (_evt, gestureState) =>
+        gestureState.numberActiveTouches >= 2,
+      onPanResponderGrant: (_evt, gestureState) => {
         zoomRef.current = zoom;
+        if (gestureState.numberActiveTouches === 1) {
+          setFocusRing({ x: gestureState.x0, y: gestureState.y0 });
+          focusAnim.setValue(0);
+          Animated.timing(focusAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }).start(({ finished }) => {
+            if (finished) setFocusRing(null);
+          });
+          gps.refreshNow();
+        }
       },
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches ?? [];
-        const dist = touchDistance(touches);
+        if (touches.length < 2) return;
+        const dist = touchDistance(
+          touches.map((t) => ({ pageX: t.pageX, pageY: t.pageY }))
+        );
         if (dist <= 0) return;
         const startDist = Math.max(dist, 1);
         const next = pinchZoomFromDistance(zoomRef.current, startDist, dist);
@@ -343,20 +360,6 @@ export default function CaptureScreen() {
                   height: e.nativeEvent.layout.height,
                 })
               }
-              onTouchStart={(e) => {
-                if (e.nativeEvent.touches.length !== 1) return;
-                const t = e.nativeEvent.touches[0];
-                setFocusRing({ x: t.locationX, y: t.locationY });
-                focusAnim.setValue(0);
-                Animated.timing(focusAnim, {
-                  toValue: 1,
-                  duration: 600,
-                  useNativeDriver: true,
-                }).start(({ finished }) => {
-                  if (finished) setFocusRing(null);
-                });
-                gps.refreshNow();
-              }}
               {...pinchResponder.panHandlers}
             >
               {permission?.granted ? (
