@@ -1073,7 +1073,7 @@ Native JPEG Encoder for Watermark Burn-In — Replacing `canvas.toBlob("image/jp
 
 ### Status
 
-Proposed (awaiting review before implementation)
+Implemented (August 2026)
 
 ### Date
 
@@ -1204,6 +1204,39 @@ Negative:
 3. Memory test on a 2GB device: peak native heap < 150MB during encode; no OOM.
 4. Fallback test: with the module disabled, `toBlob` path still produces valid output with retry semantics intact.
 5. Full test gate: `npx tsc --noEmit`, `yarn lint` (0 errors), `yarn test` (62 suites, 705+ tests) green.
+
+### Implementation Status (August 2026)
+
+Implemented end-to-end via TDD (RED→GREEN per cycle) and verified. Commits on `main`:
+
+- `5505fa8` docs: add ADR-022 native JPEG encoder design
+- `54f9c53` debug: add watermark lifecycle and performance instrumentation (Debug-only; `logger.error` is not `__DEV__`-gated, so stall-monitoring logs use `logger.debug`)
+- `f52d406` camera: improve GPS tracker and diagnostics
+- `693f45f` feat(watermark): native Android JPEG encoder path (JS)
+- `f5e11c6` feat(android): register WatermarkEncoder native module (Kotlin)
+
+What shipped:
+
+- **`src/native/WatermarkEncoder.ts`** — JS bridge: `hasNativeWatermarkEncoder()` (checks `NativeModules.WatermarkEncoder.encodeJpeg` exists) and `encodeWatermarkJpeg(width, height, rgbaBase64, quality, outputPath)` which throws `"WatermarkEncoder native module is not available"` when absent.
+- **`src/utils/watermarkHtml.ts`** — renderer gains a native branch: after the watermark draw, `ctx.getImageData(0,0,w,h)` → chunked `arrayBufferToBase64` (0x8000 per chunk, `btoa`) → `postMessage({ photoId, width, height, rgba, diag })`. The `toBlob` path is unchanged and remains the fallback. Entry dispatches on a `nativeEncode` flag.
+- **`src/components/inspection/useWatermarkProcessor.ts`** — `WatermarkJob.useNative` defaulted via `hasNativeWatermarkEncoder()`; `enqueueWatermark` accepts a `useNativeOverride` (used by retry); native message branch encodes via the module to `${inputPath}.wm.jpg`, reads the temp JPEG base64, saves through the existing SAF `writePhoto` path, `PhotoRepository.updateFilePath`, `onPhotosUpdated()`, deletes the temp file. On any native error the temp is deleted, the job is re-queued with `useNative=false`, and the existing retry semantics re-run through `toBlob`.
+- **`android/app/src/main/java/com/accc/dynamicinspection/WatermarkEncoderModule.kt`** — `ReactContextBaseJavaModule` "WatermarkEncoder": background `Thread`; `Base64.decode` → `ByteBuffer.wrap(...).order(nativeOrder())` → `Bitmap.createBitmap(ARGB_8888)` → `copyPixelsFromBuffer` → `compress(JPEG, quality=95, FileOutputStream)` → `promise.resolve`; `bitmap.recycle()` in `finally`; reject codes `E_INVALID_ARGS` / `E_DECODE` (buffer-size mismatch) / `E_ENCODE` / `E_OOM`. Registered in `MainApplication.kt` via an anonymous `ReactPackage` (works through the RN 0.81 New-Arch interop layer). Positional args (`width, height, rgbaBase64, quality, outputPath`) — object-arg `@ReactMethod` signatures are not supported.
+- **Verification:** `npx tsc --noEmit` clean; `yarn lint` 0 errors (447 pre-existing warnings); `yarn test` **63 suites / 722 tests** pass (bridge 6, renderer 30, processor 12 incl. 4 native-path tests); Gradle `:app:compileDebugKotlin` **BUILD SUCCESSFUL**. On-device Debug run confirmed the native diag shape (`mode=native`, `getData=`/`b64=` fields) and ~0ms `toBlob`.
+
+Known deviations from the as-written design:
+
+- **Second base64 round-trip on save:** the temp JPEG is read as base64 and handed to `writePhoto` (as in the diagram), rather than the optional `copyPhotoToProject` streaming helper. The extra string is only 2–5MB and GC-able; revisit only if a memory test demands it.
+- **`quality` scale:** JS passes `95` (0–100), which the module validates against `0..100`.
+- **Instrumentation fields:** `toBlobMs`/`frMs` diag replaced by `getDataMs`/`b64Ms`/`native` (per the Consequences section); the toBlob fallback keeps its original diag fields.
+
+Open acceptance items (need a physical device):
+
+1. Pixel-diff test (native vs `toBlob` output below perceptual threshold).
+2. 20-capture run on the **release APK**: no encode > 2,500ms, median < 1,200ms.
+3. 2GB-device memory test: peak native heap < 150MB, no OOM.
+4. Fallback test with the module disabled.
+
+Note: **Expo Go cannot load custom native modules.** The native path only activates in a custom build (`npx expo run:android`) or release APK; in Expo Go `hasNativeWatermarkEncoder()` returns `false` and every photo takes the `toBlob` path (intermittent 4s stalls persist there by design).
 
 ---
 
