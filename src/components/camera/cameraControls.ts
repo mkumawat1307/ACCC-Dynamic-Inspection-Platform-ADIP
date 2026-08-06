@@ -5,7 +5,7 @@ export const FLASH_ORDER: readonly FlashMode[] = ["off", "auto", "on"];
 export const FLASH_ICONS: Record<FlashMode, string> = {
   off: "flash-off",
   auto: "flash-auto",
-  on: "flash-on",
+  on: "flash",
 };
 
 export const FLASH_LABELS: Record<FlashMode, string> = {
