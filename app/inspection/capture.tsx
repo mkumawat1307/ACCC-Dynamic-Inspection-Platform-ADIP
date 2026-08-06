@@ -346,7 +346,7 @@ export default function CaptureScreen() {
               onTouchStart={(e) => {
                 if (e.nativeEvent.touches.length !== 1) return;
                 const t = e.nativeEvent.touches[0];
-                setFocusRing({ x: t.pageX, y: t.pageY });
+                setFocusRing({ x: t.locationX, y: t.locationY });
                 focusAnim.setValue(0);
                 Animated.timing(focusAnim, {
                   toValue: 1,
