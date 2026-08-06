@@ -10,13 +10,16 @@ import {
   __emitWatchLocation,
   __resetLocationState,
 } from "expo-location";
+import * as Location from "expo-location";
 import { useGpsTracker, GpsFix } from "@/src/components/camera/useGpsTracker";
 
 let captureGpsFn: ((graceMs?: number) => Promise<GpsFix | null>) | null = null;
+let gpsRef: { current: ReturnType<typeof useGpsTracker> | null } = { current: null };
 
 function Probe() {
   const gps = useGpsTracker();
   captureGpsFn = gps.captureGps;
+  gpsRef.current = gps;
   const coords = gps.coords ? `${gps.coords.latitude},${gps.coords.longitude}` : "none";
   return <Text>{`${gps.status}|${coords}`}</Text>;
 }
@@ -44,6 +47,7 @@ function rendered(tree: ReturnType<typeof TestRenderer.create>): string {
 describe("useGpsTracker", () => {
   beforeEach(() => {
     captureGpsFn = null;
+    gpsRef.current = null;
     __resetLocationState();
     jest.clearAllMocks();
   });
@@ -131,6 +135,66 @@ describe("useGpsTracker", () => {
       await p;
     });
     expect(outcome).toBe("7,8");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("returns a fresh usable cached fix without a new one-shot", async () => {
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+    const fix = await gpsRef.current!.captureGps(500);
+    expect(fix).not.toBeNull();
+    expect(fix!.accuracyM).toBe(5);
+    expect(spy).not.toHaveBeenCalled();
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("refreshes the fix in the background poll when it becomes stale", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 11_000);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(500);
+      await flushAsync();
+    });
+    __setMockLocation(3, 4, 6);
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(10_000);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|3,4");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("does not refresh in the background poll while the fix is fresh and accurate", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 25, -60_000);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(500);
+      await flushAsync();
+    });
+    __setMockLocation(3, 4, 6);
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(10_000);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|1,2");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("refreshNow performs a one-shot and returns the fix", async () => {
+    __setPermissionStatus("granted");
+    __setMockLocation(9, 9, 4);
+    const tree = await renderProbe();
+    const fix = await gpsRef.current!.refreshNow();
+    expect(fix).not.toBeNull();
+    expect(fix!.accuracyM).toBe(4);
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 });
