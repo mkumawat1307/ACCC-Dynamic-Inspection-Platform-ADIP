@@ -130,12 +130,20 @@ describe("formatGpsAccuracyLine", () => {
 });
 
 describe("gpsPillText", () => {
-  it("shows accuracy when fixed", () => {
-    expect(gpsPillText("fixed", 12)).toBe("GPS OK · ±12 m");
+  it("shows high accuracy for fixed with accuracy ≤15m", () => {
+    expect(gpsPillText("fixed", 12)).toBe("🟢 High Accuracy");
   });
 
-  it("shows plain status when fixed but accuracy unknown", () => {
-    expect(gpsPillText("fixed", null)).toBe("GPS OK");
+  it("shows medium accuracy for fixed with accuracy 16–30m", () => {
+    expect(gpsPillText("fixed", 20)).toBe("🟡 Medium Accuracy");
+  });
+
+  it("shows low accuracy for fixed with accuracy >30m", () => {
+    expect(gpsPillText("fixed", 50)).toBe("🔴 Low Accuracy");
+  });
+
+  it("defaults to high accuracy when fixed but accuracy unknown", () => {
+    expect(gpsPillText("fixed", null)).toBe("🟢 High Accuracy");
   });
 
   it("shows denied and acquiring states", () => {
