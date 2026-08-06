@@ -6,7 +6,7 @@ import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
-import { buildWatermarkMessage } from "@/src/utils/watermarkHtml";
+import { buildRenderWatermarkScript } from "@/src/utils/watermarkHtml";
 import { useInspection } from "@/src/context/InspectionContext";
 import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator } from "@/src/utils/perf";
 
@@ -143,8 +143,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
 
       const wv = webViewRef.current;
       if (!wv) throw new Error("webview not available");
-      const message = buildWatermarkMessage(job.photoId, base64, job.lines);
-      wv.postMessage(message);
+      wv.injectJavaScript(buildRenderWatermarkScript(job.photoId, base64, job.lines));
       perfStage(perf, "webviewSend");
     } catch (error) {
       logger.warn("[Watermark] read or send failed:", error);

@@ -8,16 +8,19 @@ export function sanitizeWatermarkLines(lines: string[]): string[] {
   );
 }
 
-export function buildWatermarkMessage(
+export function buildRenderWatermarkScript(
   photoId: number,
   imageBase64: string,
   lines: string[]
 ): string {
-  return JSON.stringify({
+  const payload = JSON.stringify({
     photoId,
     base64: imageBase64,
     lines: sanitizeWatermarkLines(lines),
-  });
+  })
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `window.renderWatermarkFromJson(${payload}); true;`;
 }
 
 export function buildWatermarkRendererPage(): string {
@@ -105,12 +108,9 @@ function renderWatermark(photoId,imageBase64,lines){
   };
   img.src='data:image/jpeg;base64,'+imageBase64;
 }
-document.addEventListener('message',function(e){
-  try{
-    var msg=JSON.parse(e.data);
-    if(msg.photoId!=null&&msg.base64)renderWatermark(msg.photoId,msg.base64,msg.lines||[]);
-  }catch(err){}
-});
+window.renderWatermarkFromJson=function(payload){
+  if(payload&&payload.photoId!=null&&payload.base64)renderWatermark(payload.photoId,payload.base64,payload.lines||[]);
+};
 window.ReactNativeWebView.postMessage(JSON.stringify({__ready:true}));
 </script>
 </body>
