@@ -19,7 +19,7 @@ import { useCaptureFlow } from "@/src/components/camera/useCaptureFlow";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/useAddressLookup";
-import { composeWatermarkLines } from "@/src/utils/watermarkLayout";
+import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
@@ -255,6 +255,13 @@ export default function CaptureScreen() {
       ? addressLines.join("\n")
       : null;
 
+  const gpsPillColor =
+    gps.status === "fixed" && gps.accuracyM != null
+      ? GPS_CATEGORY_COLORS[gpsAccuracyCategory(gps.accuracyM)]
+      : gps.status === "denied"
+      ? "#FF5252"
+      : "#FFEB3B";
+
   if (permissionDenied) {
     return (
       <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
@@ -312,12 +319,8 @@ export default function CaptureScreen() {
               )}
 
               <View style={styles.gpsPill}>
-                <Text style={styles.gpsPillText}>
-                  {gps.status === "fixed"
-                    ? "GPS OK"
-                    : gps.status === "denied"
-                    ? "GPS denied"
-                    : "Acquiring GPS…"}
+                <Text style={[styles.gpsPillText, { color: gpsPillColor }]}>
+                  {gpsPillText(gps.status, gps.accuracyM)}
                 </Text>
               </View>
             </View>

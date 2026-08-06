@@ -3,6 +3,7 @@ import {
   gpsAccuracyCategory,
   formatGpsAccuracyLine,
   gpsPillText,
+  GPS_CATEGORY_COLORS,
 } from "@/src/utils/watermarkLayout";
 import { DEFAULT_WATERMARK_SETTINGS } from "@/src/utils/watermarkSettings";
 
@@ -108,6 +109,16 @@ describe("gpsAccuracyCategory", () => {
     expect(gpsAccuracyCategory(16)).toBe("medium");
     expect(gpsAccuracyCategory(30)).toBe("medium");
     expect(gpsAccuracyCategory(31)).toBe("low");
+  });
+});
+
+describe("GPS_CATEGORY_COLORS", () => {
+  it("maps accuracy categories to spec colors", () => {
+    expect(GPS_CATEGORY_COLORS).toEqual({
+      high: "#76FF03",
+      medium: "#FFEB3B",
+      low: "#FF5252",
+    });
   });
 });
 
