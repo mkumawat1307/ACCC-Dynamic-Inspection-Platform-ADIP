@@ -8,6 +8,7 @@ import {
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Project } from "@/src/models/Project";
 import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
+import { resetStorageCaches } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
 
 jest.mock("expo-file-system/legacy", () =>
@@ -91,6 +92,7 @@ async function seedProjectFolder(
 beforeEach(async () => {
   __resetFsState();
   await AsyncStorage.clear();
+  resetStorageCaches();
   remapMock.mockClear();
   warnSpy = jest.spyOn(logger, "warn").mockImplementation(() => {});
 });
