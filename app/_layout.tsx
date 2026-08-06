@@ -7,6 +7,7 @@ import * as SystemUI from "expo-system-ui";
 import { StatusBar } from "expo-status-bar";
 import { PaperProvider } from "react-native-paper";
 import { InspectionProvider } from "@/src/context/InspectionContext";
+import { WatermarkSettingsProvider } from "@/src/context/WatermarkSettingsContext";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { initializeDatabase, getInitError } from "@/src/database";
@@ -76,24 +77,26 @@ export default function RootLayout() {
   logger.info(`Application ready: ${Date.now() - START}ms`);
   return (
     <PaperProvider>
-      <InspectionProvider>
-        <SafeAreaProvider>
-          <StatusBar
-            style="light"
-            translucent={false}
-            backgroundColor="#0B5ED7"
-          />
+      <WatermarkSettingsProvider>
+        <InspectionProvider>
+          <SafeAreaProvider>
+            <StatusBar
+              style="light"
+              translucent={false}
+              backgroundColor="#0B5ED7"
+            />
 
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: {
-                backgroundColor: "#F5F5F5",
-              },
-            }}
-          />
-        </SafeAreaProvider>
-      </InspectionProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: {
+                  backgroundColor: "#F5F5F5",
+                },
+              }}
+            />
+          </SafeAreaProvider>
+        </InspectionProvider>
+      </WatermarkSettingsProvider>
     </PaperProvider>
   );
 }
