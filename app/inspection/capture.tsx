@@ -75,6 +75,8 @@ export default function CaptureScreen() {
   const zoomRef = useRef(0);
   const focusAnim = useRef(new Animated.Value(0)).current;
   const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
+  // TODO: manual exposure — expo-camera 17 exposes no Android API for exposure control.
+  // Blocked until expo-camera adds `exposureCompensation` / `setExposureCompensationAsync` on Android.
 
   const pinchResponder = useRef(
     PanResponder.create({
