@@ -32,3 +32,32 @@ export const FACING_LABELS: Record<CameraType, string> = {
 export function nextFacing(facing: CameraType): CameraType {
   return facing === "back" ? "front" : "back";
 }
+
+export const ZOOM_MIN = 0;
+export const ZOOM_MAX = 1;
+
+export function clamp01(value: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
+}
+
+export function pinchZoomFromDistance(
+  startZoom: number,
+  startDistance: number,
+  distance: number,
+  sensitivity = 1.5
+): number {
+  if (startDistance <= 0) {
+    return startZoom;
+  }
+  const delta = (distance / startDistance - 1) * sensitivity;
+  return clamp01(startZoom + delta);
+}
+
+export function touchDistance(touches: { pageX: number; pageY: number }[]): number {
+  if (touches.length < 2) {
+    return 0;
+  }
+  const dx = touches[0].pageX - touches[1].pageX;
+  const dy = touches[0].pageY - touches[1].pageY;
+  return Math.sqrt(dx * dx + dy * dy);
+}

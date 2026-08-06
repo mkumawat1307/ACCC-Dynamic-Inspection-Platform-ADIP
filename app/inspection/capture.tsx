@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, BackHandler, Image, StyleSheet, View } from "react-native";
+import { Alert, BackHandler, Image, PanResponder, StyleSheet, View } from "react-native";
 import { CameraView, useCameraPermissions, CameraType, FlashMode } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,7 +22,7 @@ import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/use
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
-import { FLASH_ICONS, FLASH_LABELS, nextFlashMode, FACING_ICONS, FACING_LABELS, nextFacing } from "@/src/components/camera/cameraControls";
+import { FLASH_ICONS, FLASH_LABELS, nextFlashMode, FACING_ICONS, FACING_LABELS, nextFacing, clamp01, pinchZoomFromDistance, touchDistance } from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
@@ -52,6 +52,27 @@ export default function CaptureScreen() {
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [flash, setFlash] = useState<FlashMode>("off");
   const [facing, setFacing] = useState<CameraType>("back");
+  const [zoom, setZoom] = useState(0);
+  const zoomRef = useRef(0);
+
+  const pinchResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (_evt, gestureState) => gestureState.numberActiveTouches >= 2,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => gestureState.numberActiveTouches >= 2,
+      onPanResponderGrant: (_evt, _gestureState) => {
+        zoomRef.current = zoom;
+      },
+      onPanResponderMove: (evt) => {
+        const touches = evt.nativeEvent.touches ?? [];
+        const dist = touchDistance(touches);
+        if (dist <= 0) return;
+        const startDist = Math.max(dist, 1);
+        const next = pinchZoomFromDistance(zoomRef.current, startDist, dist);
+        zoomRef.current = next;
+        setZoom(next);
+      },
+    })
+  ).current;
 
   const flow = useCaptureFlow();
   const {
@@ -299,6 +320,7 @@ export default function CaptureScreen() {
                   height: e.nativeEvent.layout.height,
                 })
               }
+              {...pinchResponder.panHandlers}
             >
               {permission?.granted ? (
                 <CameraView
@@ -343,6 +365,9 @@ export default function CaptureScreen() {
                 testID="camera-flash"
                 onPress={() => setFlash(nextFlashMode)}
               />
+              {zoom > 0 && (
+                <Text style={styles.zoomLabel}>{Math.round(zoom * 100)}%</Text>
+              )}
             </View>
 
             <View style={styles.controls}>
@@ -463,6 +488,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     paddingVertical: 4,
+  },
+  zoomLabel: {
+    fontSize: 12,
+    color: "#76FF03",
+    fontWeight: "bold",
+    minWidth: 36,
+    textAlign: "center",
   },
   controls: {
     paddingVertical: 24,
