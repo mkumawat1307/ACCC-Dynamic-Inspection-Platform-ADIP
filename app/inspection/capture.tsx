@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, BackHandler, Image, PanResponder, StyleSheet, View } from "react-native";
+import { Alert, Animated, BackHandler, Image, PanResponder, StyleSheet, View } from "react-native";
 import {
   CameraView,
   useCameraPermissions,
@@ -73,6 +73,8 @@ export default function CaptureScreen() {
   const [zoom, setZoom] = useState(0);
   const [ratio, setRatio] = useState<CameraRatio>("4:3");
   const zoomRef = useRef(0);
+  const focusAnim = useRef(new Animated.Value(0)).current;
+  const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
 
   const pinchResponder = useRef(
     PanResponder.create({
@@ -339,6 +341,20 @@ export default function CaptureScreen() {
                   height: e.nativeEvent.layout.height,
                 })
               }
+              onTouchStart={(e) => {
+                if (e.nativeEvent.touches.length !== 1) return;
+                const t = e.nativeEvent.touches[0];
+                setFocusRing({ x: t.pageX, y: t.pageY });
+                focusAnim.setValue(0);
+                Animated.timing(focusAnim, {
+                  toValue: 1,
+                  duration: 600,
+                  useNativeDriver: true,
+                }).start(({ finished }) => {
+                  if (finished) setFocusRing(null);
+                });
+                gps.refreshNow();
+              }}
               {...pinchResponder.panHandlers}
             >
               {permission?.granted ? (
@@ -361,6 +377,27 @@ export default function CaptureScreen() {
                   height={cameraSize.height}
                   lines={previewLines}
                   settings={settings}
+                />
+              )}
+
+              {focusRing && (
+                <Animated.View
+                  style={[
+                    styles.focusRing,
+                    {
+                      left: focusRing.x - 25,
+                      top: focusRing.y - 25,
+                      opacity: focusAnim,
+                      transform: [
+                        {
+                          scale: focusAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.5, 1.5],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
                 />
               )}
 
@@ -520,6 +557,15 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     minWidth: 36,
     textAlign: "center",
+  },
+  focusRing: {
+    position: "absolute",
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    backgroundColor: "transparent",
   },
   controls: {
     paddingVertical: 24,
