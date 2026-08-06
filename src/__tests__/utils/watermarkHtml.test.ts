@@ -1,6 +1,6 @@
 import {
   buildWatermarkRendererPage,
-  buildWatermarkMessage,
+  buildRenderWatermarkScript,
   sanitizeWatermarkLines,
 } from "@/src/utils/watermarkHtml";
 
@@ -14,9 +14,9 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("</script>");
   });
 
-  it("registers the message listener and ready signal", () => {
+  it("registers the global entry point and ready signal", () => {
     const html = buildWatermarkRendererPage();
-    expect(html).toContain("document.addEventListener('message',");
+    expect(html).toContain("window.renderWatermarkFromJson=function(payload)");
     expect(html).toContain("{__ready:true}");
   });
 
@@ -49,35 +49,44 @@ describe("buildWatermarkRendererPage", () => {
   });
 });
 
-describe("buildWatermarkMessage", () => {
-  it("serializes photoId, base64 and lines as a JSON string", () => {
-    const msg = buildWatermarkMessage(99, "abc123def", ["First line", "Second line"]);
-    const parsed = JSON.parse(msg);
-    expect(parsed.photoId).toBe(99);
-    expect(parsed.base64).toBe("abc123def");
-    expect(parsed.lines).toEqual(["First line", "Second line"]);
+describe("buildRenderWatermarkScript", () => {
+  it("builds a script that calls window.renderWatermarkFromJson with the payload", () => {
+    const script = buildRenderWatermarkScript(99, "abc123def", ["First line", "Second line"]);
+    expect(script).toContain("window.renderWatermarkFromJson(");
+    expect(script).toMatch(/true;$/);
+    expect(script).toContain('"photoId":99');
+    expect(script).toContain('"base64":"abc123def"');
+    expect(script).toContain('"lines":["First line","Second line"]');
   });
 
   it("handles empty lines array", () => {
-    const msg = buildWatermarkMessage(1, "data", []);
-    expect(JSON.parse(msg).lines).toEqual([]);
+    const script = buildRenderWatermarkScript(1, "data", []);
+    expect(script).toContain('"lines":[]');
   });
 
   it("sanitizes HTML tags from lines", () => {
-    const msg = buildWatermarkMessage(1, "data", ["<script>alert('xss')</script>"]);
-    expect(msg).toContain("scriptalert(xss)/script");
-    expect(msg).not.toContain("<script>");
+    const script = buildRenderWatermarkScript(1, "data", ["<script>alert('xss')</script>"]);
+    expect(script).toContain("scriptalert(xss)/script");
+    expect(script).not.toContain("<script>");
   });
 
   it("sanitizes angle brackets from lines", () => {
-    const msg = buildWatermarkMessage(1, "data", ["<b>bold</b>"]);
-    expect(msg).toContain("bold");
-    expect(msg).not.toContain("<b>");
+    const script = buildRenderWatermarkScript(1, "data", ["<b>bold</b>"]);
+    expect(script).toContain("bold");
+    expect(script).not.toContain("<b>");
   });
 
-  it("keeps base64 intact inside the JSON payload", () => {
-    const msg = buildWatermarkMessage(1, "abc123+def/==", ["Test"]);
-    expect(msg).toContain('"base64":"abc123+def/=="');
+  it("keeps base64 intact inside the script payload", () => {
+    const script = buildRenderWatermarkScript(1, "abc123+def/==", ["Test"]);
+    expect(script).toContain('"base64":"abc123+def/=="');
+  });
+
+  it("escapes U+2028/U+2029 so the embedded literal stays valid JS", () => {
+    const script = buildRenderWatermarkScript(1, "data", ["a\u2028b\u2029c"]);
+    expect(script).not.toContain("\u2028");
+    expect(script).not.toContain("\u2029");
+    expect(script).toContain("\\u2028");
+    expect(script).toContain("\\u2029");
   });
 });
 

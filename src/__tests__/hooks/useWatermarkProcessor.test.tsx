@@ -38,6 +38,7 @@ import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageMan
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
+import { buildRenderWatermarkScript } from "@/src/utils/watermarkHtml";
 
 const project = {
   ProjectID: 1,
@@ -115,14 +116,14 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
     jest.useRealTimers();
   });
 
-  it("waits for webview __ready before posting a photo via postMessage", async () => {
+  it("waits for webview __ready before sending a photo via injectJavaScript", async () => {
     jest.useFakeTimers();
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
-    const postMessage = jest.fn();
+    const injectJavaScript = jest.fn();
     const { result, unmount } = renderHook(() =>
       useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
     );
-    result.current.webViewRef.current = { postMessage } as unknown as WebView;
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
 
     TestRenderer.act(() => {
       result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
@@ -130,7 +131,7 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
     await TestRenderer.act(async () => {
       await jest.advanceTimersByTimeAsync(100);
     });
-    expect(postMessage).not.toHaveBeenCalled();
+    expect(injectJavaScript).not.toHaveBeenCalled();
 
     TestRenderer.act(() => {
       result.current.handleWebViewMessage({
@@ -141,11 +142,12 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
       await jest.advanceTimersByTimeAsync(0);
     });
 
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    const sent = JSON.parse(postMessage.mock.calls[0][0] as string);
-    expect(sent.photoId).toBe(1);
-    expect(sent.base64).toBe("BASE64DATA");
-    expect(sent.lines).toEqual(["line"]);
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    const script = injectJavaScript.mock.calls[0][0] as string;
+    expect(script).toBe(buildRenderWatermarkScript(1, "BASE64DATA", ["line"]));
+    expect(script).toContain("window.renderWatermarkFromJson(");
+    expect(script).toContain('"base64":"BASE64DATA"');
+    expect(script).toMatch(/true;$/);
 
     await TestRenderer.act(async () => {
       await jest.advanceTimersByTimeAsync(100);
