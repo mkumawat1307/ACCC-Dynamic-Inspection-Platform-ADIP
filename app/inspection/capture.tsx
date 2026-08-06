@@ -11,8 +11,6 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Photo } from "@/src/models/Photo";
 import {
   generateFileName,
-  formatWatermarkDate,
-  formatLatLngWM,
   getFileUri,
 } from "@/src/components/inspection/photoUtils";
 import { useGpsTracker } from "@/src/components/camera/useGpsTracker";
@@ -20,11 +18,9 @@ import WatermarkOverlay from "@/src/components/camera/WatermarkOverlay";
 import { useCaptureFlow } from "@/src/components/camera/useCaptureFlow";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
-import {
-  useAddressLookup,
-  RESOLVING_ADDRESS,
-  ADDRESS_UNAVAILABLE,
-} from "@/src/components/camera/useAddressLookup";
+import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/useAddressLookup";
+import { composeWatermarkLines } from "@/src/utils/watermarkLayout";
+import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
@@ -35,6 +31,7 @@ export default function CaptureScreen() {
   const { inspectionId: inspectionIdParam } = useLocalSearchParams<{ inspectionId: string }>();
   const inspectionId = Number(inspectionIdParam);
   const { project, poleId: contextPoleId, photoStates } = useInspection();
+  const { settings } = useWatermarkSettings();
 
   const cameraRef = useRef<React.ElementRef<typeof CameraView>>(null);
   const gps = useGpsTracker();
@@ -198,13 +195,17 @@ export default function CaptureScreen() {
       const photoId = await PhotoRepository.create(photo);
       perfLog("capture", `photo=${photoId} sqliteCreate`, tDbInsert);
 
-      const lines = [
-        poleId,
-        `${project?.DistrictName || ""}, ${block}`,
-        formatWatermarkDate(timestamp),
-        formatLatLngWM(coords.latitude, coords.longitude),
-        ...addressLines,
-      ];
+      const lines = composeWatermarkLines({
+        siteId: poleId,
+        district: project?.DistrictName || "",
+        block,
+        timestampIso: timestamp,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        accuracyM: gps.accuracyM,
+        addressLines,
+        settings,
+      });
 
       flow.beginCapture({ photoId, tempUri: result.uri, fileName, lines, timestamp });
       enqueueWatermark(photoId, result.uri, fileName, lines);
@@ -236,14 +237,20 @@ export default function CaptureScreen() {
     router.back();
   };
 
-  const gpsLine = gps.coords
-    ? formatLatLngWM(gps.coords.latitude, gps.coords.longitude)
-    : "Acquiring GPS…";
+  const previewLines = composeWatermarkLines({
+    siteId: values.pole_id || "NA",
+    district: project?.DistrictName || "",
+    block: values.block || "NA",
+    timestampIso: now.toISOString(),
+    latitude: gps.coords?.latitude ?? null,
+    longitude: gps.coords?.longitude ?? null,
+    accuracyM: gps.accuracyM,
+    addressLines,
+    settings,
+  });
 
   const resolvedAddress =
-    addressLines.length > 0 &&
-    addressLines[0] !== RESOLVING_ADDRESS &&
-    addressLines[0] !== ADDRESS_UNAVAILABLE
+    addressLines.length > 0 && addressLines[0] !== RESOLVING_ADDRESS
       ? addressLines.join("\n")
       : null;
 
@@ -298,11 +305,7 @@ export default function CaptureScreen() {
                 <WatermarkOverlay
                   width={cameraSize.width}
                   height={cameraSize.height}
-                  poleId={values.pole_id || "NA"}
-                  districtBlock={`${project?.DistrictName || ""}, ${values.block || "NA"}`}
-                  dateLine={formatWatermarkDate(now.toISOString())}
-                  gpsLine={gpsLine}
-                  addressLines={addressLines}
+                  lines={previewLines}
                 />
               )}
 

@@ -1,4 +1,5 @@
 import { Photo } from "@/src/models/Photo";
+import type { WatermarkDateFormat, WatermarkTimeFormat } from "@/src/utils/watermarkSettings";
 
 export type WatermarkState = "pending" | "processing" | "completed" | "failed";
 
@@ -63,19 +64,45 @@ export function getFileUri(filePath: string): string {
   return filePath;
 }
 
-export function formatWatermarkDate(iso: string): string {
+export function formatDatePart(iso: string, dateFormat: WatermarkDateFormat): string {
   const d = new Date(iso);
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const day = d.getDate().toString().padStart(2, "0");
-  const h = d.getHours();
+  const month = (d.getMonth() + 1).toString().padStart(2, "0");
+  if (dateFormat === "dd/MM/yyyy") {
+    return `${day}/${month}/${d.getFullYear()}`;
+  }
+  if (dateFormat === "yyyy-MM-dd") {
+    return `${d.getFullYear()}-${month}-${day}`;
+  }
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+export function formatTimePart(iso: string, timeFormat: WatermarkTimeFormat): string {
+  const d = new Date(iso);
   const min = d.getMinutes().toString().padStart(2, "0");
+  if (timeFormat === "24h") {
+    const hh = d.getHours().toString().padStart(2, "0");
+    return `${hh}:${min}`;
+  }
+  const h = d.getHours();
   const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${day}-${months[d.getMonth()]}-${d.getFullYear()} ${h12}:${min} ${ampm}`;
+  const h12 = (h % 12 || 12).toString().padStart(2, "0");
+  return `${h12}:${min} ${ampm}`;
+}
+
+export function formatWatermarkDate(
+  iso: string,
+  dateFormat: WatermarkDateFormat = "dd-MMM-yyyy",
+  timeFormat: WatermarkTimeFormat = "12h"
+): string {
+  return `${formatDatePart(iso, dateFormat)} ${formatTimePart(iso, timeFormat)}`;
 }
 
 export function formatLatLngWM(lat: number, lng: number): string {
-  return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  const latDir = lat >= 0 ? "N" : "S";
+  const lngDir = lng >= 0 ? "E" : "W";
+  return `${Math.abs(lat).toFixed(6)}${latDir} ${Math.abs(lng).toFixed(6)}${lngDir}`;
 }
 
 export function generateFileName(

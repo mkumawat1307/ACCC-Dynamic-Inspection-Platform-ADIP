@@ -84,7 +84,7 @@ describe("formatAddressLines", () => {
     expect(formatAddressLines(null)).toEqual([]);
   });
 
-  it("builds landmark, area, and place lines", () => {
+  it("builds landmark and city lines without repeating the place name", () => {
     const addr = {
       name: "Near Collector Office",
       district: "Alwar",
@@ -93,11 +93,26 @@ describe("formatAddressLines", () => {
       postalCode: "301001",
       country: "India",
     };
-    expect(formatAddressLines(addr)).toEqual([
-      "Near Collector Office",
-      "Alwar",
-      "Alwar, Rajasthan",
-    ]);
+    expect(formatAddressLines(addr)).toEqual(["Near Collector Office", "Alwar"]);
+  });
+
+  it("prefers the narrower district over the broader subregion", () => {
+    const out = formatAddressLines({
+      name: "Ward 3 Market",
+      subregion: "Sikar",
+      district: "Gopalpura",
+      city: "Sikar",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Ward 3 Market", "Gopalpura", "Sikar"]);
+  });
+
+  it("shows the state only when no city exists", () => {
+    const out = formatAddressLines({
+      name: "Farm Road",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Farm Road", "Rajasthan"]);
   });
 
   it("does not include country or postal code", () => {
@@ -119,6 +134,55 @@ describe("formatAddressLines", () => {
       region: "West Bengal",
     });
     expect(out[0]).toBe("21 Park Street");
+  });
+
+  it("includes the subregion (block) when available even alongside a city", () => {
+    const out = formatAddressLines({
+      name: "Pole 42",
+      city: "Shyamgarh",
+      subregion: "Sikar",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Pole 42", "Shyamgarh", "Sikar"]);
+  });
+
+  it("dedupes a subregion that repeats the city name", () => {
+    const out = formatAddressLines({
+      name: "Main Bazaar",
+      city: "Sikar",
+      subregion: "Sikar",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Main Bazaar", "Sikar"]);
+  });
+
+  it("drops a bare Plus Code used as the name", () => {
+    const out = formatAddressLines({
+      name: "J552+GM9",
+      street: "Police Lines",
+      city: "Sikar",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Police Lines", "Sikar"]);
+  });
+
+  it("drops a Plus Code token embedded at the start of a name", () => {
+    const out = formatAddressLines({
+      name: "j552+gm9 police lines",
+      city: "Sikar",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["police lines", "Sikar"]);
+  });
+
+  it("drops a Division from the subregion (broader than district)", () => {
+    const out = formatAddressLines({
+      name: "Police Lines",
+      city: "Sikar",
+      subregion: "Jaipur Division",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Police Lines", "Sikar"]);
   });
 
   it("caps the number of emitted lines at three", () => {

@@ -82,19 +82,35 @@ describe("formatWatermarkDate", () => {
     const result = formatWatermarkDate("2024-06-15T12:00:00");
     expect(result).toContain("12:00 PM");
   });
+
+  it("formats dd-MMM-yyyy 12h (default)", () => {
+    expect(formatWatermarkDate("2024-06-15T14:30:00")).toBe("15-Jun-2024 02:30 PM");
+  });
+
+  it("formats dd/MM/yyyy 24h", () => {
+    expect(formatWatermarkDate("2024-06-15T14:30:00", "dd/MM/yyyy", "24h")).toBe(
+      "15/06/2024 14:30"
+    );
+  });
+
+  it("formats yyyy-MM-dd 12h", () => {
+    expect(formatWatermarkDate("2024-01-01T00:05:00", "yyyy-MM-dd", "12h")).toBe(
+      "2024-01-01 12:05 AM"
+    );
+  });
 });
 
-describe("formatLatLngWM", () => {
-  it("formats coordinates to 6 decimal places", () => {
-    expect(formatLatLngWM(34.052235, -118.243683)).toBe("34.052235, -118.243683");
+describe("formatLatLngWM hemisphere", () => {
+  it("appends N/E for north-east", () => {
+    expect(formatLatLngWM(27.608123, 75.151703)).toBe("27.608123N 75.151703E");
   });
 
-  it("handles zero coordinates", () => {
-    expect(formatLatLngWM(0, 0)).toBe("0.000000, 0.000000");
+  it("appends S/W for south-west", () => {
+    expect(formatLatLngWM(-33.856784, -151.215297)).toBe("33.856784S 151.215297W");
   });
 
-  it("handles negative coordinates", () => {
-    expect(formatLatLngWM(-33.856784, 151.215297)).toBe("-33.856784, 151.215297");
+  it("handles zero", () => {
+    expect(formatLatLngWM(0, 0)).toBe("0.000000N 0.000000E");
   });
 });
 

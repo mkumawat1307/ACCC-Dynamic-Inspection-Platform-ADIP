@@ -29,24 +29,11 @@ export function computeWatermarkMetrics(
 interface Props {
   width: number;
   height: number;
-  poleId: string;
-  districtBlock: string;
-  dateLine: string;
-  gpsLine: string;
-  addressLines?: string[];
+  lines: string[];
 }
 
-export default function WatermarkOverlay({
-  width,
-  height,
-  poleId,
-  districtBlock,
-  dateLine,
-  gpsLine,
-  addressLines,
-}: Props) {
+export default function WatermarkOverlay({ width, height, lines }: Props) {
   const m = computeWatermarkMetrics(width, height);
-  const lines = [poleId, districtBlock, dateLine, gpsLine, ...(addressLines ?? [])];
   return (
     <View
       pointerEvents="none"

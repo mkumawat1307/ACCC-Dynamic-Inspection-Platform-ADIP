@@ -58,71 +58,60 @@ describe("computeWatermarkMetrics (mirrors watermarkHtml.ts canvas math)", () =>
 });
 
 describe("WatermarkOverlay", () => {
-  it("renders the 4 watermark lines in order", () => {
+  it("renders the watermark lines in order", () => {
     let tree!: ReturnType<typeof TestRenderer.create>;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
         <WatermarkOverlay
           width={1080}
           height={1920}
-          poleId="P-101"
-          districtBlock="North, B3"
-          dateLine="04-Aug-2026 10:00 AM"
-          gpsLine="Acquiring GPS…"
+          lines={["P-101", "04-Aug-2026 10:00 AM", "Acquiring GPS…"]}
         />
       );
     });
     const texts = collectStrings(tree.toJSON());
-    expect(texts).toEqual([
-      "P-101",
-      "North, B3",
-      "04-Aug-2026 10:00 AM",
-      "Acquiring GPS…",
-    ]);
+    expect(texts).toEqual(["P-101", "04-Aug-2026 10:00 AM", "Acquiring GPS…"]);
   });
 
-  it("renders the reverse-geocoded address lines after the GPS line", () => {
+  it("renders the full spec layout", () => {
     let tree!: ReturnType<typeof TestRenderer.create>;
     TestRenderer.act(() => {
       tree = TestRenderer.create(
         <WatermarkOverlay
           width={1080}
           height={1920}
-          poleId="SIK/001"
-          districtBlock="Alwar, XYZ"
-          dateLine="05-Aug-2026 05:33 PM"
-          gpsLine="27.608829, 75.151686"
-          addressLines={["Near Collector Office", "Station Road", "Alwar, Rajasthan"]}
+          lines={[
+            "SIK/001",
+            "Sikar, Sikar-01",
+            "05-Aug-2026 06:02 PM",
+            "27.608123N 75.151703E",
+            "Accuracy : ±12 m",
+            "Police Lines",
+            "Sikar",
+            "Rajasthan",
+          ]}
         />
       );
     });
     const texts = collectStrings(tree.toJSON());
     expect(texts).toEqual([
       "SIK/001",
-      "Alwar, XYZ",
-      "05-Aug-2026 05:33 PM",
-      "27.608829, 75.151686",
-      "Near Collector Office",
-      "Station Road",
-      "Alwar, Rajasthan",
+      "Sikar, Sikar-01",
+      "05-Aug-2026 06:02 PM",
+      "27.608123N 75.151703E",
+      "Accuracy : ±12 m",
+      "Police Lines",
+      "Sikar",
+      "Rajasthan",
     ]);
   });
 
-  it("does not render an address section when no address lines are given", () => {
+  it("renders no text when the lines array is empty", () => {
     let tree!: ReturnType<typeof TestRenderer.create>;
     TestRenderer.act(() => {
-      tree = TestRenderer.create(
-        <WatermarkOverlay
-          width={1080}
-          height={1920}
-          poleId="P-101"
-          districtBlock="North, B3"
-          dateLine="04-Aug-2026 10:00 AM"
-          gpsLine="Acquiring GPS…"
-        />
-      );
+      tree = TestRenderer.create(<WatermarkOverlay width={1080} height={1920} lines={[]} />);
     });
     const texts = collectStrings(tree.toJSON());
-    expect(texts).toHaveLength(4);
+    expect(texts).toEqual([]);
   });
 });
