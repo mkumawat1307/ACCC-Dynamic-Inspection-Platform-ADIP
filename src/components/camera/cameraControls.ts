@@ -1,4 +1,4 @@
-import type { CameraType, FlashMode } from "expo-camera";
+import type { CameraRatio, CameraType, FlashMode } from "expo-camera";
 
 export const FLASH_ORDER: readonly FlashMode[] = ["off", "auto", "on"];
 
@@ -31,6 +31,18 @@ export const FACING_LABELS: Record<CameraType, string> = {
 
 export function nextFacing(facing: CameraType): CameraType {
   return facing === "back" ? "front" : "back";
+}
+
+export const RATIO_ORDER: readonly CameraRatio[] = ["4:3", "16:9"];
+
+export const RATIO_LABELS: Partial<Record<CameraRatio, string>> = {
+  "4:3": "4:3",
+  "16:9": "16:9",
+};
+
+export function nextRatio(ratio: CameraRatio): CameraRatio {
+  const idx = RATIO_ORDER.indexOf(ratio);
+  return RATIO_ORDER[(idx + 1) % RATIO_ORDER.length];
 }
 
 export const ZOOM_MIN = 0;
