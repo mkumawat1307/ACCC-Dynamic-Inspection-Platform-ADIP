@@ -2,9 +2,9 @@
 
 # Architecture Decision Records (ADR)
 
-Version: 1.5
+Version: 1.6
 
-Last Updated: 2026-08-04
+Last Updated: 2026-08-06
 
 Status: Active
 
@@ -1062,4 +1062,148 @@ Positive:
 Negative:
 - `cloneProjectDb` is the most complex helper in `ProjectDBManager` (ID remapping across 10+ tables).
 - The clone must open source and target DBs sequentially per ADR-014.
+
+---
+
+# ADR-022
+
+## Title
+
+Native JPEG Encoder for Watermark Burn-In — Replacing `canvas.toBlob("image/jpeg")`
+
+### Status
+
+Proposed (awaiting review before implementation)
+
+### Date
+
+August 2026
+
+### Context
+
+The watermark burn-in pipeline renders the composite photo in a hidden WebView `<canvas>` (`src/utils/watermarkHtml.ts`) and encodes it with `canvas.toBlob("image/jpeg", 0.95)` at lines 121–170. Diagnostic instrumentation proved the **encode stage is the sole bottleneck**: queue depth 1, FileReader 8–12ms, draw 80–95ms, decode <15ms, heap stable ~10MB — only `toBlob` intermittently jumps from a healthy 150–180ms to 4,200ms+ (sometimes 11–13s).
+
+Root cause: an Android WebView/Chromium regression in `toBlob` JPEG export. It matches three public Chromium issues — `issues.chromium.org/527689569` (P2, intermittent `toBlob('image/jpeg')` stalls in a persistent WebView), `508869337` (8,500ms in WebView vs 300ms in Chrome), and `40915136` (the stall is the **main-thread GPU readback** cost Chromium pays for `toBlob`). Because all WebView instances share one renderer **process** (the app creates a fresh page per photo — see ADR-022 lifecycle finding below), process-level state accumulates across photos, explaining why stalls cluster on photo 3+ even though each page starts with `capture=1`.
+
+Lifecycle finding: the WebView lives inside the camera route screen, which `router.back()` unmounts after Keep — so a new renderer page is (intentionally) created per photo. A per-page fix cannot help; the fix must bypass the Chromium encoder in a way that also skips the shared-process readback path. Experiment A (`willReadFrequently: true`, `watermarkHtml.ts:46`) already forces a CPU-backed canvas, which is a prerequisite for the chosen approach.
+
+Constraints:
+
+1. Preserve the existing HTML/CSS canvas renderer — it is the single source of truth for watermark composition.
+2. Preserve pixel-identical preview ↔ saved output (shared layout metrics must keep applying).
+3. Replace **only** the `canvas.toBlob("image/jpeg")` encode stage with a native Android encoder.
+4. Must not rely on the WebView process for the encode (the very thing that is broken).
+
+### Decision
+
+Replace the in-WebView JPEG encode with a **custom native Android encoder module** invoked from React Native:
+
+- **WebView (unchanged rendering, changed output stage):** after the watermark draw completes (`watermarkHtml.ts:119`), read the composited pixels with `ctx.getImageData(0, 0, cv.width, cv.height)` — a synchronous CPU memcpy on the `willReadFrequently` canvas that bypasses GPU readback and the Chromium JPEG encoder entirely. Encode the RGBA buffer to a base64 string and `postMessage({ photoId, width, height, rgba, diag })`.
+- **RN JS:** `handleWebViewMessage` receives the payload and calls `NativeModules.WatermarkEncoder.encodeJpeg({ width, height, rgbaBase64, quality: 0.95, outputPath })` (async, Promise).
+- **Kotlin module (`ReactContextBaseJavaModule`):** `Base64.decode` → `Bitmap.createBitmap(width, height, ARGB_8888)` → `bitmap.copyPixelsFromBuffer` → `bitmap.compress(JPEG, 95, FileOutputStream(outputPath))` on a background thread → `recycle()` → resolve Promise with the output path (reject with a typed error on failure).
+- **Save (unchanged destination):** RN reads the temp JPEG and writes it into the SAF project folder through the existing `writePhoto` path (`src/utils/storageManager.ts:104`), or via a small `copyPhotoToProject(sourcePath, projectDirUri, fileName)` helper that streams the file into SAF without a second base64 round-trip. `PhotoRepository.updateFilePath` and `onPhotosUpdated` are unchanged.
+- **Fallback:** a module-level constant keeps `toBlob` available; if `NativeModules.WatermarkEncoder` is absent or throws (including OOM), the job falls back to the current `toBlob` path with the existing retry semantics.
+
+The quality factor stays `0.95`. Android's JPEG encoder is Skia/libjpeg-turbo — the same encoder Chromium uses — so the output is visually equivalent to today's healthy-case output.
+
+### Data Movement (WebView → RN → Native)
+
+```
+WebView (JS)                          RN (JS)                        Native (Kotlin)
+───────────                           ───────                        ───────────────
+canvas draw (unchanged)                                                   
+   │  ctx.getImageData(0,0,w,h)                                           
+   │  → Uint8ClampedArray (48MB @ 4000×3000)                              
+   │  → base64 string (~64MB)                                             
+   │  postMessage({photoId,w,h,rgba})                                     │
+   │───────────────────────────────► │  onMessage → JSON.parse            │
+   │                                 │  NativeModules.WatermarkEncoder     │
+   │                                 │    .encodeJpeg({w,h,rgba,q,out})   │
+   │                                 │────────────────────────────────────►│  ExecutorService thread
+   │                                 │                                     │  Base64.decode → byte[] (48MB)
+   │                                 │                                     │  Bitmap ARGB_8888 (48MB)
+   │                                 │                                     │  compress(JPEG,95) → temp file
+   │                                 │                                     │  recycle(); resolve({path})
+   │                                 │◄────────────────────────────────────│
+   │                                 │  temp JPEG file (2–5MB)
+   │                                 │  → writePhoto / copyPhotoToProject
+   │                                 │    → SAF content:// project folder
+   │                                 │  → PhotoRepository.updateFilePath
+   │                                 │  → delete temp + source temp
+```
+
+Key properties:
+
+- The **only** large object crossing the WebView↔RN boundary is the base64 RGBA string. It is unavoidable — Android `onMessage` delivers strings only, and the pixels originate in the WebView.
+- No image data crosses the RN↔Kotlin boundary as base64 twice: the decoded pixels live only inside the Kotlin call, and the result is a file path (tiny string), not base64.
+- Nothing re-enters the WebView renderer process, so the stalled path is fully bypassed.
+
+### Alternatives Considered
+
+### Alternative 1 — Custom native encoder via `getImageData` RGBA (CHOSEN)
+
+- **Data flow:** above.
+- **Performance:** `getImageData` ~50–150ms (CPU canvas, no stall); base64 ~250–450ms; bridge/JNI ~50ms; `Bitmap.compress` ~300–900ms on a background thread. Total ~0.7–1.6s, **deterministic and bounded** — no 4s freeze.
+- **Memory:** peak transient ~48MB JS RGBA + ~64MB base64 + ~64MB RN string + ~48MB decoded bytes + ~48MB Bitmap (recycled). ~210MB worst case; mitigation below.
+- **Complexity:** Medium-high — one Kotlin module, `MainApplication` registration, TS bridge types, threading, error handling.
+- **Rollback:** single call-site flip to the `toBlob` fallback constant; the native module is dormant when unused. Shipping the fix requires a native rebuild (any fix does, since the encoder is a browser behavior), but the JS-level rollback is instant.
+- **Risks:** memory pressure on low-RAM devices (mitigations: drop alpha to RGB in JS for 25% less traffic, recycle Bitmap in `finally`, background thread, fallback on OOM); alpha-flattening must match Chromium (both composite alpha over black — verified by a pixel-diff test); must never encode on the main thread (ANR).
+
+### Alternative 2 — Canvas PNG handoff → native re-encode (expo-image-manipulator)
+
+- **Data flow:** WebView `canvas.toBlob("image/png")` → base64 → RN writes a PNG temp file → `expo-image-manipulator.manipulateAsync(pngPath, [], { compress: 0.95, format: JPEG })` (native `BitmapFactory` decode + `Bitmap.compress`) → RN saves. No custom Kotlin code.
+- **Performance:** PNG encode of a 12MP photo is 500–1,500ms and produces a 10–30MB file; plus native decode+encode 500–1,000ms. Slower than Alternative 1, and **the PNG encode runs the same readback path the bug lives in** — the stall may simply move to PNG.
+- **Memory:** PNG buffer + large file on disk + native Bitmap — comparable to Alternative 1 with more disk churn.
+- **Complexity:** Low — adds `expo-image-manipulator` (not currently installed), no native module.
+- **Rollback:** remove the dependency and revert the call.
+- **Risks:** root cause not actually removed (unverified PNG stall); double-encode quality path; extra APK native code; SAF write still needs a file-copy or base64 path.
+
+### Alternative 3 — Full native compositing (draw watermark in Kotlin, no canvas output)
+
+- **Data flow:** RN passes the original JPEG temp path + watermark text/style/layout params to Kotlin; Kotlin `BitmapFactory.decodeFile` → draw text/rounded-rect/shadow with `android.graphics.Paint` → `Bitmap.compress(JPEG)`. No pixel transport at all.
+- **Performance:** decode ~300–600ms + draw ~20–50ms + compress ~300–900ms ≈ 1–1.5s deterministic. Lowest bridge traffic.
+- **Memory:** one ~48MB native Bitmap; no JS/base64 spike. Best memory profile of all three.
+- **Complexity:** Medium — but must reimplement the exact layout math, font metrics, shadow, and rounded-rect logic in Kotlin and keep it in sync with the JS renderer forever.
+- **Rollback:** JS renderer untouched; swap the native path back.
+- **Risks:** **Violates constraints #1 and #2** — native `Paint.measureText` ≠ canvas `measureText` (font file, hinting, subpixel), guaranteeing drift between preview and saved output and losing the WYSIWYG guarantee. Rejected on the hard requirements, documented to record why it was considered.
+
+### Alternative 4 — Hybrid: keep `toBlob` fast path + stall timeout → fallback to Alternative 1
+
+Not the primary decision. A future refinement: run `toBlob` first, and if the callback does not arrive within ~1.5s, abort and encode that same photo natively via `getImageData` (the canvas is already drawn). Best-of-both latency, but adds a timeout/abort state machine. Deferred — the deterministic ~1s native path is acceptable now, and a hybrid doubles the QA surface.
+
+### Consequences
+
+Positive:
+
+- Root cause eliminated: the Chromium readback/encoder path is bypassed, not papered over. No 4–13s freezes.
+- HTML/CSS renderer and layout metrics untouched → preview/saved pixel identity preserved (only the final pixel→JPEG conversion changes encoder).
+- Same encoder family (Skia/libjpeg-turbo) and same quality (0.95) → visually equivalent output.
+- Save destination, repositories, and retry semantics unchanged.
+- Instant JS-level rollback via the `toBlob` fallback constant.
+- Deterministic, bounded encode time is more field-appropriate than a fast-but-intermittently-frozen path.
+
+Negative:
+
+- Adds custom native code to the Android target (first native module in the app) and requires a native rebuild to ship.
+- Normal-case latency rises from ~150–180ms (healthy `toBlob`) to roughly ~1s native encode.
+- Peak transient memory is ~210MB during the RGBA transfer — needs the mitigations below.
+- Instrumentation must change: `toBlobMs`/`frMs` diag fields are replaced by `getDataMs`/`encodeMs`/`saveMs` (keeps the stall-monitoring capability for the fallback path).
+
+### Risks and Mitigations
+
+- **OOM on low-RAM devices** — drop alpha (RGBA→RGB in JS, −25% payload), recycle the Bitmap in `finally`, encode on an `ExecutorService`, and fall back to `toBlob` on any native error/OOM.
+- **Alpha flattening mismatch** — both Chromium and Skia composite JPEG alpha over black; lock with a pixel-diff test (max per-channel delta below a threshold) before enabling the native path by default.
+- **ANR** — the Kotlin method must never touch the main thread; all decode/encode runs on a background thread and resolves a Promise.
+- **64MB bridge string** — transient and GC-able; the RN string is released immediately after the module call; a hard 2GB-device test gate covers it.
+- **Renderer lifecycle** — unaffected by this change (WebView still recreated per photo, which is correct per the lifecycle finding).
+
+### Acceptance Criteria
+
+1. Pixel-diff test: same photo + lines rendered through native path vs `toBlob` path differ below an agreed perceptual threshold.
+2. 20-capture on-device run: no encode > 2,500ms; median encode < 1,200ms.
+3. Memory test on a 2GB device: peak native heap < 150MB during encode; no OOM.
+4. Fallback test: with the module disabled, `toBlob` path still produces valid output with retry semantics intact.
+5. Full test gate: `npx tsc --noEmit`, `yarn lint` (0 errors), `yarn test` (62 suites, 705+ tests) green.
+
+---
 
