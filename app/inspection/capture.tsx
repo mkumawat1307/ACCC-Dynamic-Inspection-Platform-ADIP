@@ -55,6 +55,7 @@ export default function CaptureScreen() {
     webViewRef,
     handleWebViewMessage,
     handleWebViewLoadEnd,
+    handleRenderProcessGone,
     enqueueWatermark,
     clearWatermarkState,
     retryWatermark,
@@ -396,6 +397,7 @@ export default function CaptureScreen() {
         webViewRef={webViewRef}
         onMessage={handleWebViewMessage}
         onLoadEnd={handleWebViewLoadEnd}
+        onRenderProcessGone={handleRenderProcessGone}
       />
     </SafeAreaView>
   );

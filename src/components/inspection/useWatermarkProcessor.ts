@@ -28,6 +28,39 @@ interface JsPerf {
   total?: number;
 }
 
+interface WatermarkDiag {
+  instance?: string;
+  created?: number;
+  capture?: number;
+  jobs?: number;
+  uptimeMs?: number;
+  toBlobAtMs?: number;
+  cbAtMs?: number;
+  imgWasResident?: boolean;
+  imgW?: number;
+  imgH?: number;
+  cvPrevW?: number;
+  cvPrevH?: number;
+  cvW?: number;
+  cvH?: number;
+  canvasReset?: boolean;
+  blobSize?: number;
+  b64Len?: number;
+  quality?: number;
+  toBlobStart?: number;
+  toBlobCb?: number;
+  frStart?: number;
+  frEnd?: number;
+  toBlobMs?: number;
+  frMs?: number;
+  heapBefore?: number;
+  heapAfter?: number;
+  heapUsed?: number;
+  heapLimit?: number;
+  gcEvents?: number;
+  gcMs?: number;
+}
+
 interface UseWatermarkProcessorOptions {
   project: Project | null;
   onPhotosUpdated: () => void;
@@ -44,6 +77,9 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const readyRef = useRef(false);
   const readyWaitStartRef = useRef(0);
   const perfRef = useRef<PerfAccumulator | null>(null);
+  const loadCountRef = useRef(0);
+  const readyCountRef = useRef(0);
+  const readyInstanceRef = useRef<string | null>(null);
 
   useEffect(() => {
     setWatermarkState(prev => {
@@ -154,16 +190,44 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   }
 
   const handleWebViewLoadEnd = useCallback(() => {
+    loadCountRef.current++;
+    logger.debug(`[Watermark:lifecycle] onLoadEnd count=${loadCountRef.current}`);
     if (readyWaitStartRef.current) {
       perfLog("watermark", "webViewInitialLoad", readyWaitStartRef.current);
     }
+  }, []);
+
+  const handleRenderProcessGone = useCallback((event: any) => {
+    const details = event?.nativeEvent ?? {};
+    logger.debug(
+      `[Watermark:lifecycle] render process gone didCrash=${details.didCrash} ` +
+        `reason=${details.reason ?? "unknown"} loadCount=${loadCountRef.current}`
+    );
   }, []);
 
   const handleWebViewMessage = useCallback((event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
 
+      if (data.__unload) {
+        logger.debug(
+          `[Watermark:lifecycle] renderer unloaded instance=${data.instance} ` +
+            `created=${data.created} uptime=${data.uptime}ms`
+        );
+        return;
+      }
+
       if (data.__ready) {
+        readyCountRef.current++;
+        const instance = data.instance ?? "unknown";
+        const created = data.created ?? 0;
+        const recreated =
+          readyInstanceRef.current !== null && readyInstanceRef.current !== instance;
+        logger.debug(
+          `[Watermark:lifecycle] renderer ready instance=${instance} created=${created} ` +
+            `readyCount=${readyCountRef.current} loadCount=${loadCountRef.current} recreated=${recreated}`
+        );
+        readyInstanceRef.current = instance;
         if (!readyRef.current) {
           readyRef.current = true;
           setWebViewReady(true);
@@ -194,6 +258,19 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         perf.stages.push({ name: "jsDraw", ms: jsPerf.draw ?? 0 });
         perf.stages.push({ name: "jsEncode", ms: jsPerf.encode ?? 0 });
         perfStage(perf, "webviewReturn");
+      }
+
+      const diag = (data.diag ?? {}) as WatermarkDiag;
+      if (diag && (diag.toBlobMs != null || diag.frMs != null)) {
+        logger.debug(
+          `[Watermark:diag] photo=${photoId} instance=${diag.instance} capture=${diag.capture} jobs=${diag.jobs} ` +
+            `uptime=${diag.uptimeMs}ms toBlobAt=${diag.toBlobAtMs}ms cbAt=${diag.cbAtMs}ms ` +
+            `img=${diag.imgW}x${diag.imgH} resident=${diag.imgWasResident} ` +
+            `cv=${diag.cvPrevW}x${diag.cvPrevH}->${diag.cvW}x${diag.cvH} reset=${diag.canvasReset} ` +
+            `blob=${diag.blobSize}b b64=${diag.b64Len} q=${diag.quality} ` +
+            `toBlob=${diag.toBlobMs}ms fr=${diag.frMs}ms ` +
+            `heap=${diag.heapBefore}->${diag.heapAfter}/${diag.heapLimit} gc=${diag.gcEvents}/${diag.gcMs}ms`
+        );
       }
 
       (async () => {
@@ -256,6 +333,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     webViewRef,
     handleWebViewMessage,
     handleWebViewLoadEnd,
+    handleRenderProcessGone,
     enqueueWatermark,
     clearWatermarkState,
     retryWatermark,

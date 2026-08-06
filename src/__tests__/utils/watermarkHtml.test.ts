@@ -14,10 +14,31 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("</script>");
   });
 
-  it("registers the global entry point and ready signal", () => {
+  it("registers the global entry point and ready signal with the instance id", () => {
     const html = buildWatermarkRendererPage();
     expect(html).toContain("window.renderWatermarkFromJson=function(payload)");
-    expect(html).toContain("{__ready:true}");
+    expect(html).toContain("{__ready:true,instance:diagInstance,created:diagCreatedAt}");
+  });
+
+  it("tags each renderer instance with a unique id and creation timestamp", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("var diagInstance=Math.random().toString(36).slice(2,10);");
+    expect(html).toContain("var diagCreatedAt=Date.now();");
+    expect(html).toContain("instance:diagInstance");
+    expect(html).toContain("created:diagCreatedAt");
+  });
+
+  it("announces renderer teardown on pagehide and beforeunload", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("addEventListener('pagehide'");
+    expect(html).toContain("addEventListener('beforeunload'");
+    expect(html).toContain("__unload:true,instance:diagInstance,created:diagCreatedAt,uptime:");
+  });
+
+  it("creates the 2D context with willReadFrequently to force a CPU-backed canvas", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("cv.getContext('2d',{willReadFrequently:true})");
+    expect(html).not.toContain("var ctx=cv.getContext('2d');");
   });
 
   it("exposes renderWatermark accepting photoId, base64, lines and style", () => {
@@ -64,6 +85,52 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("decode:");
     expect(html).toContain("draw:");
     expect(html).toContain("encode:");
+  });
+
+  it("instruments canvas.toBlob and FileReader separately in a diag payload", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("var tBlobStart=performance.now();");
+    expect(html).toContain("var tBlobCb=performance.now();");
+    expect(html).toContain("var tFrStart=performance.now();");
+    expect(html).toContain("var tFrEnd=performance.now();");
+    expect(html).toContain("toBlobMs:");
+    expect(html).toContain("frMs:");
+    expect(html).toContain("blobSize:blob.size");
+    expect(html).toContain("b64Len:raw.length");
+    expect(html).toContain("quality:0.95");
+  });
+
+  it("tracks the outstanding watermark job count in the renderer", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("var diagJobs=0;");
+    expect(html).toContain("diagJobs++;");
+    expect(html).toContain("diagJobs--;");
+    expect(html).toContain("jobs:diagJobs");
+  });
+
+  it("reports canvas reset state, prior image residency and heap when available", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("var imgWasResident=img.complete&&img.naturalWidth>0;");
+    expect(html).toContain("var cvPrevW=cv.width,cvPrevH=cv.height;");
+    expect(html).toContain("canvasReset:(cvPrevW!==cv.width||cvPrevH!==cv.height)");
+    expect(html).toContain("imgWasResident:imgWasResident");
+    expect(html).toContain("performance.memory");
+    expect(html).toContain("heapUsed");
+  });
+
+  it("tracks captures, renderer uptime, heap deltas and GC activity for stall cadence", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("var diagCaptures=0;");
+    expect(html).toContain("diagCaptures++;");
+    expect(html).toContain("capture:diagCaptures");
+    expect(html).toContain("uptimeMs:");
+    expect(html).toContain("toBlobAtMs:");
+    expect(html).toContain("cbAtMs:");
+    expect(html).toContain("heapBefore:heapBefore");
+    expect(html).toContain("heapAfter:");
+    expect(html).toContain("gcEvents:");
+    expect(html).toContain("PerformanceObserver");
+    expect(html).toContain("entryTypes:['gc']");
   });
 });
 

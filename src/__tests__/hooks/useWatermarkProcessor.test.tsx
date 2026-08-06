@@ -169,4 +169,169 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
     expect(result.current.webViewReady).toBe(true);
     unmount();
   });
+
+  it("logs the renderer diag payload with toBlob/FileReader split timings", async () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    (writePhoto as jest.Mock).mockResolvedValue("content://tree/root/p.jpg");
+    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            base64: "BASE64DATA",
+            diag: {
+              instance: "i-abc123",
+              created: 1700000000000,
+              capture: 3,
+              jobs: 1,
+              uptimeMs: 4380,
+              toBlobAtMs: 180,
+              cbAtMs: 4380,
+              imgWasResident: true,
+              imgW: 4000,
+              imgH: 3000,
+              cvPrevW: 4000,
+              cvPrevH: 3000,
+              cvW: 4000,
+              cvH: 3000,
+              canvasReset: false,
+              blobSize: 1234567,
+              b64Len: 1646093,
+              quality: 0.95,
+              toBlobStart: 180,
+              toBlobCb: 4380,
+              frStart: 4381,
+              frEnd: 4383,
+              toBlobMs: 4200,
+              frMs: 2,
+              heapBefore: 251658240,
+              heapAfter: 255852544,
+              heapUsed: 255852544,
+              heapLimit: 402653184,
+              gcEvents: 1,
+              gcMs: 37,
+            },
+          }),
+        },
+      });
+    });
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    const diagLine = lines.find(l => l.includes("[Watermark:diag]"));
+    expect(diagLine).toBeDefined();
+    expect(diagLine).toContain("photo=1 instance=i-abc123 capture=3 jobs=1");
+    expect(diagLine).toContain("uptime=4380ms toBlobAt=180ms cbAt=4380ms");
+    expect(diagLine).toContain("img=4000x3000 resident=true");
+    expect(diagLine).toContain("cv=4000x3000->4000x3000 reset=false");
+    expect(diagLine).toContain("blob=1234567b b64=1646093 q=0.95");
+    expect(diagLine).toContain("toBlob=4200ms fr=2ms");
+    expect(diagLine).toContain("heap=251658240->255852544/402653184 gc=1/37ms");
+
+    logSpy.mockRestore();
+    unmount();
+  });
+});
+
+describe("useWatermarkProcessor renderer lifecycle diagnostics", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("counts WebView loads and logs each onLoadEnd", () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    TestRenderer.act(() => {
+      result.current.handleWebViewLoadEnd();
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewLoadEnd();
+    });
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    expect(lines.filter(l => l.includes("[Watermark:lifecycle] onLoadEnd count=1"))).toHaveLength(1);
+    expect(lines.filter(l => l.includes("[Watermark:lifecycle] onLoadEnd count=2"))).toHaveLength(1);
+    logSpy.mockRestore();
+    unmount();
+  });
+
+  it("logs renderer teardown announcements from the page", () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({ __unload: true, instance: "i-def456", created: 1700000000000, uptime: 5123 }),
+        },
+      });
+    });
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    expect(lines.find(l => l.includes("[Watermark:lifecycle] renderer unloaded instance=i-def456"))).toBeDefined();
+    expect(lines.find(l => l.includes("uptime=5123ms"))).toBeDefined();
+    logSpy.mockRestore();
+    unmount();
+  });
+
+  it("detects when a new renderer instance re-registers ready", () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    const ready = (instance: string, created: number) =>
+      JSON.stringify({ __ready: true, instance, created });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({ nativeEvent: { data: ready("i-one", 100) } });
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({ nativeEvent: { data: ready("i-one", 100) } });
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({ nativeEvent: { data: ready("i-two", 200) } });
+    });
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    const readyLines = lines.filter(l => l.includes("[Watermark:lifecycle] renderer ready"));
+    expect(readyLines).toHaveLength(3);
+    expect(readyLines[0]).toContain("instance=i-one created=100 readyCount=1 loadCount=0 recreated=false");
+    expect(readyLines[1]).toContain("instance=i-one created=100 readyCount=2 loadCount=0 recreated=false");
+    expect(readyLines[2]).toContain("instance=i-two created=200 readyCount=3 loadCount=0 recreated=true");
+    expect(result.current.webViewReady).toBe(true);
+    logSpy.mockRestore();
+    unmount();
+  });
+
+  it("logs when the Android WebView render process dies", () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    TestRenderer.act(() => {
+      result.current.handleRenderProcessGone({
+        nativeEvent: { didCrash: true, reason: "crashed" },
+      });
+    });
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    const goneLine = lines.find(l => l.includes("[Watermark:lifecycle] render process gone"));
+    expect(goneLine).toBeDefined();
+    expect(goneLine).toContain("didCrash=true reason=crashed");
+    logSpy.mockRestore();
+    unmount();
+  });
 });
