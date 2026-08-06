@@ -14,13 +14,15 @@ export function buildRenderWatermarkScript(
   photoId: number,
   imageBase64: string,
   lines: string[],
-  style?: WatermarkStyleConfig
+  style?: WatermarkStyleConfig,
+  useNativeEncode = false
 ): string {
   const payload = JSON.stringify({
     photoId,
     base64: imageBase64,
     lines: sanitizeWatermarkLines(lines),
     ...(style ? { style } : {}),
+    ...(useNativeEncode ? { nativeEncode: true } : {}),
   })
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
@@ -66,7 +68,18 @@ function roundRect(ctx,x,y,w,h,r){
   ctx.quadraticCurveTo(x,y,x+r,y);
   ctx.closePath();
 }
-function renderWatermark(photoId,imageBase64,lines,style){
+function arrayBufferToBase64(buf){
+  var bytes=new Uint8Array(buf);
+  var CHUNK=0x8000,chunks=[],i,j,bin;
+  for(i=0;i<bytes.length;i+=CHUNK){
+    var sub=bytes.subarray(i,i+CHUNK);
+    bin='';
+    for(j=0;j<sub.length;j++)bin+=String.fromCharCode(sub[j]);
+    chunks.push(btoa(bin));
+  }
+  return chunks.join('');
+}
+function renderWatermark(photoId,imageBase64,lines,style,nativeEncode){
   diagJobs++;
   diagCaptures++;
   if(!style)style={fontScale:0.8,position:'bottomLeft',bgOpacity:0.5,textColor:'#76FF03'};
@@ -119,9 +132,50 @@ function renderWatermark(photoId,imageBase64,lines,style){
     ctx.shadowOffsetY=0;
 
     var tDraw=performance.now();
-    var tBlobStart=performance.now();
     var heapBefore=performance.memory?performance.memory.usedJSHeapSize:0;
     var gcBefore=diagGcCount,gcDurBefore=diagGcMs;
+    if(nativeEncode){
+      var tGetStart=performance.now();
+      var imgData=ctx.getImageData(0,0,cv.width,cv.height);
+      var tGetEnd=performance.now();
+      var rgba=arrayBufferToBase64(imgData.data.buffer);
+      var tB64End=performance.now();
+      var diag={
+        instance:diagInstance,
+        created:diagCreatedAt,
+        capture:diagCaptures,
+        jobs:diagJobs,
+        uptimeMs:Math.round(tB64End),
+        getDataAtMs:Math.round(tGetStart),
+        cbAtMs:Math.round(tB64End),
+        heapBefore:heapBefore,
+        heapAfter:performance.memory?performance.memory.usedJSHeapSize:0,
+        gcEvents:diagGcCount-gcBefore,
+        gcMs:Math.round(diagGcMs-gcDurBefore),
+        imgWasResident:imgWasResident,
+        imgW:img.naturalWidth,
+        imgH:img.naturalHeight,
+        cvPrevW:cvPrevW,
+        cvPrevH:cvPrevH,
+        cvW:cv.width,
+        cvH:cv.height,
+        canvasReset:(cvPrevW!==cv.width||cvPrevH!==cv.height),
+        rgbaLen:rgba.length,
+        quality:0.95,
+        getDataStart:Math.round(tGetStart-tSet),
+        getDataCb:Math.round(tB64End-tSet),
+        getDataMs:Math.round(tGetEnd-tGetStart),
+        b64Ms:Math.round(tB64End-tGetEnd),
+        native:true
+      };
+      if(performance.memory){diag.heapUsed=performance.memory.usedJSHeapSize;diag.heapLimit=performance.memory.jsHeapSizeLimit;}
+      window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,width:cv.width,height:cv.height,rgba:rgba,perf:{decode:Math.round(tDecode-tSet),draw:Math.round(tDraw-tDecode),encode:Math.round(tB64End-tDraw),total:Math.round(tB64End-t0)},diag:diag}));
+      img.onload=null;
+      img.src='';
+      diagJobs--;
+      return;
+    }
+    var tBlobStart=performance.now();
     cv.toBlob(function(blob){
       var tBlobCb=performance.now();
       var tFrStart=performance.now();
@@ -172,7 +226,7 @@ function renderWatermark(photoId,imageBase64,lines,style){
   img.src='data:image/jpeg;base64,'+imageBase64;
 }
 window.renderWatermarkFromJson=function(payload){
-  if(payload&&payload.photoId!=null&&payload.base64)renderWatermark(payload.photoId,payload.base64,payload.lines||[],payload.style||{});
+  if(payload&&payload.photoId!=null&&payload.base64)renderWatermark(payload.photoId,payload.base64,payload.lines||[],payload.style||{},payload.nativeEncode);
 };
 window.ReactNativeWebView.postMessage(JSON.stringify({__ready:true,instance:diagInstance,created:diagCreatedAt}));
 </script>

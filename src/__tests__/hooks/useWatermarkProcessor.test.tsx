@@ -29,6 +29,10 @@ jest.mock("react-native-webview", () => {
   const RN = require("react-native");
   return { WebView: () => RN.View };
 });
+jest.mock("@/src/native/WatermarkEncoder", () => ({
+  hasNativeWatermarkEncoder: jest.fn(() => false),
+  encodeWatermarkJpeg: jest.fn(),
+}));
 
 import React from "react";
 import TestRenderer from "react-test-renderer";
@@ -40,6 +44,10 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
 import { buildRenderWatermarkScript } from "@/src/utils/watermarkHtml";
+import {
+  hasNativeWatermarkEncoder,
+  encodeWatermarkJpeg,
+} from "@/src/native/WatermarkEncoder";
 
 const project = {
   ProjectID: 1,
@@ -244,6 +252,233 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
     expect(diagLine).toContain("heap=251658240->255852544/402653184 gc=1/37ms");
 
     logSpy.mockRestore();
+    unmount();
+  });
+});
+
+describe("useWatermarkProcessor native encoder path", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it("injects the native encode flag when the native module is present", async () => {
+    jest.useFakeTimers();
+    (hasNativeWatermarkEncoder as jest.Mock).mockReturnValue(true);
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    const script = injectJavaScript.mock.calls[0][0] as string;
+    expect(script).toContain('"nativeEncode":true');
+
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    unmount();
+  });
+
+  it("encodes via the native module and saves the JPEG to SAF", async () => {
+    (hasNativeWatermarkEncoder as jest.Mock).mockReturnValue(true);
+    (encodeWatermarkJpeg as jest.Mock).mockResolvedValue(undefined);
+    (FileSystem.readAsStringAsync as jest.Mock).mockImplementation((path: string) =>
+      Promise.resolve(path.endsWith(".wm.jpg") ? "WM_BASE64" : "BASE64DATA")
+    );
+    const treeUri = "content://tree/root";
+    const projectDir = "content://tree/root/ACCC Inspection/New Delhi_Project Alpha";
+    const fileUri = `${projectDir}/photo.jpg`;
+    (ensureTreeUri as jest.Mock).mockResolvedValue(treeUri);
+    (getProjectDir as jest.Mock).mockResolvedValue(projectDir);
+    (writePhoto as jest.Mock).mockResolvedValue(fileUri);
+    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+
+    const onPhotosUpdated = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated })
+    );
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            width: 4000,
+            height: 3000,
+            rgba: "RGBA_B64",
+            perf: { decode: 10, draw: 80, encode: 700, total: 900 },
+            diag: {
+              instance: "i-abc123",
+              capture: 1,
+              jobs: 1,
+              getDataMs: 120,
+              b64Ms: 380,
+              rgbaLen: 64000000,
+              quality: 0.95,
+              native: true,
+            },
+          }),
+        },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(encodeWatermarkJpeg).toHaveBeenCalledWith(
+      4000, 3000, "RGBA_B64", 95, "file:///tmp/t.jpg.wm.jpg"
+    );
+    expect(writePhoto).toHaveBeenCalledWith(projectDir, "photo.jpg", "WM_BASE64");
+    expect(PhotoRepository.updateFilePath).toHaveBeenCalledWith(1, fileUri);
+    expect(onPhotosUpdated).toHaveBeenCalled();
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    unmount();
+  });
+
+  it("falls back to the toBlob path when the native module is absent", async () => {
+    (hasNativeWatermarkEncoder as jest.Mock).mockReturnValue(false);
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    const treeUri = "content://tree/root";
+    const projectDir = "content://tree/root/ACCC Inspection/New Delhi_Project Alpha";
+    const fileUri = `${projectDir}/photo.jpg`;
+    (ensureTreeUri as jest.Mock).mockResolvedValue(treeUri);
+    (getProjectDir as jest.Mock).mockResolvedValue(projectDir);
+    (writePhoto as jest.Mock).mockResolvedValue(fileUri);
+    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    expect(injectJavaScript.mock.calls[0][0]).not.toContain("nativeEncode");
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(encodeWatermarkJpeg).not.toHaveBeenCalled();
+    expect(writePhoto).toHaveBeenCalledWith(projectDir, "photo.jpg", "BASE64DATA");
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    unmount();
+  });
+
+  it("retries via toBlob when native encoding fails", async () => {
+    (hasNativeWatermarkEncoder as jest.Mock).mockReturnValue(true);
+    (encodeWatermarkJpeg as jest.Mock).mockRejectedValue(new Error("E_ENCODE_FAILED"));
+    (FileSystem.readAsStringAsync as jest.Mock).mockImplementation((path: string) =>
+      Promise.resolve(path.endsWith(".wm.jpg") ? "WM_BASE64" : "BASE64DATA")
+    );
+    const treeUri = "content://tree/root";
+    const projectDir = "content://tree/root/ACCC Inspection/New Delhi_Project Alpha";
+    const fileUri = `${projectDir}/photo.jpg`;
+    (ensureTreeUri as jest.Mock).mockResolvedValue(treeUri);
+    (getProjectDir as jest.Mock).mockResolvedValue(projectDir);
+    (writePhoto as jest.Mock).mockResolvedValue(fileUri);
+    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    expect(injectJavaScript.mock.calls[0][0]).toContain("nativeEncode");
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            width: 4000,
+            height: 3000,
+            rgba: "RGBA_B64",
+          }),
+        },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(encodeWatermarkJpeg).toHaveBeenCalledTimes(1);
+    expect(injectJavaScript.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const retryScript = injectJavaScript.mock.calls[1][0] as string;
+    expect(retryScript).not.toContain("nativeEncode");
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
     unmount();
   });
 });
