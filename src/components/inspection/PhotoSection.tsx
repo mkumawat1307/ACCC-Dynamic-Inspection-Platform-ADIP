@@ -75,7 +75,6 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
 
   const {
     watermarkState,
-    watermarkHtml,
     webViewRef,
     handleWebViewMessage,
     clearWatermarkState,
@@ -145,7 +144,6 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
   return (
     <View style={styles.container}>
       <WatermarkMergeWebView
-        html={watermarkHtml}
         webViewRef={webViewRef}
         onMessage={handleWebViewMessage}
       />

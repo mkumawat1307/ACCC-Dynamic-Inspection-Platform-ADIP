@@ -1,35 +1,48 @@
-import React from "react";
-import { StyleSheet } from "react-native";
+import React, { useMemo } from "react";
+import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
+import { buildWatermarkRendererPage } from "@/src/utils/watermarkHtml";
 
 interface Props {
-  html: string | null;
   webViewRef: React.RefObject<WebView | null>;
   onMessage: (event: any) => void;
+  onLoadEnd?: () => void;
 }
 
 export default function WatermarkMergeWebView({
-  html,
   webViewRef,
   onMessage,
+  onLoadEnd,
 }: Props) {
-  if (!html) return null;
+  const html = useMemo(() => buildWatermarkRendererPage(), []);
   return (
-    <WebView
-      ref={webViewRef}
-      source={{ html }}
-      style={styles.watermarkWebView}
-      javaScriptEnabled
-      originWhitelist={["*"]}
-      onMessage={onMessage}
-    />
+    <View
+      testID="watermarkRenderer"
+      style={styles.watermarkContainer}
+      pointerEvents="none"
+    >
+      <WebView
+        ref={webViewRef}
+        source={{ html }}
+        style={styles.watermarkWebView}
+        pointerEvents="none"
+        javaScriptEnabled
+        originWhitelist={["*"]}
+        onMessage={onMessage}
+        onLoadEnd={onLoadEnd}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  watermarkWebView: {
+  watermarkContainer: {
     position: "absolute",
     top: -9999,
+    width: 1,
+    height: 1,
+  },
+  watermarkWebView: {
     width: 1,
     height: 1,
   },
