@@ -84,20 +84,8 @@ export default function CaptureScreen() {
         gestureState.numberActiveTouches >= 2,
       onMoveShouldSetPanResponder: (_evt, gestureState) =>
         gestureState.numberActiveTouches >= 2,
-      onPanResponderGrant: (_evt, gestureState) => {
+      onPanResponderGrant: (_evt) => {
         zoomRef.current = zoom;
-        if (gestureState.numberActiveTouches === 1) {
-          setFocusRing({ x: gestureState.x0, y: gestureState.y0 });
-          focusAnim.setValue(0);
-          Animated.timing(focusAnim, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: true,
-          }).start(({ finished }) => {
-            if (finished) setFocusRing(null);
-          });
-          gps.refreshNow();
-        }
       },
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches ?? [];
@@ -346,7 +334,7 @@ export default function CaptureScreen() {
       <Appbar.Header>
         <Appbar.BackAction onPress={handleBack} />
         <Appbar.Content title="Capture Photo" />
-        <Appbar.Action icon="cog" onPress={() => router.push("/settings")} />
+        <Appbar.Action icon="cog" onPress={() => router.push("/settings/watermark")} />
       </Appbar.Header>
 
       <View style={styles.body}>
@@ -360,6 +348,20 @@ export default function CaptureScreen() {
                   height: e.nativeEvent.layout.height,
                 })
               }
+              onTouchStart={(e) => {
+                if (e.nativeEvent.touches.length !== 1) return;
+                const t = e.nativeEvent.touches[0];
+                setFocusRing({ x: t.locationX, y: t.locationY });
+                focusAnim.setValue(0);
+                Animated.timing(focusAnim, {
+                  toValue: 1,
+                  duration: 600,
+                  useNativeDriver: true,
+                }).start(({ finished }) => {
+                  if (finished) setFocusRing(null);
+                });
+                gps.refreshNow();
+              }}
               {...pinchResponder.panHandlers}
             >
               {permission?.granted ? (
