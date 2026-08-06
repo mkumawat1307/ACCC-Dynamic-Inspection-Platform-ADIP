@@ -14,7 +14,7 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
 describe("toWatermarkStyleConfig", () => {
   it("resolves defaults to the current visual", () => {
     expect(toWatermarkStyleConfig(DEFAULT_WATERMARK_SETTINGS)).toEqual({
-      fontScale: 0.8,
+      fontScale: 0.5,
       position: "bottomLeft",
       bgOpacity: 0.5,
       textColor: "#76FF03",

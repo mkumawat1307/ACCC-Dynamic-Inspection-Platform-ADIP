@@ -24,7 +24,7 @@ export const WATERMARK_OPACITY_MIN = 0.2;
 export const WATERMARK_OPACITY_MAX = 0.8;
 
 export const DEFAULT_WATERMARK_SETTINGS: WatermarkSettings = {
-  size: "medium",
+  size: "small",
   position: "bottomLeft",
   opacity: 0.5,
   textColor: "green",
