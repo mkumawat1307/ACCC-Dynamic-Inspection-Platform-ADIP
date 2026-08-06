@@ -7,6 +7,7 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { writePhoto, ensureTreeUri, getProjectDir, getSafCacheState } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import { buildRenderWatermarkScript } from "@/src/utils/watermarkHtml";
+import { WatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useInspection } from "@/src/context/InspectionContext";
 import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator } from "@/src/utils/perf";
 
@@ -15,6 +16,7 @@ interface WatermarkJob {
   inputPath: string;
   fileName: string;
   lines: string[];
+  style?: WatermarkStyleConfig;
   retries: number;
   startedAtMs: number;
 }
@@ -73,7 +75,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     const job = failedJobsRef.current.get(photoId);
     if (!job) return;
     failedJobsRef.current.delete(photoId);
-    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines);
+    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style);
   }
 
   function handleJobFailure(job: WatermarkJob) {
@@ -143,7 +145,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
 
       const wv = webViewRef.current;
       if (!wv) throw new Error("webview not available");
-      wv.injectJavaScript(buildRenderWatermarkScript(job.photoId, base64, job.lines));
+      wv.injectJavaScript(buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style));
       perfStage(perf, "webviewSend");
     } catch (error) {
       logger.warn("[Watermark] read or send failed:", error);
@@ -225,12 +227,19 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, onPhotosUpdated]);
 
-  function enqueueWatermark(photoId: number, inputPath: string, fileName: string, lines: string[]) {
+  function enqueueWatermark(
+    photoId: number,
+    inputPath: string,
+    fileName: string,
+    lines: string[],
+    style?: WatermarkStyleConfig
+  ) {
     const job: WatermarkJob = {
       photoId,
       inputPath,
       fileName,
       lines,
+      style,
       retries: 0,
       startedAtMs: perfNow(),
     };

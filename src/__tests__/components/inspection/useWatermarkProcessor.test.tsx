@@ -21,6 +21,7 @@ jest.mock("react-native-webview", () => {
 
 import React, { useEffect } from "react";
 import TestRenderer from "react-test-renderer";
+import * as FileSystemLegacy from "expo-file-system/legacy";
 import {
   InspectionProvider,
   useInspection,
@@ -65,6 +66,12 @@ function renderHookInProvider<T>(
   return result;
 }
 
+async function flushMicrotasks() {
+  await TestRenderer.act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+}
+
 describe("useWatermarkProcessor remount safety", () => {
   it("reconciles orphaned pending/processing states to failed on mount", () => {
     const result = renderHookInProvider(
@@ -85,5 +92,32 @@ describe("useWatermarkProcessor remount safety", () => {
     );
 
     expect(result.current.watermarkState).toEqual({});
+  });
+});
+
+describe("useWatermarkProcessor style flow", () => {
+  it("passes the style config into the injected render script", async () => {
+    const result = renderHookInProvider(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    const webviewRef = result.current.webViewRef;
+    const injectJavaScript = jest.fn();
+    (webviewRef as unknown as { current: { injectJavaScript: jest.Mock } }).current = {
+      injectJavaScript,
+    } as never;
+    (FileSystemLegacy.readAsStringAsync as jest.Mock).mockResolvedValueOnce("b64data");
+    result.current.handleWebViewMessage({
+      nativeEvent: { data: JSON.stringify({ __ready: true }) },
+    } as never);
+    result.current.enqueueWatermark(9, "file:///tmp/a.jpg", "a.jpg", ["L1"], {
+      fontScale: 1.25,
+      position: "bottomRight",
+      bgOpacity: 0.8,
+      textColor: "#FFEB3B",
+    });
+    await flushMicrotasks();
+    expect(injectJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('"style":{"fontScale":1.25')
+    );
   });
 });

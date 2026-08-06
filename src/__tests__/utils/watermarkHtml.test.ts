@@ -20,24 +20,42 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("{__ready:true}");
   });
 
-  it("exposes renderWatermark accepting photoId, base64 and lines", () => {
+  it("exposes renderWatermark accepting photoId, base64, lines and style", () => {
     const html = buildWatermarkRendererPage();
-    expect(html).toContain("function renderWatermark(photoId,imageBase64,lines)");
+    expect(html).toContain("function renderWatermark(photoId,imageBase64,lines,style)");
     expect(html).toContain("img.src='data:image/jpeg;base64,'+imageBase64");
     expect(html).toContain("window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,base64:raw,perf:");
   });
 
-  it("uses the same watermark metrics as the preview overlay (WYSIWYG)", () => {
+  it("uses the same configurable watermark metrics as the preview overlay (WYSIWYG)", () => {
     const html = buildWatermarkRendererPage();
-    expect(html).toContain("var fSize=Math.max(22,Math.round(baseSize/18));");
+    expect(html).toContain("var fSize=Math.max(22,Math.round(baseSize/18*style.fontScale));");
     expect(html).toContain("var lh=Math.round(fSize*1.15)");
     expect(html).toContain("padY=Math.round(fSize*0.35)");
     expect(html).toContain("rPad=Math.round(fSize*0.4)");
     expect(html).toContain("gapX=Math.max(16,Math.round(fSize*0.75))");
     expect(html).toContain("gapY=Math.max(20,Math.round(fSize*1.0))");
-    expect(html).toContain("var rx=gapX,ry=cv.height-rh-gapY;");
-    expect(html).toContain("roundRect(ctx,rx,ry,rw,rh,8)");
+    expect(html).toContain("var corner=Math.max(4,Math.round(fSize*0.2));");
+    expect(html).toContain("ctx.font='bold '+fSize+'px sans-serif';");
+    expect(html).toContain("roundRect(ctx,rx,ry,rw,rh,corner)");
+    expect(html).toContain("if(style.position==='bottomRight'){rx=cv.width-rw-gapX;}else{rx=gapX;}");
     expect(html).toContain("'image/jpeg',0.95");
+  });
+
+  it("applies the style-driven background opacity and text color", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("ctx.fillStyle='rgba(0,0,0,'+style.bgOpacity+')';");
+    expect(html).toContain("ctx.fillStyle=style.textColor;");
+  });
+
+  it("renders a box shadow before the box fill and resets it after", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("ctx.shadowColor='rgba(0,0,0,0.35)';");
+    expect(html).toContain("ctx.shadowBlur=8;");
+    expect(html).toContain("ctx.shadowOffsetY=2;");
+    expect(html).toContain("ctx.shadowBlur=0;");
+    expect(html).toContain("ctx.shadowOffsetX=0;");
+    expect(html).toContain("ctx.shadowOffsetY=0;");
   });
 
   it("includes JS-side perf timing in the postMessage payload", () => {
@@ -87,6 +105,21 @@ describe("buildRenderWatermarkScript", () => {
     expect(script).not.toContain("\u2029");
     expect(script).toContain("\\u2028");
     expect(script).toContain("\\u2029");
+  });
+
+  it("includes the style config in the payload when provided", () => {
+    const script = buildRenderWatermarkScript(1, "data", ["x"], {
+      fontScale: 1.25,
+      position: "bottomRight",
+      bgOpacity: 0.8,
+      textColor: "#FFEB3B",
+    });
+    expect(script).toContain('"style":{"fontScale":1.25,"position":"bottomRight","bgOpacity":0.8,"textColor":"#FFEB3B"}');
+  });
+
+  it("omits the style key when not provided", () => {
+    const script = buildRenderWatermarkScript(1, "data", ["x"]);
+    expect(script).not.toContain('"style"');
   });
 });
 
