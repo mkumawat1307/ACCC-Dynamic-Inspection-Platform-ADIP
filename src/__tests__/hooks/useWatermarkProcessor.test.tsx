@@ -23,6 +23,7 @@ jest.mock("@/src/utils/storageManager", () => ({
   writePhoto: jest.fn(),
   ensureTreeUri: jest.fn(),
   getProjectDir: jest.fn(),
+  getSafCacheState: jest.fn(() => ({ treeUriHit: true, projectDirHit: true })),
 }));
 jest.mock("react-native-webview", () => {
   const RN = require("react-native");

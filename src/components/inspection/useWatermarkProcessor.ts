@@ -4,7 +4,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageManager";
+import { writePhoto, ensureTreeUri, getProjectDir, getSafCacheState } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import { buildRenderWatermarkScript } from "@/src/utils/watermarkHtml";
 import { useInspection } from "@/src/context/InspectionContext";
@@ -202,7 +202,10 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         const projectDir = await getProjectDir(treeUri, label);
         const contentUri = await writePhoto(projectDir, job.fileName, base64);
         if (perf) perfStage(perf, "safWrite");
-        else logger.debug(`[Perf] watermark photo=${photoId} safWrite: ${(perfNow() - tSave).toFixed(1)}ms`);
+        const saf = getSafCacheState();
+        logger.debug(`[SAF] ProjectDirCache: ${saf.projectDirHit ? "HIT" : "MISS"}`);
+        logger.debug(`[SAF] TreeUriCache: ${saf.treeUriHit ? "HIT" : "MISS"}`);
+        logger.debug(`[SAF] WriteTime: ${(perfNow() - tSave).toFixed(1)} ms`);
 
         const tDb = perfNow();
         await PhotoRepository.updateFilePath(photoId, contentUri);
