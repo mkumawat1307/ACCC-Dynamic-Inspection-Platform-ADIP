@@ -195,6 +195,18 @@ export default function SettingsScreen() {
         </List.Section>
 
         <List.Section>
+          <List.Subheader>Camera</List.Subheader>
+
+          <List.Item
+            title="Watermark"
+            description="Size, position, colors and GPS options"
+            left={(props) => <List.Icon {...props} icon="watermark" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => router.push("/settings/watermark")}
+          />
+        </List.Section>
+
+        <List.Section>
           <List.Subheader>Advanced</List.Subheader>
 
           <List.Item
