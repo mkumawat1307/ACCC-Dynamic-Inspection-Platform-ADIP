@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, BackHandler, Image, PanResponder, StyleSheet, View } from "react-native";
-import { CameraView, useCameraPermissions, CameraType, FlashMode } from "expo-camera";
+import {
+  CameraView,
+  useCameraPermissions,
+  CameraRatio,
+  CameraType,
+  FlashMode,
+} from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Button, Text, ActivityIndicator, IconButton } from "react-native-paper";
@@ -22,7 +28,19 @@ import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/use
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
-import { FLASH_ICONS, FLASH_LABELS, nextFlashMode, FACING_ICONS, FACING_LABELS, nextFacing, clamp01, pinchZoomFromDistance, touchDistance } from "@/src/components/camera/cameraControls";
+import {
+  FLASH_ICONS,
+  FLASH_LABELS,
+  nextFlashMode,
+  FACING_ICONS,
+  FACING_LABELS,
+  nextFacing,
+  clamp01,
+  pinchZoomFromDistance,
+  touchDistance,
+  RATIO_LABELS,
+  nextRatio,
+} from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
@@ -53,6 +71,7 @@ export default function CaptureScreen() {
   const [flash, setFlash] = useState<FlashMode>("off");
   const [facing, setFacing] = useState<CameraType>("back");
   const [zoom, setZoom] = useState(0);
+  const [ratio, setRatio] = useState<CameraRatio>("4:3");
   const zoomRef = useRef(0);
 
   const pinchResponder = useRef(
@@ -326,7 +345,7 @@ export default function CaptureScreen() {
                 <CameraView
                   ref={cameraRef}
                   facing={facing}
-                  ratio="4:3"
+                  ratio={ratio}
                   flash={flash}
                   style={styles.fill}
                 />
@@ -368,6 +387,12 @@ export default function CaptureScreen() {
               {zoom > 0 && (
                 <Text style={styles.zoomLabel}>{Math.round(zoom * 100)}%</Text>
               )}
+              <IconButton
+                icon="aspect-ratio"
+                accessibilityLabel={`Aspect ratio ${RATIO_LABELS[ratio]}`}
+                testID="camera-ratio"
+                onPress={() => setRatio(nextRatio)}
+              />
             </View>
 
             <View style={styles.controls}>
