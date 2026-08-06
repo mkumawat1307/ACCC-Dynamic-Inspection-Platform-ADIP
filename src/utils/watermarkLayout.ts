@@ -28,7 +28,11 @@ export const GPS_CATEGORY_COLORS: Record<GpsAccuracyCategory, string> = {
 
 export function gpsPillText(status: GpsStatus, accuracyM: number | null): string {
   if (status === "fixed") {
-    return accuracyM != null ? `GPS OK · ±${Math.round(accuracyM)} m` : "GPS OK";
+    if (accuracyM == null) return "🟢 High Accuracy";
+    const cat = gpsAccuracyCategory(accuracyM);
+    if (cat === "high") return "🟢 High Accuracy";
+    if (cat === "medium") return "🟡 Medium Accuracy";
+    return "🔴 Low Accuracy";
   }
   if (status === "denied") return "GPS denied";
   return "Acquiring GPS…";
