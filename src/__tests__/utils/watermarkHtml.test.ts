@@ -41,9 +41,9 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).not.toContain("var ctx=cv.getContext('2d');");
   });
 
-  it("exposes renderWatermark accepting photoId, base64, lines and style", () => {
+  it("exposes renderWatermark accepting photoId, base64, lines, style and nativeEncode", () => {
     const html = buildWatermarkRendererPage();
-    expect(html).toContain("function renderWatermark(photoId,imageBase64,lines,style)");
+    expect(html).toContain("function renderWatermark(photoId,imageBase64,lines,style,nativeEncode)");
     expect(html).toContain("img.src='data:image/jpeg;base64,'+imageBase64");
     expect(html).toContain("window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,base64:raw,perf:");
   });
@@ -187,6 +187,52 @@ describe("buildRenderWatermarkScript", () => {
   it("omits the style key when not provided", () => {
     const script = buildRenderWatermarkScript(1, "data", ["x"]);
     expect(script).not.toContain('"style"');
+  });
+
+  it("flags native encoding in the payload when enabled", () => {
+    const script = buildRenderWatermarkScript(1, "data", ["x"], undefined, true);
+    expect(script).toContain('"nativeEncode":true');
+  });
+
+  it("omits the native encode flag when not enabled", () => {
+    const script = buildRenderWatermarkScript(1, "data", ["x"]);
+    expect(script).not.toContain("nativeEncode");
+  });
+});
+
+describe("buildWatermarkRendererPage native encode path", () => {
+  it("provides a chunked arrayBufferToBase64 helper for RGBA pixels", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("function arrayBufferToBase64(buf)");
+    expect(html).toContain("String.fromCharCode");
+    expect(html).toContain("btoa(bin)");
+  });
+
+  it("reads composited pixels via getImageData for the native path", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("ctx.getImageData(0,0,cv.width,cv.height)");
+  });
+
+  it("posts width, height and rgba base64 when native encoding is requested", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain(
+      "window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,width:cv.width,height:cv.height,rgba:rgba,perf:"
+    );
+  });
+
+  it("keeps the toBlob encode path as the fallback", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("cv.toBlob(function(blob)");
+    expect(html).toContain("'image/jpeg',0.95");
+    expect(html).toContain("window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,base64:raw,perf:");
+  });
+
+  it("instruments the native encode stage separately from toBlob", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("getDataMs:");
+    expect(html).toContain("b64Ms:");
+    expect(html).toContain("rgbaLen:rgba.length");
+    expect(html).toContain("native:true");
   });
 });
 

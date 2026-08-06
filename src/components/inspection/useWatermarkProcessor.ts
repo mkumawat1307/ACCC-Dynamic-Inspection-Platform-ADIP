@@ -8,6 +8,7 @@ import { writePhoto, ensureTreeUri, getProjectDir, getSafCacheState } from "@/sr
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import { buildRenderWatermarkScript } from "@/src/utils/watermarkHtml";
 import { WatermarkStyleConfig } from "@/src/utils/watermarkStyle";
+import { hasNativeWatermarkEncoder, encodeWatermarkJpeg } from "@/src/native/WatermarkEncoder";
 import { useInspection } from "@/src/context/InspectionContext";
 import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator } from "@/src/utils/perf";
 
@@ -17,6 +18,7 @@ interface WatermarkJob {
   fileName: string;
   lines: string[];
   style?: WatermarkStyleConfig;
+  useNative: boolean;
   retries: number;
   startedAtMs: number;
 }
@@ -59,6 +61,13 @@ interface WatermarkDiag {
   heapLimit?: number;
   gcEvents?: number;
   gcMs?: number;
+  getDataAtMs?: number;
+  getDataStart?: number;
+  getDataCb?: number;
+  getDataMs?: number;
+  b64Ms?: number;
+  rgbaLen?: number;
+  native?: boolean;
 }
 
 interface UseWatermarkProcessorOptions {
@@ -111,7 +120,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     const job = failedJobsRef.current.get(photoId);
     if (!job) return;
     failedJobsRef.current.delete(photoId);
-    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style);
+    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style, job.useNative);
   }
 
   function handleJobFailure(job: WatermarkJob) {
@@ -181,7 +190,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
 
       const wv = webViewRef.current;
       if (!wv) throw new Error("webview not available");
-      wv.injectJavaScript(buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style));
+      wv.injectJavaScript(buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style, job.useNative));
       perfStage(perf, "webviewSend");
     } catch (error) {
       logger.warn("[Watermark] read or send failed:", error);
@@ -240,7 +249,79 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         return;
       }
 
-      const { photoId, base64 } = data;
+      const { photoId, base64, rgba, width, height } = data;
+
+      if (rgba != null && photoId != null && width != null && height != null) {
+        const job = queueRef.current.find(j => j.photoId === photoId);
+        if (!job) return;
+
+        const perf = perfRef.current;
+        const jsPerf = (data.perf ?? {}) as JsPerf;
+        if (perf && (jsPerf.decode != null || jsPerf.total != null)) {
+          perf.stages.push({ name: "jsDecode", ms: jsPerf.decode ?? 0 });
+          perf.stages.push({ name: "jsDraw", ms: jsPerf.draw ?? 0 });
+          perf.stages.push({ name: "jsGetData", ms: jsPerf.encode ?? 0 });
+          perfStage(perf, "webviewReturn");
+        }
+
+        const diag = (data.diag ?? {}) as WatermarkDiag;
+        if (diag && (diag.getDataMs != null || diag.b64Ms != null)) {
+          logger.debug(
+            `[Watermark:diag] photo=${photoId} instance=${diag.instance} capture=${diag.capture} jobs=${diag.jobs} ` +
+              `mode=native getData=${diag.getDataMs}ms b64=${diag.b64Ms}ms ` +
+              `img=${diag.imgW}x${diag.imgH} resident=${diag.imgWasResident} ` +
+              `cv=${diag.cvPrevW}x${diag.cvPrevH}->${diag.cvW}x${diag.cvH} reset=${diag.canvasReset} ` +
+              `rgba=${diag.rgbaLen} q=${diag.quality} ` +
+              `heap=${diag.heapBefore}->${diag.heapAfter}/${diag.heapLimit} gc=${diag.gcEvents}/${diag.gcMs}ms`
+          );
+        }
+
+        (async () => {
+          const outputPath = `${job.inputPath}.wm.jpg`;
+          try {
+            const tEnc = perfNow();
+            await encodeWatermarkJpeg(width, height, rgba, 95, outputPath);
+            if (perf) perfStage(perf, "nativeEncode");
+
+            const fileBase64 = await FileSystem.readAsStringAsync(outputPath, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+
+            const label = project ? canonicalProjectLabel(project) : "";
+            const tSave = perfNow();
+            const treeUri = await ensureTreeUri();
+            const projectDir = await getProjectDir(treeUri, label);
+            const contentUri = await writePhoto(projectDir, job.fileName, fileBase64);
+            if (perf) perfStage(perf, "safWrite");
+            const saf = getSafCacheState();
+            logger.debug(`[SAF] ProjectDirCache: ${saf.projectDirHit ? "HIT" : "MISS"}`);
+            logger.debug(`[SAF] TreeUriCache: ${saf.treeUriHit ? "HIT" : "MISS"}`);
+            logger.debug(`[SAF] WriteTime: ${(perfNow() - tSave).toFixed(1)} ms`);
+
+            const tDb = perfNow();
+            await PhotoRepository.updateFilePath(photoId, contentUri);
+            if (perf) perfStage(perf, "sqliteUpdate");
+            else logger.debug(`[Perf] watermark photo=${photoId} sqliteUpdate: ${(perfNow() - tDb).toFixed(1)}ms`);
+
+            onPhotosUpdated();
+            try {
+              await FileSystem.deleteAsync(outputPath, { idempotent: true });
+            } catch (e) {
+              logger.warn("[Watermark] Failed to clean up encoded temp file:", outputPath, e);
+            }
+            handleJobComplete(photoId);
+          } catch (error) {
+            logger.warn("[Watermark] native encode failed, falling back to toBlob:", error);
+            try {
+              await FileSystem.deleteAsync(outputPath, { idempotent: true });
+            } catch {}
+            const queued = queueRef.current.find(j => j.photoId === photoId);
+            if (queued) queued.useNative = false;
+            handleJobFailure(job);
+          }
+        })();
+        return;
+      }
 
       if (!base64 || photoId == null) {
         const job = queueRef.current[0];
@@ -309,7 +390,8 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     inputPath: string,
     fileName: string,
     lines: string[],
-    style?: WatermarkStyleConfig
+    style?: WatermarkStyleConfig,
+    useNativeOverride?: boolean
   ) {
     const job: WatermarkJob = {
       photoId,
@@ -317,6 +399,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
       fileName,
       lines,
       style,
+      useNative: useNativeOverride ?? hasNativeWatermarkEncoder(),
       retries: 0,
       startedAtMs: perfNow(),
     };
