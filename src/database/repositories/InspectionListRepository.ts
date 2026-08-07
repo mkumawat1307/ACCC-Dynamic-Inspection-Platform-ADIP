@@ -15,10 +15,13 @@ export interface InspectionListItem {
 export class InspectionListRepository {
 
   static async getByProject(
-    projectId: number
+    projectId: number,
+    statuses: readonly string[]
   ): Promise<InspectionListItem[]> {
 
     const db = await getDatabase();
+
+    const statusPlaces = statuses.map(() => "?").join(",");
 
     const rows = await db.getAllAsync<InspectionListItem>(
       `
@@ -44,9 +47,10 @@ export class InspectionListRepository {
             LIMIT 1) AS Block
       FROM Inspections i
       WHERE i.ProjectID = ?
+        AND i.Status IN (${statusPlaces})
       ORDER BY i.InspectionID DESC;
       `,
-      [projectId]
+      [projectId, ...statuses]
     );
 
     return rows.sort((a, b) => {

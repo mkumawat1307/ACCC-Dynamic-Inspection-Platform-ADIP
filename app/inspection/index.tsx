@@ -23,6 +23,7 @@ import {
   InspectionListRepository,
   InspectionListItem,
 } from "@/src/database/repositories/InspectionListRepository";
+import { INSPECTION_FINAL_STATUSES } from "@/src/database/repositories/InspectionRepository";
 
 import { useInspection } from "@/src/context/InspectionContext";
 
@@ -80,7 +81,8 @@ export default function InspectionListScreen() {
 
     const data =
       await InspectionListRepository.getByProject(
-        Number(projectId)
+        Number(projectId),
+        INSPECTION_FINAL_STATUSES
       );
 
     setInspections(data);
