@@ -26,7 +26,12 @@ export const GPS_CATEGORY_COLORS: Record<GpsAccuracyCategory, string> = {
   low: "#FF5252",
 };
 
-export function gpsPillText(status: GpsStatus, accuracyM: number | null): string {
+export function gpsPillText(
+  status: GpsStatus,
+  accuracyM: number | null,
+  refreshing = false
+): string {
+  if (refreshing) return "⏳ Refreshing GPS…";
   if (status === "fixed") {
     if (accuracyM == null) return "🟢 High Accuracy";
     const cat = gpsAccuracyCategory(accuracyM);
