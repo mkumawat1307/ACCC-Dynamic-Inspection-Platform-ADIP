@@ -1,6 +1,6 @@
 import { useReducer } from "react";
 
-export type CapturePhase = "preview" | "merging" | "confirm" | "failed";
+export type CapturePhase = "preview" | "merging" | "saved" | "failed";
 
 export interface PendingPhoto {
   photoId: number;
@@ -19,8 +19,9 @@ export type CaptureFlowAction =
   | { type: "BEGIN_CAPTURE"; photo: PendingPhoto }
   | { type: "MERGE_COMPLETED" }
   | { type: "MERGE_FAILED" }
-  | { type: "RETAKE" }
-  | { type: "RETRY" };
+  | { type: "SAVED_TIMEOUT" }
+  | { type: "RETRY" }
+  | { type: "DISCARD" };
 
 export const initialState: CaptureFlowState = { phase: "preview", pending: null };
 
@@ -33,18 +34,20 @@ export function captureFlowReducer(
       return { phase: "merging", pending: action.photo };
     case "MERGE_COMPLETED":
       return state.phase === "merging" && state.pending
-        ? { ...state, phase: "confirm" }
+        ? { ...state, phase: "saved" }
         : state;
     case "MERGE_FAILED":
       return state.phase === "merging" && state.pending
         ? { ...state, phase: "failed" }
         : state;
+    case "SAVED_TIMEOUT":
+      return state.phase === "saved" ? { phase: "preview", pending: null } : state;
     case "RETRY":
       return state.phase === "failed" && state.pending
         ? { ...state, phase: "merging" }
         : state;
-    case "RETAKE":
-      return { phase: "preview", pending: null };
+    case "DISCARD":
+      return state.phase === "failed" ? { phase: "preview", pending: null } : state;
     default:
       return state;
   }
@@ -57,7 +60,8 @@ export function useCaptureFlow() {
     beginCapture: (photo: PendingPhoto) => dispatch({ type: "BEGIN_CAPTURE", photo }),
     markMergeCompleted: () => dispatch({ type: "MERGE_COMPLETED" }),
     markMergeFailed: () => dispatch({ type: "MERGE_FAILED" }),
-    retake: () => dispatch({ type: "RETAKE" }),
+    savedTimeout: () => dispatch({ type: "SAVED_TIMEOUT" }),
     retry: () => dispatch({ type: "RETRY" }),
+    discard: () => dispatch({ type: "DISCARD" }),
   };
 }
