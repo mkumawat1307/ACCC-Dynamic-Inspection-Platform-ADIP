@@ -100,6 +100,8 @@ export default function CaptureScreen() {
   ).current;
 
   const flow = useCaptureFlow();
+  const savedTimeoutRef = useRef(flow.savedTimeout);
+  savedTimeoutRef.current = flow.savedTimeout;
   const {
     webViewRef,
     handleWebViewMessage,
@@ -148,9 +150,9 @@ export default function CaptureScreen() {
 
   useEffect(() => {
     if (flow.phase !== "saved") return;
-    const t = setTimeout(() => flow.savedTimeout(), 400);
+    const t = setTimeout(() => savedTimeoutRef.current(), 400);
     return () => clearTimeout(t);
-  }, [flow.phase, flow.savedTimeout]);
+  }, [flow.phase]);
 
   const cleanupPending = useCallback(async () => {
     const pending = flow.pending;
@@ -161,7 +163,7 @@ export default function CaptureScreen() {
   }, [flow.pending, clearWatermarkState]);
 
   const handleBack = useCallback(() => {
-    if (flow.phase === "merging" && flow.pending) {
+    if ((flow.phase === "merging" || flow.phase === "failed") && flow.pending) {
       Alert.alert(
         "Discard Photo?",
         "This photo is still being processed. Leaving now will discard it.",
@@ -192,8 +194,8 @@ export default function CaptureScreen() {
 
   const handleCameraTouch = useCallback(
     (evt: { nativeEvent: { touches: { locationX: number; locationY: number }[] } }) => {
-      const t = evt.nativeEvent.touches?.[0];
-      if (!t) return;
+      if (evt.nativeEvent.touches.length !== 1) return;
+      const t = evt.nativeEvent.touches[0];
       const now = Date.now();
       const double = now - lastTapRef.current < 300;
       lastTapRef.current = now;
@@ -326,7 +328,7 @@ export default function CaptureScreen() {
   };
 
   const handleClose = () => {
-    router.back();
+    handleBack();
   };
 
   const previewLines = composeWatermarkLines({
@@ -516,15 +518,16 @@ export default function CaptureScreen() {
 }
 
 function ZoomSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const [trackWidth, setTrackWidth] = useState(0);
+  const trackWidthRef = useRef(0);
   const responder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderMove: (evt) => {
-        if (trackWidth <= 0) return;
+        const w = trackWidthRef.current;
+        if (w <= 0) return;
         const x = evt.nativeEvent.locationX;
-        const next = Math.min(1, Math.max(0, x / trackWidth));
+        const next = Math.min(1, Math.max(0, x / w));
         onChange(next);
       },
     })
@@ -533,7 +536,9 @@ function ZoomSlider({ value, onChange }: { value: number; onChange: (v: number) 
   return (
     <View
       style={styles.zoomSliderOuter}
-      onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+      onLayout={(e) => {
+        trackWidthRef.current = e.nativeEvent.layout.width;
+      }}
       {...responder.panHandlers}
     >
       <View style={styles.zoomSliderTrack}>
