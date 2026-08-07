@@ -455,6 +455,70 @@ describe("buildReportTable", () => {
       { cells: ["P001", fallback, "2", "IP"], isDeviceRow: true },
     ]);
   });
+
+  it("filters the project-wide inspections query by final statuses", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([
+        { InspectionID: 1, Status: "Completed" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
+
+    const inspectionsCall = mockDb.getAllAsync.mock.calls[2] as [string, unknown[]];
+    expect(inspectionsCall[0]).toContain("WHERE ProjectID = ?");
+    expect(inspectionsCall[0]).toContain("AND Status IN (?,?)");
+    expect(inspectionsCall[1]).toEqual([1, "Completed", "Submitted"]);
+    expect(table.rows).toEqual([
+      { cells: ["P001", "", "", "", ""], isDeviceRow: false },
+    ]);
+  });
+
+  it("filters the explicit-ID inspections query by final statuses", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([
+        { InspectionID: 1, Status: "Completed" },
+      ])
+      .mockResolvedValueOnce([
+        { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1, [1, 2]);
+
+    const inspectionsCall = mockDb.getAllAsync.mock.calls[2] as [string, unknown[]];
+    expect(inspectionsCall[0]).toContain("InspectionID IN (?,?)");
+    expect(inspectionsCall[0]).toContain("AND Status IN (?,?)");
+    expect(inspectionsCall[1]).toEqual([1, 2, "Completed", "Submitted"]);
+    expect(table.inspectionCount).toBe(1);
+  });
+
+  it("emits no rows when the filtered query returns only Drafts (draft ID passed explicitly)", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1, [999]);
+
+    expect(table.rows).toEqual([]);
+    expect(table.inspectionCount).toBe(0);
+  });
 });
 
 describe("splitLatLong", () => {

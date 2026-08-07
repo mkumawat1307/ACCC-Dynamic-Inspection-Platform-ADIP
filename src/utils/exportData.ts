@@ -4,6 +4,7 @@ import * as IntentLauncher from "expo-intent-launcher";
 import * as XLSX from "xlsx";
 import { Platform } from "react-native";
 import { getDatabase, getGlobalDatabase } from "../database/db";
+import { INSPECTION_FINAL_STATUSES } from "../database/repositories/InspectionRepository";
 import { getCurrentInspectionDate } from "./date";
 
 export type ExportFormat = "csv" | "excel";
@@ -254,12 +255,13 @@ async function buildReportTableInternal(
         : [inspectionIds];
 
   const placeholders = idList ? idList.map(() => "?").join(",") : null;
+  const statusPlaces = INSPECTION_FINAL_STATUSES.map(() => "?").join(",");
 
   const inspections = await db.getAllAsync<{ InspectionID: number; Status: string }>(
     idList
-      ? `SELECT InspectionID, Status FROM Inspections WHERE InspectionID IN (${placeholders}) ORDER BY InspectionID`
-      : `SELECT InspectionID, Status FROM Inspections WHERE ProjectID = ? ORDER BY InspectionID`,
-    idList ? idList : [projectId]
+      ? `SELECT InspectionID, Status FROM Inspections WHERE InspectionID IN (${placeholders}) AND Status IN (${statusPlaces}) ORDER BY InspectionID`
+      : `SELECT InspectionID, Status FROM Inspections WHERE ProjectID = ? AND Status IN (${statusPlaces}) ORDER BY InspectionID`,
+    idList ? [...idList, ...INSPECTION_FINAL_STATUSES] : [projectId, ...INSPECTION_FINAL_STATUSES]
   );
 
   const values = await db.getAllAsync<{ InspectionID: number; FieldID: number; FieldValue: string | null }>(
