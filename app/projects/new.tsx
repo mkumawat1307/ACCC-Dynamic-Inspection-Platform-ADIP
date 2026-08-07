@@ -9,7 +9,7 @@ import { District } from "@/src/models/District";
 import { Dropdown } from "react-native-paper-dropdown";
 import { router, useLocalSearchParams } from "expo-router";
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
-import { createProjectDb, getProjectDbPath } from "@/src/database/helpers/ProjectDBManager";
+import { createProjectDb, getProjectDbPath, updateProjectInspectorName } from "@/src/database/helpers/ProjectDBManager";
 
 export default function NewProjectScreen() {
   const { editProjectId } = useLocalSearchParams<{ editProjectId?: string }>();
@@ -72,13 +72,19 @@ const [saving, setSaving] = useState(false);
     setSaving(true);
     try {
       if (isEdit && editProjectId) {
+const inspector = inspectorName.trim();
         await ProjectRepository.updateProject(Number(editProjectId), {
           projectName: projectName.trim(),
           districtId: Number(district),
           client: client.trim(),
           description: description.trim(),
-          inspectorName: inspectorName.trim(),
+          inspectorName: inspector,
         });
+
+        const project = await ProjectRepository.getProjectById(Number(editProjectId));
+        if (project?.DBPath) {
+          await updateProjectInspectorName(project.DBPath, inspector);
+        }
         Alert.alert("Success", "Project updated successfully.");
       } else {
         const dbPath = getProjectDbPath(projectName.trim());

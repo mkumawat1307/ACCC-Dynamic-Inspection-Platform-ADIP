@@ -203,6 +203,22 @@ static async saveFieldValue(
   InspectionDataBus.emitInspectionsChanged(projectId ?? 0);
 }
 
+static async updateInspectorNameForProject(
+  inspectorName: string
+): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE InspectionValues
+     SET FieldValue = ?, UpdatedAt = CURRENT_TIMESTAMP
+     WHERE FieldID IN (
+       SELECT FieldID
+       FROM InspectionFields
+       WHERE FieldKey = 'inspector_name'
+     )`,
+    [inspectorName]
+  );
+}
+
 static async updateInspectionPoleId(
   inspectionId: number,
   poleId: string
