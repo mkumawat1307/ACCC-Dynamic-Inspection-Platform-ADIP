@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Animated, BackHandler, Image, PanResponder, StyleSheet, View } from "react-native";
+import { Alert, Animated, BackHandler, PanResponder, StyleSheet, View } from "react-native";
 import {
   CameraView,
   useCameraPermissions,
@@ -15,16 +15,13 @@ import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Photo } from "@/src/models/Photo";
-import {
-  generateFileName,
-  getFileUri,
-} from "@/src/components/inspection/photoUtils";
+import { generateFileName } from "@/src/components/inspection/photoUtils";
 import { useGpsTracker } from "@/src/components/camera/useGpsTracker";
 import WatermarkOverlay from "@/src/components/camera/WatermarkOverlay";
 import { useCaptureFlow } from "@/src/components/camera/useCaptureFlow";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
-import { useAddressLookup, RESOLVING_ADDRESS } from "@/src/components/camera/useAddressLookup";
+import { useAddressLookup } from "@/src/components/camera/useAddressLookup";
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
@@ -35,14 +32,13 @@ import {
   FACING_ICONS,
   FACING_LABELS,
   nextFacing,
-  clamp01,
   pinchZoomFromDistance,
   touchDistance,
   RATIO_LABELS,
   nextRatio,
+  zoomToMagnification,
 } from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
-import { deletePhoto as safDelete } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
 import { perfNow, perfLog } from "@/src/utils/perf";
 
@@ -64,7 +60,6 @@ export default function CaptureScreen() {
   });
   const [now, setNow] = useState(() => new Date());
   const [shutterBusy, setShutterBusy] = useState(false);
-  const [confirmedPhoto, setConfirmedPhoto] = useState<Photo | null>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -73,6 +68,8 @@ export default function CaptureScreen() {
   const [zoom, setZoom] = useState(0);
   const [ratio, setRatio] = useState<CameraRatio>("4:3");
   const zoomRef = useRef(0);
+  const lastTapRef = useRef(0);
+  const captureTimesRef = useRef<number[]>([]);
   const focusAnim = useRef(new Animated.Value(0)).current;
   const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
   // TODO: manual exposure — expo-camera 17 exposes no Android API for exposure control.
@@ -150,11 +147,10 @@ export default function CaptureScreen() {
   }, [flow.phase, flow.pending, photoStates, flow.markMergeCompleted, flow.markMergeFailed]);
 
   useEffect(() => {
-    if (flow.phase !== "confirm" || flow.pending == null) return;
-    PhotoRepository.getById(flow.pending.photoId)
-      .then((p) => setConfirmedPhoto(p))
-      .catch(() => {});
-  }, [flow.phase, flow.pending]);
+    if (flow.phase !== "saved") return;
+    const t = setTimeout(() => flow.savedTimeout(), 400);
+    return () => clearTimeout(t);
+  }, [flow.phase, flow.savedTimeout]);
 
   const cleanupPending = useCallback(async () => {
     const pending = flow.pending;
@@ -194,9 +190,37 @@ export default function CaptureScreen() {
     return () => sub.remove();
   }, [handleBack]);
 
+  const handleCameraTouch = useCallback(
+    (evt: { nativeEvent: { touches: { locationX: number; locationY: number }[] } }) => {
+      const t = evt.nativeEvent.touches?.[0];
+      if (!t) return;
+      const now = Date.now();
+      const double = now - lastTapRef.current < 300;
+      lastTapRef.current = now;
+
+      if (double) {
+        setZoom((z) => (z > 0 ? 0 : z));
+        return;
+      }
+
+      setFocusRing({ x: t.locationX, y: t.locationY });
+      focusAnim.setValue(0);
+      Animated.timing(focusAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setFocusRing(null);
+      });
+      gps.refreshNow();
+    },
+    [focusAnim, gps]
+  );
+
   const handleShutter = async () => {
     if (shutterBusy) return;
 
+    const tShutter = perfNow();
     let coords = gps.coords;
     let accuracyM = gps.accuracyM;
     if (!coords) {
@@ -223,6 +247,21 @@ export default function CaptureScreen() {
       return;
     }
     perfLog("capture", "takePictureAndWrite", tCapture);
+    perfLog("capture", "shutterToCamera", tShutter);
+
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      captureTimesRef.current.push(perfNow() - tCapture);
+      if (captureTimesRef.current.length >= 10) {
+        const arr = captureTimesRef.current;
+        const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+        const min = Math.min(...arr);
+        const max = Math.max(...arr);
+        logger.debug(
+          `[Perf:capture] last${arr.length} takePictureAndWrite avg=${avg.toFixed(1)}ms min=${min.toFixed(1)}ms max=${max.toFixed(1)}ms`
+        );
+        captureTimesRef.current = [];
+      }
+    }
 
     setShutterBusy(true);
     try {
@@ -250,6 +289,7 @@ export default function CaptureScreen() {
       const tDbInsert = perfNow();
       const photoId = await PhotoRepository.create(photo);
       perfLog("capture", `photo=${photoId} sqliteCreate`, tDbInsert);
+      perfLog("capture", "shutterToDbInsert", tShutter);
 
       const lines = composeWatermarkLines({
         siteId: poleId,
@@ -273,13 +313,9 @@ export default function CaptureScreen() {
     }
   };
 
-  const handleRetake = async () => {
+  const handleDiscard = async () => {
     await cleanupPending();
-    if (confirmedPhoto?.FilePath.startsWith("content://")) {
-      await safDelete(confirmedPhoto.FilePath).catch(() => {});
-    }
-    setConfirmedPhoto(null);
-    flow.retake();
+    flow.discard();
   };
 
   const handleRetry = () => {
@@ -289,7 +325,7 @@ export default function CaptureScreen() {
     flow.retry();
   };
 
-  const handleKeep = () => {
+  const handleClose = () => {
     router.back();
   };
 
@@ -304,11 +340,6 @@ export default function CaptureScreen() {
     addressLines,
     settings,
   });
-
-  const resolvedAddress =
-    addressLines.length > 0 && addressLines[0] !== RESOLVING_ADDRESS
-      ? addressLines.join("\n")
-      : null;
 
   const gpsPillColor =
     gps.status === "fixed" && gps.accuracyM != null
@@ -340,172 +371,138 @@ export default function CaptureScreen() {
       </Appbar.Header>
 
       <View style={styles.body}>
-        {flow.phase === "preview" && (
-          <>
-            <View
-              style={styles.cameraWrap}
-              onLayout={(e) =>
-                setCameraSize({
-                  width: e.nativeEvent.layout.width,
-                  height: e.nativeEvent.layout.height,
-                })
-              }
-              onTouchStart={(e) => {
-                if (e.nativeEvent.touches.length !== 1) return;
-                const t = e.nativeEvent.touches[0];
-                setFocusRing({ x: t.locationX, y: t.locationY });
-                focusAnim.setValue(0);
-                Animated.timing(focusAnim, {
-                  toValue: 1,
-                  duration: 600,
-                  useNativeDriver: true,
-                }).start(({ finished }) => {
-                  if (finished) setFocusRing(null);
-                });
-                gps.refreshNow();
-              }}
-              {...pinchResponder.panHandlers}
-            >
-              {permission?.granted ? (
-                <CameraView
-                  ref={cameraRef}
-                  facing={facing}
-                  ratio={ratio}
-                  flash={flash}
-                  style={styles.fill}
-                />
-              ) : (
-                <View style={[styles.fill, styles.center]}>
-                  <ActivityIndicator size="large" />
-                </View>
-              )}
+        <View
+          style={styles.cameraWrap}
+          onLayout={(e) =>
+            setCameraSize({
+              width: e.nativeEvent.layout.width,
+              height: e.nativeEvent.layout.height,
+            })
+          }
+          onTouchStart={handleCameraTouch}
+          {...pinchResponder.panHandlers}
+        >
+          {permission?.granted ? (
+            <CameraView
+              ref={cameraRef}
+              facing={facing}
+              ratio={ratio}
+              flash={flash}
+              zoom={zoom}
+              style={styles.fill}
+            />
+          ) : (
+            <View style={[styles.fill, styles.center]}>
+              <ActivityIndicator size="large" />
+            </View>
+          )}
 
-              {cameraSize.width > 0 && (
-                <WatermarkOverlay
-                  width={cameraSize.width}
-                  height={cameraSize.height}
-                  lines={previewLines}
-                  settings={settings}
-                />
-              )}
+          {cameraSize.width > 0 && (
+            <WatermarkOverlay
+              width={cameraSize.width}
+              height={cameraSize.height}
+              lines={previewLines}
+              settings={settings}
+            />
+          )}
 
-              {focusRing && (
-                <Animated.View
-                  style={[
-                    styles.focusRing,
+          {focusRing && (
+            <Animated.View
+              style={[
+                styles.focusRing,
+                {
+                  left: focusRing.x - 25,
+                  top: focusRing.y - 25,
+                  opacity: focusAnim,
+                  transform: [
                     {
-                      left: focusRing.x - 25,
-                      top: focusRing.y - 25,
-                      opacity: focusAnim,
-                      transform: [
-                        {
-                          scale: focusAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0.5, 1.5],
-                          }),
-                        },
-                      ],
+                      scale: focusAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.5, 1.5],
+                      }),
                     },
-                  ]}
-                />
-              )}
-
-              <View style={styles.gpsPill}>
-                <Text style={[styles.gpsPillText, { color: gpsPillColor }]}>
-                  {gpsPillText(gps.status, gps.accuracyM)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.cameraToolbar}>
-              <IconButton
-                icon={FACING_ICONS[facing]}
-                accessibilityLabel={FACING_LABELS[facing]}
-                testID="camera-facing"
-                onPress={() => setFacing(nextFacing)}
-              />
-              <IconButton
-                icon={FLASH_ICONS[flash]}
-                accessibilityLabel={FLASH_LABELS[flash]}
-                testID="camera-flash"
-                onPress={() => setFlash(nextFlashMode)}
-              />
-              {zoom > 0 && (
-                <Text style={styles.zoomLabel}>{Math.round(zoom * 100)}%</Text>
-              )}
-              <IconButton
-                icon="aspect-ratio"
-                accessibilityLabel={`Aspect ratio ${RATIO_LABELS[ratio]}`}
-                testID="camera-ratio"
-                onPress={() => setRatio(nextRatio)}
-              />
-            </View>
-
-            <View style={styles.controls}>
-              <Button
-                mode="contained"
-                icon="camera"
-                loading={shutterBusy}
-                disabled={shutterBusy || gps.status !== "fixed"}
-                onPress={handleShutter}
-              >
-                Capture
-              </Button>
-            </View>
-          </>
-        )}
-
-        {flow.phase === "merging" && flow.pending && (
-          <View style={styles.center}>
-            <Image
-              source={{ uri: getFileUri(flow.pending.tempUri) }}
-              style={styles.mergeImage}
-              resizeMode="contain"
+                  ],
+                },
+              ]}
             />
-            <ActivityIndicator size="large" style={{ marginTop: 12 }} />
-            <Text style={{ marginTop: 8 }}>Merging watermark…</Text>
+          )}
+
+          <View style={styles.gpsPill}>
+            <Text style={[styles.gpsPillText, { color: gpsPillColor }]}>
+              {gpsPillText(gps.status, gps.accuracyM)}
+            </Text>
+          </View>
+        </View>
+
+        {flow.phase === "merging" && (
+          <View style={styles.mergeBanner} pointerEvents="none">
+            <ActivityIndicator size="small" />
+            <Text style={styles.mergeBannerText}>Merging watermark…</Text>
           </View>
         )}
 
-        {flow.phase === "confirm" && confirmedPhoto && (
-          <View style={styles.center}>
-            <Image
-              source={{ uri: getFileUri(confirmedPhoto.FilePath) }}
-              style={styles.mergeImage}
-              resizeMode="contain"
-            />
-            {resolvedAddress && <Text style={styles.address}>{resolvedAddress}</Text>}
-            <View style={styles.confirmButtons}>
-              <Button mode="outlined" icon="refresh" onPress={handleRetake}>
-                Retake
-              </Button>
-              <Button mode="contained" icon="check" onPress={handleKeep}>
-                Keep
-              </Button>
-            </View>
+        {flow.phase === "saved" && (
+          <View style={styles.mergeBanner} pointerEvents="none">
+            <Text style={styles.mergeBannerText}>Photo Saved</Text>
           </View>
         )}
 
-        {flow.phase === "failed" && flow.pending && (
-          <View style={styles.center}>
-            <Image
-              source={{ uri: getFileUri(flow.pending.tempUri) }}
-              style={styles.mergeImage}
-              resizeMode="contain"
-            />
-            <Text style={[styles.failedText, { marginTop: 8 }]}>
+        {flow.phase === "failed" && (
+          <View style={styles.failedOverlay}>
+            <Text style={[styles.mergeBannerText, styles.failedText]}>
               Watermarking failed.
             </Text>
             <View style={styles.confirmButtons}>
-              <Button mode="outlined" icon="refresh" onPress={handleRetake}>
-                Retake
-              </Button>
-              <Button mode="contained" icon="refresh" onPress={handleRetry}>
+              <Button mode="outlined" icon="refresh" onPress={handleRetry}>
                 Retry
+              </Button>
+              <Button mode="contained" icon="close" onPress={handleDiscard}>
+                Discard
               </Button>
             </View>
           </View>
         )}
+
+        <View style={styles.cameraToolbar}>
+          <IconButton
+            icon="close"
+            accessibilityLabel="Close camera"
+            onPress={handleClose}
+          />
+          <IconButton
+            icon={FACING_ICONS[facing]}
+            accessibilityLabel={FACING_LABELS[facing]}
+            testID="camera-facing"
+            onPress={() => setFacing(nextFacing)}
+          />
+          <IconButton
+            icon={FLASH_ICONS[flash]}
+            accessibilityLabel={FLASH_LABELS[flash]}
+            testID="camera-flash"
+            onPress={() => setFlash(nextFlashMode)}
+          />
+          <Text style={styles.zoomLabel}>{`${zoomToMagnification(zoom).toFixed(1)}x`}</Text>
+          <IconButton
+            icon="aspect-ratio"
+            accessibilityLabel={`Aspect ratio ${RATIO_LABELS[ratio]}`}
+            testID="camera-ratio"
+            onPress={() => setRatio(nextRatio)}
+          />
+        </View>
+
+        {flow.phase === "preview" && <ZoomSlider value={zoom} onChange={setZoom} />}
+
+        <View style={styles.controls}>
+          <Button
+            mode="contained"
+            icon="camera"
+            loading={shutterBusy}
+            disabled={shutterBusy || gps.status !== "fixed" || flow.phase !== "preview"}
+            onPress={handleShutter}
+          >
+            Capture
+          </Button>
+        </View>
       </View>
 
       <WatermarkMergeWebView
@@ -515,6 +512,35 @@ export default function CaptureScreen() {
         onRenderProcessGone={handleRenderProcessGone}
       />
     </SafeAreaView>
+  );
+}
+
+function ZoomSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [trackWidth, setTrackWidth] = useState(0);
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderMove: (evt) => {
+        if (trackWidth <= 0) return;
+        const x = evt.nativeEvent.locationX;
+        const next = Math.min(1, Math.max(0, x / trackWidth));
+        onChange(next);
+      },
+    })
+  ).current;
+
+  return (
+    <View
+      style={styles.zoomSliderOuter}
+      onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+      {...responder.panHandlers}
+    >
+      <View style={styles.zoomSliderTrack}>
+        <View style={[styles.zoomSliderFill, { width: `${value * 100}%` }]} />
+      </View>
+      <Text style={styles.zoomLabel}>{`${zoomToMagnification(value).toFixed(1)}x`}</Text>
+    </View>
   );
 }
 
@@ -580,17 +606,6 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     alignItems: "center",
   },
-  mergeImage: {
-    width: "100%",
-    height: "70%",
-    backgroundColor: "#222222",
-  },
-  address: {
-    marginTop: 8,
-    fontSize: 12,
-    color: "#555555",
-    textAlign: "center",
-  },
   confirmButtons: {
     flexDirection: "row",
     gap: 16,
@@ -598,5 +613,46 @@ const styles = StyleSheet.create({
   },
   failedText: {
     color: "#C62828",
+  },
+  mergeBanner: {
+    position: "absolute",
+    top: 12,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  mergeBannerText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+  },
+  failedOverlay: {
+    position: "absolute",
+    top: 12,
+    alignSelf: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  zoomSliderOuter: {
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  zoomSliderTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(0,0,0,0.15)",
+    overflow: "hidden",
+  },
+  zoomSliderFill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#76FF03",
   },
 });
