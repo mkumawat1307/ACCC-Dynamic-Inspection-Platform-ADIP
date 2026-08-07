@@ -347,7 +347,9 @@ export default function CaptureScreen() {
   });
 
   const gpsPillColor =
-    gps.status === "fixed" && gps.accuracyM != null
+    gps.refreshing
+      ? "#FFEB3B"
+      : gps.status === "fixed" && gps.accuracyM != null
       ? GPS_CATEGORY_COLORS[gpsAccuracyCategory(gps.accuracyM)]
       : gps.status === "denied"
       ? "#FF5252"
@@ -434,7 +436,7 @@ export default function CaptureScreen() {
 
           <View style={styles.gpsPill}>
             <Text style={[styles.gpsPillText, { color: gpsPillColor }]}>
-              {gpsPillText(gps.status, gps.accuracyM)}
+              {gpsPillText(gps.status, gps.accuracyM, gps.refreshing)}
             </Text>
           </View>
         </View>
