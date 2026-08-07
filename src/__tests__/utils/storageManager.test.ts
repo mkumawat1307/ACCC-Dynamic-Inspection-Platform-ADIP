@@ -9,7 +9,7 @@ import {
 } from "@/src/utils/storageManager";
 
 jest.mock("expo-file-system/legacy", () =>
-  jest.requireMock("expo-file-system")
+  jest.requireActual("../../../__mocks__/expo-file-system")
 );
 jest.mock("@react-native-async-storage/async-storage", () =>
   jest.requireMock("@react-native-async-storage/async-storage/jest/async-storage-mock")

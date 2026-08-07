@@ -5,7 +5,9 @@ import {
   __setPermissionGranted,
 } from "expo-file-system/legacy";
 
-jest.mock("expo-file-system/legacy", () => jest.requireMock("expo-file-system"));
+jest.mock("expo-file-system/legacy", () =>
+  jest.requireActual("../../../__mocks__/expo-file-system")
+);
 
 async function requestTreeUri(): Promise<string> {
   const permission =
