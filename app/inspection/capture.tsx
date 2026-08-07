@@ -68,6 +68,10 @@ export default function CaptureScreen() {
   const [zoom, setZoom] = useState(0);
   const [ratio, setRatio] = useState<CameraRatio>("4:3");
   const zoomRef = useRef(0);
+  const setZoomState = (v: number) => {
+    zoomRef.current = v;
+    setZoom(v);
+  };
   const lastTapRef = useRef(0);
   const captureTimesRef = useRef<number[]>([]);
   const focusAnim = useRef(new Animated.Value(0)).current;
@@ -81,9 +85,7 @@ export default function CaptureScreen() {
         gestureState.numberActiveTouches >= 2,
       onMoveShouldSetPanResponder: (_evt, gestureState) =>
         gestureState.numberActiveTouches >= 2,
-      onPanResponderGrant: (_evt) => {
-        zoomRef.current = zoom;
-      },
+      onPanResponderGrant: (_evt) => {},
       onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches ?? [];
         if (touches.length < 2) return;
@@ -93,8 +95,7 @@ export default function CaptureScreen() {
         if (dist <= 0) return;
         const startDist = Math.max(dist, 1);
         const next = pinchZoomFromDistance(zoomRef.current, startDist, dist);
-        zoomRef.current = next;
-        setZoom(next);
+        setZoomState(next);
       },
     })
   ).current;
@@ -201,7 +202,7 @@ export default function CaptureScreen() {
       lastTapRef.current = now;
 
       if (double) {
-        setZoom((z) => (z > 0 ? 0 : z));
+        if (zoomRef.current > 0) setZoomState(0);
         return;
       }
 
@@ -221,6 +222,7 @@ export default function CaptureScreen() {
 
   const handleShutter = async () => {
     if (shutterBusy) return;
+    setShutterBusy(true);
 
     const tShutter = perfNow();
     let coords = gps.coords;
@@ -265,7 +267,6 @@ export default function CaptureScreen() {
       }
     }
 
-    setShutterBusy(true);
     try {
       const timestamp = new Date().toISOString();
       const poleId = values.pole_id || "NA";
@@ -492,7 +493,7 @@ export default function CaptureScreen() {
           />
         </View>
 
-        {flow.phase === "preview" && <ZoomSlider value={zoom} onChange={setZoom} />}
+        {flow.phase === "preview" && <ZoomSlider value={zoom} onChange={setZoomState} />}
 
         <View style={styles.controls}>
           <Button
