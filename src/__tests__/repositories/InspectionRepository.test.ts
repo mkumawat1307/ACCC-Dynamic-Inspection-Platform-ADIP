@@ -3,7 +3,10 @@ jest.mock("@/src/utils/InspectionDataBus");
 
 import { getDatabase } from "@/src/database/db";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
-import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import {
+  InspectionRepository,
+  INSPECTION_FINAL_STATUSES,
+} from "@/src/database/repositories/InspectionRepository";
 
 function createMockDb() {
   return {
@@ -84,5 +87,12 @@ describe("InspectionRepository auto-refresh emits", () => {
       .mockResolvedValueOnce(null);
     await InspectionRepository.saveFieldValue(3, 7, "Yes");
     expect(InspectionDataBus.emitInspectionsChanged).toHaveBeenCalledWith(0);
+  });
+});
+
+describe("INSPECTION_FINAL_STATUSES", () => {
+  it("includes Completed and Submitted but not Draft", () => {
+    expect(INSPECTION_FINAL_STATUSES).toEqual(["Completed", "Submitted"]);
+    expect(INSPECTION_FINAL_STATUSES).not.toContain("Draft");
   });
 });

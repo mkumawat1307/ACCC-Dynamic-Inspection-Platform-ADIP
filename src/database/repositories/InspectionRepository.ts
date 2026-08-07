@@ -6,6 +6,8 @@ import { InspectionSection, InspectionField } from "./InspectionTypes";
 import { deleteInspectionData } from "./inspectionDataHelper";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 
+export const INSPECTION_FINAL_STATUSES = ["Completed", "Submitted"] as const;
+
 export class InspectionRepository {
 static async getSections(templateId?: number): Promise<InspectionSection[]> {
     const db = await getDatabase();
