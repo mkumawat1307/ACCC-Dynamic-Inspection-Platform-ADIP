@@ -17,6 +17,7 @@ import { seedRepeatableGroupFields } from "../seeds/repeatable-group-fields.seed
 import { seedDeviceOptions } from "../seeds/device-options.seed";
 import { seedDeviceFieldDefinitions } from "../seeds/device-field-definitions.seed";
 import { seedDashboardCards } from "../seeds/dashboard-cards.seed";
+import { InspectionRepository } from "../repositories/InspectionRepository";
 
 const PROJECTS_FOLDER = "Projects";
 
@@ -256,6 +257,19 @@ export async function openProjectDb(dbPath: string, projectId: number): Promise<
   await migrateProjectSchema(projectId);
   logger.debug("[ProjectDBManager] openProjectDb — migrations applied");
   logger.info(`[ProjectDBManager] Project database opened: ${dbPath}`);
+}
+
+export async function updateProjectInspectorName(
+  dbPath: string,
+  inspectorName: string
+): Promise<void> {
+  await setActiveProject(dbPath);
+  try {
+    await InspectionRepository.updateInspectorNameForProject(inspectorName);
+  } finally {
+    await clearActiveProject();
+  }
+  logger.info(`[ProjectDBManager] Inspector name synced to inspections: ${dbPath}`);
 }
 
 export async function deleteProjectDb(dbPath: string): Promise<void> {

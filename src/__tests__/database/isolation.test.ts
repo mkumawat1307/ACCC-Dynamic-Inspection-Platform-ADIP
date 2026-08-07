@@ -242,4 +242,38 @@ describe("Cross-project data isolation", () => {
     );
     expect(valuesInB).toEqual([]);
   });
+
+  it("syncs inspector name only within the active project DB, not another project", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { db: dbA } = await openProject(PROJECT_A);
+
+    const field = await dbA.runAsync(
+      `INSERT INTO InspectionFields (SectionID, FieldName, FieldKey, FieldType, DisplayOrder, IsRequired, IsVisible, IsActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [1, "Inspector", "inspector_name", "text", 2, 1, 1, 1]
+    );
+    const fieldId = field.lastInsertRowId as number;
+
+    const insp = await dbA.runAsync(
+      `INSERT INTO Inspections (ProjectID, DistrictID, PoleID, InspectionDate, Status) VALUES (?, ?, ?, ?, ?)`,
+      [1, 1, "P-INSP-A", "2026-08-02", "Draft"]
+    );
+    const inspId = insp.lastInsertRowId as number;
+    await dbA.runAsync(
+      `INSERT INTO InspectionValues (InspectionID, FieldID, FieldValue) VALUES (?, ?, ?)`,
+      [inspId, fieldId, "Old A"]
+    );
+
+    const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository") as typeof import("@/src/database/repositories/InspectionRepository");
+    await InspectionRepository.updateInspectorNameForProject("New A");
+
+    await dbModule.clearActiveProject();
+
+    const { db: dbB } = await openProject(PROJECT_B);
+
+    const valuesInB = await dbB.getAllAsync<{ FieldValue: string }>(
+      "SELECT FieldValue FROM InspectionValues WHERE InspectionID = ?",
+      [inspId]
+    );
+    expect(valuesInB).toEqual([]);
+  });
 });
