@@ -150,4 +150,16 @@ describe("gpsPillText", () => {
     expect(gpsPillText("denied", null)).toBe("GPS denied");
     expect(gpsPillText("acquiring", null)).toBe("Acquiring GPS…");
   });
+
+  it("returns the refreshing indicator when refreshing is true", () => {
+    expect(gpsPillText("fixed", 10, true)).toBe("⏳ Refreshing GPS…");
+  });
+
+  it("defaults refreshing to false and preserves accuracy text", () => {
+    expect(gpsPillText("fixed", 10)).toBe("🟢 High Accuracy");
+  });
+
+  it("ignores accuracy while refreshing even for low accuracy", () => {
+    expect(gpsPillText("fixed", 99, true)).toBe("⏳ Refreshing GPS…");
+  });
 });
