@@ -24,6 +24,43 @@ Patch → Bug fixes
 
 ---
 
+## [1.0.0] — ACCC Inspection Camera
+
+### Summary
+
+Offline-first in-app camera capture for inspection photos: live watermark preview, GPS-gated shutter, and a fast watermark burn-in pipeline that persists the camera session across captures.
+
+### Highlights
+
+- Persistent camera session (no remount between captures).
+- Fast watermark pipeline (~1.0s capture to saved).
+- Professional inspection watermark.
+- GPS accuracy indicator.
+- Offline-first operation.
+- Zoom support (pinch + slider).
+- Tap-to-focus with GPS refresh.
+- Stable WebView renderer reuse.
+
+### Performance
+
+- Camera capture: ~470–630ms.
+- Watermark merge: ~730–860ms.
+- Sustained capture-to-saved: ~1.0–1.1s.
+
+### Added
+
+- In-app live-watermark camera viewfinder with overlay, GPS-acquired preview, and Retake / Keep confirmation.
+- Tap-to-focus forcing a fresh high-accuracy GPS fix with a "Refreshing GPS…" pill.
+
+### Fixed
+
+- Intermittent 4–13s watermark stalls.
+- Canvas and renderer reuse enabled.
+- SAF directory caching enabled.
+- Draft inspection cleanup improved.
+
+---
+
 ## [Unreleased]
 
 ### Added
