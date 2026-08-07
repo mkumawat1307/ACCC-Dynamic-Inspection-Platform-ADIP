@@ -13,7 +13,7 @@ const pending = {
 
 describe("captureFlowReducer", () => {
   it("starts in preview with no pending photo", () => {
-    expect(captureFlowReducer(initialState, { type: "RETAKE" })).toEqual({
+    expect(captureFlowReducer(initialState, { type: "DISCARD" })).toEqual({
       phase: "preview",
       pending: null,
     });
@@ -25,17 +25,25 @@ describe("captureFlowReducer", () => {
     expect(state.pending).toEqual(pending);
   });
 
-  it("MERGE_COMPLETED moves merging -> confirm", () => {
+  it("MERGE_COMPLETED moves merging -> saved, retaining pending", () => {
     const merging = captureFlowReducer(initialState, { type: "BEGIN_CAPTURE", photo: pending });
     const state = captureFlowReducer(merging, { type: "MERGE_COMPLETED" });
-    expect(state.phase).toBe("confirm");
+    expect(state.phase).toBe("saved");
     expect(state.pending).toEqual(pending);
   });
 
-  it("MERGE_FAILED moves merging -> failed", () => {
+  it("MERGE_FAILED moves merging -> failed, retaining pending", () => {
     const merging = captureFlowReducer(initialState, { type: "BEGIN_CAPTURE", photo: pending });
     const state = captureFlowReducer(merging, { type: "MERGE_FAILED" });
     expect(state.phase).toBe("failed");
+    expect(state.pending).toEqual(pending);
+  });
+
+  it("SAVED_TIMEOUT moves saved -> preview and clears pending", () => {
+    const merging = captureFlowReducer(initialState, { type: "BEGIN_CAPTURE", photo: pending });
+    const saved = captureFlowReducer(merging, { type: "MERGE_COMPLETED" });
+    const state = captureFlowReducer(saved, { type: "SAVED_TIMEOUT" });
+    expect(state).toEqual({ phase: "preview", pending: null });
   });
 
   it("RETRY moves failed -> merging", () => {
@@ -45,20 +53,23 @@ describe("captureFlowReducer", () => {
     expect(state.phase).toBe("merging");
   });
 
-  it("RETAKE clears pending and returns to preview from confirm", () => {
+  it("DISCARD moves failed -> preview and clears pending", () => {
     const merging = captureFlowReducer(initialState, { type: "BEGIN_CAPTURE", photo: pending });
-    const confirm = captureFlowReducer(merging, { type: "MERGE_COMPLETED" });
-    const state = captureFlowReducer(confirm, { type: "RETAKE" });
+    const failed = captureFlowReducer(merging, { type: "MERGE_FAILED" });
+    const state = captureFlowReducer(failed, { type: "DISCARD" });
     expect(state).toEqual({ phase: "preview", pending: null });
   });
 
-  it("ignores MERGE_COMPLETED outside merging", () => {
-    expect(captureFlowReducer(initialState, { type: "MERGE_COMPLETED" })).toEqual(initialState);
+  it("ignores SAVED_TIMEOUT and RETRY outside their valid source phases", () => {
+    const preview = captureFlowReducer(initialState, { type: "SAVED_TIMEOUT" });
+    expect(preview.phase).toBe("preview");
+    const retryFromPreview = captureFlowReducer(initialState, { type: "RETRY" });
+    expect(retryFromPreview.phase).toBe("preview");
   });
 });
 
 describe("useCaptureFlow", () => {
-  it("drives the preview -> merging -> confirm -> preview cycle via the hook", async () => {
+  it("drives preview -> merging -> saved -> preview via the hook", async () => {
     let flowRef: ReturnType<typeof useCaptureFlow> | null = null;
     function Probe() {
       flowRef = useCaptureFlow();
@@ -74,15 +85,14 @@ describe("useCaptureFlow", () => {
       flowRef!.beginCapture(pending);
     });
     expect(flowRef!.phase).toBe("merging");
-    expect(flowRef!.pending).toEqual(pending);
 
     await TestRenderer.act(async () => {
       flowRef!.markMergeCompleted();
     });
-    expect(flowRef!.phase).toBe("confirm");
+    expect(flowRef!.phase).toBe("saved");
 
     await TestRenderer.act(async () => {
-      flowRef!.retake();
+      flowRef!.savedTimeout();
     });
     expect(flowRef!.phase).toBe("preview");
 
