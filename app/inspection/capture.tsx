@@ -235,6 +235,7 @@ export default function CaptureScreen() {
           "Wait a moment and try again.",
           [{ text: "Wait" }, { text: "Cancel", style: "cancel" }]
         );
+        setShutterBusy(false);
         return;
       }
       coords = { latitude: fix.latitude, longitude: fix.longitude };
@@ -248,6 +249,7 @@ export default function CaptureScreen() {
     });
     if (!result?.uri) {
       Alert.alert("Error", "Failed to capture photo.");
+      setShutterBusy(false);
       return;
     }
     perfLog("capture", "takePictureAndWrite", tCapture);
