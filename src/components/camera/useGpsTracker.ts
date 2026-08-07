@@ -77,8 +77,7 @@ export function useGpsTracker() {
 
   const oneShotFix = useCallback(
     async (accuracy?: Location.Accuracy): Promise<GpsFix | null> => {
-      try {
-        const loc = await Location.getCurrentPositionAsync({
+      const loc = await Location.getCurrentPositionAsync({
           accuracy: accuracy ?? Location.Accuracy.Balanced,
         });
         if (loc && isAcceptableFix(loc)) {
@@ -87,9 +86,6 @@ export function useGpsTracker() {
           return fix;
         }
         return null;
-      } catch {
-        return null;
-      }
     },
     [acceptFix]
   );
@@ -115,10 +111,22 @@ export function useGpsTracker() {
   const refreshNow = useCallback(
     async (): Promise<GpsFix | null> => {
       logger.info("[GPS] refreshNow called");
+      logger.info("[GPS] refresh started");
       setRefreshing(true);
       try {
         const f = await oneShotFix(Location.Accuracy.Highest);
-        return f ?? fixRef.current;
+        if (f) {
+          logger.info(
+            `[GPS] refresh completed lat=${f.latitude} lon=${f.longitude} accuracy=${f.accuracyM}m age=${Date.now() - f.timestamp}ms`
+          );
+          logger.info("[GPS] source=new");
+          return f;
+        }
+        logger.info("[GPS] source=cached");
+        return fixRef.current;
+      } catch (error) {
+        logger.info("[GPS] refresh failed", error);
+        return fixRef.current;
       } finally {
         setRefreshing(false);
       }
@@ -202,7 +210,7 @@ export function useGpsTracker() {
           (!isLocationFresh(current.timestamp, Date.now(), GPS_REFRESH_AGE_MS) ||
             current.accuracyM > GPS_ACCURACY_REFRESH_M)
         ) {
-          oneShotFix();
+          oneShotFix().catch(() => {});
         }
       }, GPS_REFRESH_AGE_MS);
     })();
