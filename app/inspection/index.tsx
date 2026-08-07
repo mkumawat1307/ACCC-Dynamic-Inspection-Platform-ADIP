@@ -16,6 +16,7 @@ import {
   Button,
   Checkbox,
   IconButton,
+  SegmentedButtons,
 } from "react-native-paper";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 
@@ -56,6 +57,8 @@ export default function InspectionListScreen() {
   const [deleteDialogVisible, setDeleteDialogVisible] =
     useState(false);
 
+  const [tab, setTab] = useState<"final" | "drafts">("final");
+
   const exportFlow = useExportFlow(
     Number(projectId ?? 0),
     project?.ProjectName ?? "Project"
@@ -72,20 +75,28 @@ export default function InspectionListScreen() {
   useFocusEffect(
     useCallback(() => {
       loadInspections();
-    }, [projectId])
+    }, [projectId, tab])
   );
 
   async function loadInspections() {
 
     if (!projectId) return;
 
+    const statuses = tab === "final" ? INSPECTION_FINAL_STATUSES : ["Draft"];
+
     const data =
       await InspectionListRepository.getByProject(
         Number(projectId),
-        INSPECTION_FINAL_STATUSES
+        statuses
       );
 
     setInspections(data);
+  }
+
+  function switchTab(next: "final" | "drafts") {
+    if (next === tab) return;
+    clearSelection();
+    setTab(next);
   }
 
   function openEdit(item: InspectionListItem) {
@@ -235,15 +246,17 @@ export default function InspectionListScreen() {
 
             <View style={styles.selectionRow}>
 
-              <Button
-                mode="contained"
-                icon="export-variant"
-                compact
-                disabled={selectedIds.length === 0 || exportFlow.busy}
-                onPress={handleBulkExport}
-              >
-                Export Selected
-              </Button>
+              {tab === "final" && (
+                <Button
+                  mode="contained"
+                  icon="export-variant"
+                  compact
+                  disabled={selectedIds.length === 0 || exportFlow.busy}
+                  onPress={handleBulkExport}
+                >
+                  Export Selected
+                </Button>
+              )}
 
               <Button
                 mode="contained"
@@ -264,6 +277,16 @@ export default function InspectionListScreen() {
         </Card>
 
       )}
+
+      <SegmentedButtons
+        value={tab}
+        onValueChange={(v) => switchTab(v as "final" | "drafts")}
+        buttons={[
+          { value: "final", label: "Final" },
+          { value: "drafts", label: "Drafts" },
+        ]}
+        style={styles.segmented}
+      />
 
       <Searchbar
         placeholder="Search Pole ID, Division, District, Block"
@@ -378,12 +401,14 @@ export default function InspectionListScreen() {
 
                 {!selectionMode && (
                   <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <IconButton
-                      icon="export-variant"
-                      size={20}
-                      disabled={exportFlow.busy}
-                      onPress={() => handleSingleExport(item)}
-                    />
+                    {tab === "final" && (
+                      <IconButton
+                        icon="export-variant"
+                        size={20}
+                        disabled={exportFlow.busy}
+                        onPress={() => handleSingleExport(item)}
+                      />
+                    )}
                     <IconButton
                       icon="pencil"
                       size={20}
@@ -438,6 +463,11 @@ const styles = StyleSheet.create({
   },
 
   button: {
+    marginHorizontal: 20,
+    marginBottom: 15,
+  },
+
+  segmented: {
     marginHorizontal: 20,
     marginBottom: 15,
   },
