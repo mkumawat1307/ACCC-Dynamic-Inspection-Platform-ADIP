@@ -9,6 +9,7 @@ import {
   nextFlashMode,
   pinchZoomFromDistance,
   touchDistance,
+  zoomToMagnification,
 } from "@/src/components/camera/cameraControls";
 
 describe("cameraControls flash cycle", () => {
@@ -74,5 +75,28 @@ describe("cameraControls pinch helpers", () => {
 
   it("touchDistance computes Euclidean distance", () => {
     expect(touchDistance([{ pageX: 0, pageY: 0 }, { pageX: 3, pageY: 4 }])).toBe(5);
+  });
+});
+
+describe("cameraControls zoomToMagnification", () => {
+  it("maps 0 to 1.0x", () => {
+    expect(zoomToMagnification(0)).toBe(1);
+  });
+
+  it("maps 1 to 5.0x", () => {
+    expect(zoomToMagnification(1)).toBe(5);
+  });
+
+  it("maps 0.5 to 3.0x", () => {
+    expect(zoomToMagnification(0.5)).toBe(3);
+  });
+
+  it("clamps out-of-range input", () => {
+    expect(zoomToMagnification(-0.5)).toBe(1);
+    expect(zoomToMagnification(1.5)).toBe(5);
+  });
+
+  it("renders a 1-decimal label ending in x", () => {
+    expect(`${zoomToMagnification(0.25).toFixed(1)}x`).toBe("2.0x");
   });
 });

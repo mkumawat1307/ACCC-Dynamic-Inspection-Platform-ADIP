@@ -73,3 +73,8 @@ export function touchDistance(touches: { pageX: number; pageY: number }[]): numb
   const dy = touches[0].pageY - touches[1].pageY;
   return Math.sqrt(dx * dx + dy * dy);
 }
+
+export function zoomToMagnification(zoom: number): number {
+  const clamped = clamp01(zoom);
+  return 1 + 4 * clamped;
+}
