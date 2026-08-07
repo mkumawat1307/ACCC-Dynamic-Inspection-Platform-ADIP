@@ -55,6 +55,7 @@ export function useGpsTracker() {
   const [status, setStatus] = useState<GpsStatus>("loading");
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [accuracyM, setAccuracyM] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fixRef = useRef<GpsFix | null>(null);
   const waitersRef = useRef<WaitEntry[]>([]);
@@ -73,21 +74,24 @@ export function useGpsTracker() {
     waitersRef.current = [];
   }, []);
 
-  const oneShotFix = useCallback(async (): Promise<GpsFix | null> => {
-    try {
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      if (loc && isAcceptableFix(loc)) {
-        const fix = toFix(loc);
-        if (!cancelledRef.current) acceptFix(fix);
-        return fix;
+  const oneShotFix = useCallback(
+    async (accuracy?: Location.Accuracy): Promise<GpsFix | null> => {
+      try {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: accuracy ?? Location.Accuracy.Balanced,
+        });
+        if (loc && isAcceptableFix(loc)) {
+          const fix = toFix(loc);
+          if (!cancelledRef.current) acceptFix(fix);
+          return fix;
+        }
+        return null;
+      } catch {
+        return null;
       }
-      return null;
-    } catch {
-      return null;
-    }
-  }, [acceptFix]);
+    },
+    [acceptFix]
+  );
 
   const captureGps = useCallback(
     (graceMs: number = GPS_GRACE_MS): Promise<GpsFix | null> => {
@@ -107,10 +111,18 @@ export function useGpsTracker() {
     []
   );
 
-  const refreshNow = useCallback(async (): Promise<GpsFix | null> => {
-    const f = await oneShotFix();
-    return f ?? fixRef.current;
-  }, [oneShotFix]);
+  const refreshNow = useCallback(
+    async (): Promise<GpsFix | null> => {
+      setRefreshing(true);
+      try {
+        const f = await oneShotFix(Location.Accuracy.Highest);
+        return f ?? fixRef.current;
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [oneShotFix]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -203,5 +215,5 @@ export function useGpsTracker() {
 
   const ageMs = fixRef.current ? Date.now() - fixRef.current.timestamp : null;
 
-  return { status, coords, accuracyM, ageMs, currentFix: fixRef.current, captureGps, refreshNow };
+  return { status, coords, accuracyM, ageMs, currentFix: fixRef.current, captureGps, refreshNow, refreshing };
 }

@@ -197,4 +197,77 @@ describe("useGpsTracker", () => {
     expect(fix!.accuracyM).toBe(4);
     await TestRenderer.act(async () => { tree.unmount(); });
   });
+
+  it("refreshNow requests Highest accuracy and flips refreshing on/off", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLocation(9, 9, 4);
+    const tree = await renderProbe();
+    let refreshingDuring: boolean | null = null;
+    const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+    const p = gpsRef.current!.refreshNow().then((fix) => {
+      refreshingDuring = gpsRef.current!.refreshing;
+      return fix;
+    });
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+      await flushAsync();
+      await p;
+    });
+    const refreshCall = spy.mock.calls.find(
+      (c) => c[0]?.accuracy === Location.Accuracy.Highest
+    );
+    expect(refreshCall).toBeDefined();
+    expect(refreshingDuring).toBe(false); // cleared by the time the promise settles
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("refreshNow adopts an acceptable fresh fix and clears refreshing", async () => {
+    __setPermissionStatus("granted");
+    __setMockLocation(7, 8, 12);
+    const tree = await renderProbe();
+    await TestRenderer.act(async () => {
+      const fix = (await gpsRef.current!.refreshNow())!;
+      expect(fix.latitude).toBe(7);
+      expect(fix.longitude).toBe(8);
+      expect(fix.accuracyM).toBe(12);
+    });
+    expect(gpsRef.current!.refreshing).toBe(false);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("refreshNow ignores an unacceptable fix and falls back to the last good fix", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(10, 20, 30, 1000); // seeds a fresh, acceptable, cached fix first
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|10,20");
+    __setMockLocation(5, 6, 99); // unacceptable accuracy
+    await TestRenderer.act(async () => {
+      const fix = await gpsRef.current!.refreshNow();
+      expect(fix).not.toBeNull();
+      expect(fix!.latitude).toBe(10);  // falls back to the last good fix
+      expect(fix!.longitude).toBe(20);
+    });
+    // the hook's accepted state must remain the last good fix
+    await TestRenderer.act(async () => { await flushAsync(); });
+    expect(rendered(tree)).toBe("fixed|10,20"); // not moved to 5,6
+    expect(gpsRef.current!.refreshing).toBe(false);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("background poll still requests Balanced accuracy", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 25, -60_000);
+    const tree = await renderProbe();
+    const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(10_000);
+      await flushAsync();
+    });
+    const opt = spy.mock.calls[0]?.[0] as { accuracy?: number } | undefined;
+    expect(opt?.accuracy).toBe(Location.Accuracy.Balanced);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
 });
