@@ -93,7 +93,7 @@ describe("buildReportTable", () => {
       .mockResolvedValueOnce(deviceDefs)
       .mockResolvedValueOnce([
         { InspectionID: 1, Status: "Completed" },
-        { InspectionID: 2, Status: "Draft" },
+        { InspectionID: 2, Status: "Completed" },
       ])
       .mockResolvedValueOnce([
         { InspectionID: 1, FieldID: 1, FieldValue: "P001" },
@@ -300,7 +300,7 @@ describe("buildReportTable", () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce(templateRows)
       .mockResolvedValueOnce(deviceDefs)
-      .mockResolvedValueOnce([{ InspectionID: 2, Status: "Draft" }])
+      .mockResolvedValueOnce([{ InspectionID: 2, Status: "Completed" }])
       .mockResolvedValueOnce([{ InspectionID: 2, FieldID: 1, FieldValue: "P002" }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
