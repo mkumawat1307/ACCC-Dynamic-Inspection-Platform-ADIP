@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
 import { isLocationFresh } from "@/src/utils/geo";
+import { logger } from "@/src/utils/logger";
 import {
   MAX_GPS_ACCURACY_M,
   GPS_STALE_MS,
@@ -113,6 +114,7 @@ export function useGpsTracker() {
 
   const refreshNow = useCallback(
     async (): Promise<GpsFix | null> => {
+      logger.info("[GPS] refreshNow called");
       setRefreshing(true);
       try {
         const f = await oneShotFix(Location.Accuracy.Highest);

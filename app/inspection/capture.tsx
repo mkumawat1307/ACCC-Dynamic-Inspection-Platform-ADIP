@@ -76,6 +76,7 @@ export default function CaptureScreen() {
   const captureTimesRef = useRef<number[]>([]);
   const focusAnim = useRef(new Animated.Value(0)).current;
   const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
+  const [focusLocked, setFocusLocked] = useState(false);
   // TODO: manual exposure — expo-camera 17 exposes no Android API for exposure control.
   // Blocked until expo-camera adds `exposureCompensation` / `setExposureCompensationAsync` on Android.
 
@@ -195,6 +196,7 @@ export default function CaptureScreen() {
 
   const handleCameraTouch = useCallback(
     (evt: { nativeEvent: { touches: { locationX: number; locationY: number }[] } }) => {
+      logger.info("[TAP] preview tapped");
       if (evt.nativeEvent.touches.length !== 1) return;
       const t = evt.nativeEvent.touches[0];
       const now = Date.now();
@@ -207,14 +209,19 @@ export default function CaptureScreen() {
       }
 
       setFocusRing({ x: t.locationX, y: t.locationY });
+      setFocusLocked(false);
       focusAnim.setValue(0);
       Animated.timing(focusAnim, {
         toValue: 1,
         duration: 600,
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished) setFocusRing(null);
+        if (finished) {
+          setFocusLocked(true);
+          setTimeout(() => setFocusRing(null), 500);
+        }
       });
+      logger.info("[GPS] tap refresh requested");
       gps.refreshNow();
     },
     [focusAnim, gps]
@@ -421,6 +428,7 @@ export default function CaptureScreen() {
                   left: focusRing.x - 25,
                   top: focusRing.y - 25,
                   opacity: focusAnim,
+                  borderColor: focusLocked ? "#2E7D32" : "#FFFFFF",
                   transform: [
                     {
                       scale: focusAnim.interpolate({
