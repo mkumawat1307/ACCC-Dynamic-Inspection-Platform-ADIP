@@ -49,20 +49,10 @@ export async function ensureTreeUri(): Promise<string> {
   return permission.directoryUri;
 }
 
-async function verifyDir(cacheKey: string): Promise<string | null> {
-  const uri = await AsyncStorage.getItem(cacheKey);
-  if (!uri) return null;
-  try {
-    await FileSystem.StorageAccessFramework.readDirectoryAsync(uri);
-    return uri;
-  } catch {
-    await AsyncStorage.removeItem(cacheKey);
-    return null;
-  }
-}
-
 function childName(uri: string): string {
-  return decodeURIComponent(uri.slice(uri.lastIndexOf("/") + 1));
+  const raw = uri.slice(uri.lastIndexOf("/") + 1);
+  const decoded = decodeURIComponent(raw);
+  return decoded.slice(decoded.lastIndexOf("/") + 1);
 }
 
 async function findChildDir(parentUri: string, name: string): Promise<string | null> {
@@ -73,65 +63,81 @@ async function findChildDir(parentUri: string, name: string): Promise<string | n
     return null;
   }
   for (const child of children) {
-    const leaf = childName(child);
-    if (leaf === name) {
+    if (childName(child) === name) {
       return child.startsWith(parentUri) ? child : `${parentUri}/${child}`;
     }
   }
   return null;
 }
 
-async function resolveChildDir(
-  parentUri: string,
-  name: string,
-  cacheKey: string
-): Promise<string> {
-  const cached = await verifyDir(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const existing = await findChildDir(parentUri, name);
-  if (existing) {
-    await AsyncStorage.setItem(cacheKey, existing);
-    return existing;
-  }
-
-  const created = await FileSystem.StorageAccessFramework.makeDirectoryAsync(parentUri, name);
-  await AsyncStorage.setItem(cacheKey, created);
-  return created;
+async function persistCache(cacheKey: string, uri: string): Promise<void> {
+  await AsyncStorage.setItem(cacheKey, uri);
+  logger.debug("[Folder] cache updated");
 }
 
 export async function resolveInspectionRootDir(treeUri: string): Promise<string> {
-  if (cachedAcccDir) {
-    logger.debug("[Perf] saf acccDirCacheHit");
-    return cachedAcccDir;
+  const cached = cachedAcccDir ?? (await AsyncStorage.getItem(ACCC_DIR_KEY));
+  if (cached) {
+    logger.debug("[Folder] cache hit, validating");
   }
 
-  const acccDir = await resolveChildDir(treeUri, "ACCC Inspection", ACCC_DIR_KEY);
-  cachedAcccDir = acccDir;
-  return acccDir;
+  const existing = await findChildDir(treeUri, "ACCC Inspection");
+  if (existing) {
+    if (cachedAcccDir !== existing) {
+      await persistCache(ACCC_DIR_KEY, existing);
+    }
+    cachedAcccDir = existing;
+    return existing;
+  }
+
+  if (cached) {
+    logger.debug("[Folder] inspection root missing, dropping stale cache");
+    AsyncStorage.removeItem(ACCC_DIR_KEY).catch(() => {});
+    cachedAcccDir = null;
+  }
+
+  logger.debug("[Folder] recreating inspection root");
+  const created = await FileSystem.StorageAccessFramework.makeDirectoryAsync(treeUri, "ACCC Inspection");
+  await persistCache(ACCC_DIR_KEY, created);
+  cachedAcccDir = created;
+  return created;
 }
 
 export async function getProjectDir(
   treeUri: string,
   projectLabel: string
 ): Promise<string> {
-  const cachedProjDir = cachedProjectDirs.get(projectLabel);
-  if (cachedProjDir) {
-    lastProjectDirCacheHit = true;
-    logger.debug("[Perf] saf projectDirCacheHit");
-    return cachedProjDir;
-  }
-  lastProjectDirCacheHit = false;
-
   const acccDir = await resolveInspectionRootDir(treeUri);
-
   const projDirKey = `proj_dir_${projectLabel}`;
-  const projDir = await resolveChildDir(acccDir, projectLabel, projDirKey);
 
-  cachedProjectDirs.set(projectLabel, projDir);
-  return projDir;
+  const cached = cachedProjectDirs.get(projectLabel) ?? (await AsyncStorage.getItem(projDirKey));
+  if (cached) {
+    logger.debug("[Folder] cache hit, validating");
+  }
+
+  const existing = await findChildDir(acccDir, projectLabel);
+  if (existing) {
+    logger.debug("[Folder] project folder exists");
+    await AsyncStorage.setItem(projDirKey, existing);
+    cachedProjectDirs.set(projectLabel, existing);
+    lastProjectDirCacheHit = true;
+    return existing;
+  }
+
+  if (cached) {
+    logger.debug("[Folder] project folder missing");
+    await AsyncStorage.removeItem(projDirKey).catch(() => {});
+    cachedProjectDirs.delete(projectLabel);
+    lastProjectDirCacheHit = false;
+  }
+
+  logger.debug("[Folder] recreating project folder");
+  const created = await FileSystem.StorageAccessFramework.makeDirectoryAsync(acccDir, projectLabel);
+  await AsyncStorage.setItem(projDirKey, created);
+  cachedProjectDirs.set(projectLabel, created);
+  logger.debug("[Folder] cache updated");
+  lastProjectDirCacheHit = false;
+  return created;
 }
 
 export async function writePhoto(
