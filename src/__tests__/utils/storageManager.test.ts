@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
 import { __resetFsState } from "expo-file-system/legacy";
 import {
   ensureTreeUri,
@@ -54,6 +55,22 @@ describe("resolveInspectionRootDir", () => {
     const second = await resolveInspectionRootDir(tree);
     expect(second).toBe(first);
   });
+
+  it("reuses an existing ACCC Inspection folder when the cache is lost", async () => {
+    const tree = await ensureTreeUri();
+    const created = await resolveInspectionRootDir(tree);
+    expect(created).toContain("ACCC Inspection");
+
+    await AsyncStorage.clear();
+    resetStorageCaches();
+
+    const makeSpy = jest.fn(FileSystem.StorageAccessFramework.makeDirectoryAsync);
+    FileSystem.StorageAccessFramework.makeDirectoryAsync = makeSpy as typeof FileSystem.StorageAccessFramework.makeDirectoryAsync;
+
+    const resolved = await resolveInspectionRootDir(tree);
+    expect(resolved).toBe(created);
+    expect(makeSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("getProjectDir", () => {
@@ -74,6 +91,21 @@ describe("getProjectDir", () => {
     __resetFsState();
     const second = await getProjectDir(tree, "New Delhi_Project Alpha");
     expect(second).toBe(first);
+  });
+
+  it("reuses an existing project dir when its cache is lost", async () => {
+    const tree = await ensureTreeUri();
+    const created = await getProjectDir(tree, "New Delhi_Project Alpha");
+
+    await AsyncStorage.clear();
+    resetStorageCaches();
+
+    const makeSpy = jest.fn(FileSystem.StorageAccessFramework.makeDirectoryAsync);
+    FileSystem.StorageAccessFramework.makeDirectoryAsync = makeSpy as typeof FileSystem.StorageAccessFramework.makeDirectoryAsync;
+
+    const resolved = await getProjectDir(tree, "New Delhi_Project Alpha");
+    expect(resolved).toBe(created);
+    expect(makeSpy).not.toHaveBeenCalled();
   });
 });
 

@@ -61,17 +61,54 @@ async function verifyDir(cacheKey: string): Promise<string | null> {
   }
 }
 
+function childName(uri: string): string {
+  return decodeURIComponent(uri.slice(uri.lastIndexOf("/") + 1));
+}
+
+async function findChildDir(parentUri: string, name: string): Promise<string | null> {
+  let children: string[];
+  try {
+    children = await FileSystem.StorageAccessFramework.readDirectoryAsync(parentUri);
+  } catch {
+    return null;
+  }
+  for (const child of children) {
+    const leaf = childName(child);
+    if (leaf === name) {
+      return child.startsWith(parentUri) ? child : `${parentUri}/${child}`;
+    }
+  }
+  return null;
+}
+
+async function resolveChildDir(
+  parentUri: string,
+  name: string,
+  cacheKey: string
+): Promise<string> {
+  const cached = await verifyDir(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const existing = await findChildDir(parentUri, name);
+  if (existing) {
+    await AsyncStorage.setItem(cacheKey, existing);
+    return existing;
+  }
+
+  const created = await FileSystem.StorageAccessFramework.makeDirectoryAsync(parentUri, name);
+  await AsyncStorage.setItem(cacheKey, created);
+  return created;
+}
+
 export async function resolveInspectionRootDir(treeUri: string): Promise<string> {
   if (cachedAcccDir) {
     logger.debug("[Perf] saf acccDirCacheHit");
     return cachedAcccDir;
   }
 
-  let acccDir = await verifyDir(ACCC_DIR_KEY);
-  if (!acccDir) {
-    acccDir = await FileSystem.StorageAccessFramework.makeDirectoryAsync(treeUri, "ACCC Inspection");
-    await AsyncStorage.setItem(ACCC_DIR_KEY, acccDir);
-  }
+  const acccDir = await resolveChildDir(treeUri, "ACCC Inspection", ACCC_DIR_KEY);
   cachedAcccDir = acccDir;
   return acccDir;
 }
@@ -91,11 +128,7 @@ export async function getProjectDir(
   const acccDir = await resolveInspectionRootDir(treeUri);
 
   const projDirKey = `proj_dir_${projectLabel}`;
-  let projDir = await verifyDir(projDirKey);
-  if (!projDir) {
-    projDir = await FileSystem.StorageAccessFramework.makeDirectoryAsync(acccDir, projectLabel);
-    await AsyncStorage.setItem(projDirKey, projDir);
-  }
+  const projDir = await resolveChildDir(acccDir, projectLabel, projDirKey);
 
   cachedProjectDirs.set(projectLabel, projDir);
   return projDir;
