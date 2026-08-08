@@ -33,7 +33,7 @@ class WatermarkEncoderModule(reactContext: ReactApplicationContext) :
             promise.reject("E_INVALID_ARGS", "Invalid encode args: ${width}x${height} q=$quality")
             return
         }
-        val outputFile = File(outputPath)
+        val outputFile = resolveFile(outputPath)
         Thread {
             var bitmap: Bitmap? = null
             try {
@@ -89,7 +89,7 @@ class WatermarkEncoderModule(reactContext: ReactApplicationContext) :
             )
             return
         }
-        val outputFile = File(outputPath)
+        val outputFile = resolveFile(outputPath)
         Thread {
             var source: Bitmap? = null
             var overlay: Bitmap? = null
@@ -151,7 +151,9 @@ class WatermarkEncoderModule(reactContext: ReactApplicationContext) :
     }
 
     private fun resolveFile(path: String): File {
-        val cleaned = path.removePrefix("file://")
+        var cleaned = path
+        if (cleaned.startsWith("file://")) cleaned = cleaned.removePrefix("file://")
+        else if (cleaned.startsWith("file:/")) cleaned = cleaned.removePrefix("file:")
         return File(cleaned)
     }
 

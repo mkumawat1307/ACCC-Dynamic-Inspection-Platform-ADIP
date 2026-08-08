@@ -254,7 +254,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   }
 
   function downshiftStage(job: WatermarkJob): WatermarkStage | null {
-    if (job.stage === "overlay") return "rgba";
+    if (job.stage === "overlay") return "toblob";
     if (job.stage === "rgba") return "toblob";
     return null;
   }
@@ -283,7 +283,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
             `[Watermark:overlay] photo=${job.photoId} imageSizeFailed reason=${watermarkFallbackReason(error)}`
           );
         }
-        scheduleStage(job, "rgba");
+        scheduleStage(job, "toblob");
         return;
       }
     }
@@ -311,7 +311,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
             `[Watermark:fallback] photo=${job.photoId} stage=overlay reason=${watermarkFallbackReason(error)}`
           );
         }
-        scheduleStage(job, "rgba");
+        scheduleStage(job, "toblob");
       });
       return;
     }
@@ -514,7 +514,7 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
               `[Watermark:overlay] photo=${photoId} measureOk but render failed reason=${watermarkFallbackReason(error)}`
             );
           }
-          scheduleStage(job, "rgba");
+          scheduleStage(job, "toblob");
         }
         return;
       }
@@ -531,6 +531,7 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
         const wrapped = { ...data, overlay: data.overlay } as typeof data & { overlay: string };
         (async () => {
           const outputPath = `${job.inputPath}.wm.jpg`;
+          const tOverlayStage = perfNow();
           try {
             const saveStartMs = perfNow();
             const tEnc = perfNow();
@@ -543,6 +544,9 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
               outputPath
             );
             if (__DEV__) {
+              logger.debug(
+                `[Watermark:overlay] photo=${photoId} success totalMs=${(perfNow() - tOverlayStage).toFixed(1)}`
+              );
               logger.debug(
                 `[Watermark:encode] photo=${photoId} overlayCompositeMs=${(perfNow() - tEnc).toFixed(1)}`
               );
@@ -568,11 +572,11 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
                 `[Watermark:fallback] photo=${photoId} stage=overlay reason=${watermarkFallbackReason(error)}`
               );
             }
-            logger.warn("[Watermark] overlay composite failed, falling back to RGBA encode:", error);
+            logger.warn("[Watermark] overlay composite failed, falling back to toBlob:", error);
             try {
               await FileSystem.deleteAsync(outputPath, { idempotent: true });
             } catch {}
-            scheduleStage(job, "rgba");
+            scheduleStage(job, "toblob");
           }
         })();
         return;
@@ -691,13 +695,13 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
     fileName: string,
     lines: string[],
     style?: WatermarkStyleConfig,
-    useNativeOverride?: boolean
+    useNativeOverride?: boolean | "rgba"
   ) {
     let stage: WatermarkStage;
-    if (useNativeOverride === false) stage = "toblob";
+    if (useNativeOverride === "rgba") stage = "rgba";
+    else if (useNativeOverride === false) stage = "toblob";
     else if (useNativeOverride === true) stage = "overlay";
     else if (hasNativeWatermarkEncoder() && hasNativeOverlayEncoder()) stage = "overlay";
-    else if (hasNativeWatermarkEncoder()) stage = "rgba";
     else stage = "toblob";
 
     const job: WatermarkJob = {

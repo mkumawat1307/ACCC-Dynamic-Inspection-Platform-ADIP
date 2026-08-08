@@ -278,7 +278,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
 
     TestRenderer.act(() => {
-      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"], undefined, "rgba");
     });
     await TestRenderer.act(async () => {
       await jest.advanceTimersByTimeAsync(100);
@@ -323,7 +323,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     );
 
     TestRenderer.act(() => {
-      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"], undefined, "rgba");
     });
     TestRenderer.act(() => {
       result.current.handleWebViewMessage({
@@ -441,7 +441,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
 
     TestRenderer.act(() => {
-      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"], undefined, "rgba");
     });
     TestRenderer.act(() => {
       result.current.handleWebViewMessage({
@@ -691,7 +691,70 @@ describe("useWatermarkProcessor overlay encoder stage", () => {
     unmount();
   });
 
-  it("falls back to RGBA when the overlay composite is unavailable or errors", async () => {
+  it("logs [Watermark:overlay] success with total render-to-save duration", async () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    mockOverlayHappyPath();
+    mockSaveChain();
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, maxTextWidth: 300 }) },
+      });
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            overlay: "PNG_B64",
+            overlayX: 88,
+            overlayY: 1843,
+            overlayWidth: 550,
+            overlayHeight: 1036,
+          }),
+        },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    const overlayLine = lines.find(l => l.includes("[Watermark:overlay] photo=1 success totalMs="));
+    expect(overlayLine).toBeDefined();
+    expect(overlayLine).toMatch(/totalMs=\d+\.\d/);
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    logSpy.mockRestore();
+    unmount();
+  });
+
+  it("falls back directly to toBlob when the overlay composite is unavailable or errors", async () => {
     mockOverlayHappyPath();
     // hasNativeOverlayEncoder returns true but the composite rejects like a missing native overlay.
     (encodeWatermarkOverlay as jest.Mock).mockRejectedValue(
@@ -725,7 +788,7 @@ describe("useWatermarkProcessor overlay encoder stage", () => {
         nativeEvent: { data: JSON.stringify({ photoId: 1, maxTextWidth: 300 }) },
       });
     });
-    // Composite fails → scheduleStage(rgba) → new nativeEncode=true render script.
+    // Composite fails → scheduleStage(toblob) directly, no RGBA transfer.
     TestRenderer.act(() => {
       result.current.handleWebViewMessage({
         nativeEvent: {
@@ -754,10 +817,11 @@ describe("useWatermarkProcessor overlay encoder stage", () => {
     });
 
     expect(encodeWatermarkOverlay).toHaveBeenCalledTimes(1);
+    expect(encodeWatermarkJpeg).not.toHaveBeenCalled();
     expect(injectJavaScript.mock.calls.length).toBeGreaterThanOrEqual(3);
     const retryScript = injectJavaScript.mock.calls[injectJavaScript.mock.calls.length - 1][0] as string;
     expect(retryScript).toContain("window.renderWatermarkFromJson(");
-    expect(retryScript).toContain('"nativeEncode":true');
+    expect(retryScript).not.toContain('"nativeEncode":true');
 
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 150));
