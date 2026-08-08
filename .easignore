@@ -18,8 +18,12 @@
 #   eas.json          - EAS build profile configuration.
 #   metro.config.js   - Metro bundler config.
 #   tsconfig.json     - TS compiler config (bundler/type resolution).
-#   .npmrc            - registry / save flags used during install.
 #   expo-env.d.ts     - Expo env types; small, harmless to include.
+#
+# EXCLUDED (NOT needed for the APK build):
+#   README.md / RELEASE_NOTES_v1.1.md  - docs, not bundled.
+#   .npmrc                             - only sets save-exact=true (no
+#                                        registry/auth), so not needed here.
 
 # VCS
 .git/
@@ -36,6 +40,8 @@ node_modules/
 # Documentation, plans, and decisions — not needed to build
 docs/
 ADR/
+README.md
+RELEASE_NOTES_v1.1.md
 
 # Tests and test config — not bundled into the APK
 __tests__/
@@ -105,6 +111,8 @@ Thumbs.db
 
 # ESLint local config — dev-only
 eslint.config.js
+# No registry/auth — plain save-exact flag
+.npmrc
 
 # Secrets MUST stay out of the archive
 *.jks
