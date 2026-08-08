@@ -423,6 +423,10 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
       const treeUri = await ensureTreeUri();
       const projectDir = await getProjectDir(treeUri, label);
       const contentUri = await writePhoto(projectDir, job.fileName, base64);
+      if (__DEV__) {
+        logger.debug(`[Watermark:save] photo=${job.photoId} writing=${contentUri}`);
+        logger.debug(`[Watermark:save] photo=${job.photoId} original=${job.inputPath}`);
+      }
       if (perfRef.current) perfStage(perfRef.current, "safWrite");
       const safWriteMs = perfNow() - tSave;
       const saf = getSafCacheState();
@@ -531,6 +535,9 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
         const wrapped = { ...data, overlay: data.overlay } as typeof data & { overlay: string };
         (async () => {
           const outputPath = `${job.inputPath}.wm.jpg`;
+          if (__DEV__) {
+            logger.debug(`[Watermark:overlay] photo=${photoId} output=${outputPath}`);
+          }
           const tOverlayStage = perfNow();
           try {
             const saveStartMs = perfNow();
