@@ -75,6 +75,8 @@ export interface CounterTypeConfig {
   buildTimeClause: (alias: string) => { clause: string; params: (string | number)[] };
 }
 
+export const DRAFT_EXCLUDED_STATUS_SQL = "i.Status != 'Draft'";
+
 export const COUNTER_TYPES: Record<string, CounterTypeConfig> = {
   total: {
     key: "total",
@@ -137,6 +139,7 @@ export class StatisticCountService {
        FROM ${entity.table} ${entity.alias}
        ${entity.joins}
        WHERE ${entity.projectClause}
+       AND ${DRAFT_EXCLUDED_STATUS_SQL}
        ${time.clause}
        ${filterFragments.join(" ")}`;
 
@@ -186,6 +189,7 @@ export class StatisticCountService {
          JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
          JOIN InspectionFields f ON f.FieldID = iv.FieldID
          WHERE i.ProjectID = ?
+         AND ${DRAFT_EXCLUDED_STATUS_SQL}
          ${time.clause}
          ${filterFragments.join(" ")}
          AND f.FieldKey = ?
@@ -220,6 +224,7 @@ export class StatisticCountService {
          JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
          JOIN InspectionFields f ON f.FieldID = iv.FieldID
          WHERE i.ProjectID = ?
+         AND ${DRAFT_EXCLUDED_STATUS_SQL}
          ${time.clause}
          AND f.FieldKey = ?
          AND f.IsActive = 1`;
@@ -251,6 +256,7 @@ export class StatisticCountService {
          JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
          JOIN InspectionFields f ON f.FieldID = iv.FieldID
          WHERE i.ProjectID = ?
+         AND ${DRAFT_EXCLUDED_STATUS_SQL}
          ${time.clause}
          AND f.FieldKey = ?
          AND f.IsActive = 1
@@ -295,6 +301,7 @@ export class StatisticCountService {
          JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
          JOIN InspectionFields f ON f.FieldID = iv.FieldID
          WHERE i.ProjectID = ?
+         AND ${DRAFT_EXCLUDED_STATUS_SQL}
          ${time.clause}
          ${filterFragments.join(" ")}
          AND f.FieldKey = ?
@@ -333,6 +340,7 @@ export class StatisticCountService {
            FROM DeviceRecords r
            JOIN Inspections i ON r.InspectionID = i.InspectionID
            WHERE i.ProjectID = ? AND r.IsActive = 1
+           AND ${DRAFT_EXCLUDED_STATUS_SQL}
            ${time.clause}
            AND r.DeviceType = ?
            AND ${jsonExpr} IS NOT NULL AND ${jsonExpr} != ''
@@ -360,6 +368,7 @@ export class StatisticCountService {
          FROM ${entity.table} ${entity.alias}
          ${entity.joins}
          WHERE ${entity.projectClause}
+         AND ${DRAFT_EXCLUDED_STATUS_SQL}
          ${time.clause}
          AND ${entity.alias}.${column} IS NOT NULL AND ${entity.alias}.${column} != ''
          GROUP BY ${entity.alias}.${column}

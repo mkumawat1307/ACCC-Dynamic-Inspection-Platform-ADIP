@@ -34,7 +34,7 @@ function resetState() {
 
 const SQL_COMMANDS = {
   INSERT: /^\s*INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)\s*;?\s*$/i,
-  SELECT: /^\s*SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+))?(?:\s+OFFSET\s+(\d+))?;?\s*$/i,
+  SELECT: /^\s*SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)(?:\s+AS\s+\w+|\s+\w+)?(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+?))?(?:\s+LIMIT\s+(\d+))?(?:\s+OFFSET\s+(\d+))?;?\s*$/i,
   UPDATE: /^\s*UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+?))?;?\s*$/i,
   DELETE: /^\s*DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?;?\s*$/i,
   PRAGMA: /^\s*PRAGMA\s/i,
@@ -47,23 +47,27 @@ function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boole
   const conditions = whereClause.split(/\s+AND\s+/i);
   let paramIdx = 0;
   const compiled = conditions.map((cond) => {
-    const match = cond.match(/(\w+)\s*=\s*(?:\?|'([^']*)'|(\d+))/);
+    const match = cond.match(/(?:\w+\.)?(\w+)\s*(!=|<>|=)\s*(?:\?|'([^']*)'|(\d+))/);
     if (!match) return null;
     const col = match[1];
+    const op = match[2];
     let value: unknown;
-    if (match[2] !== undefined) {
-      value = match[2];
-    } else if (match[3] !== undefined) {
-      value = parseInt(match[3], 10);
+    if (match[3] !== undefined) {
+      value = match[3];
+    } else if (match[4] !== undefined) {
+      value = parseInt(match[4], 10);
     } else {
       value = params[paramIdx++];
     }
-    return { col, value };
+    return { col, op, value };
   });
   return (row: Row) => {
     return compiled.every((cond) => {
       if (!cond) return true;
-      return row[cond.col] === cond.value;
+      const actual = row[cond.col];
+      if (cond.op === "!=") return actual !== cond.value;
+      if (cond.op === ">=") return (actual as number) >= (cond.value as number);
+      return actual === cond.value;
     });
   };
 }
@@ -215,6 +219,18 @@ class MockDatabase {
 
       if (limitClause) {
         results = results.slice(0, limitClause);
+      }
+
+      const aggregateCol = cols.find((c) => /COUNT\(|SUM\(/.test(c));
+      if (aggregateCol) {
+        const aliasMatch = aggregateCol.match(/AS\s+(\w+)/i);
+        const alias = aliasMatch ? aliasMatch[1] : "count";
+        const distinctMatch = aggregateCol.match(/COUNT\(\s*DISTINCT\s+(\w+)\s*\)/i);
+        const countValue = distinctMatch
+          ? new Set(results.map((r) => r[distinctMatch[1]])).size
+          : results.length;
+        const projected: Row = { [alias]: countValue };
+        return [projected] as T[];
       }
 
       return results.map((row) => {
