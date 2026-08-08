@@ -1,49 +1,91 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
+# Dependencies — reinstalled on the EAS server / by yarn
 node_modules/
 
-# Expo
+# Expo local state (not source of truth, regenerated)
 .expo/
-.metro-cache/
+.expo-shared/
+.expo/types/
 dist/
 web-build/
 expo-env.d.ts
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-android/keystore.properties
-android/app/release.keystore
-
 # Metro
+.metro-cache/
 .metro-health-check*
 
-# debug
+# Documentation, plans, and decisions
+docs/
+ADR/
+
+# Tests and test config
+__tests__/
+__mocks__/
+jest.config.js
+jest.setup.ts
+coverage/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+*.test-results.xml
+
+# Native build outputs (source under android/ is tracked)
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/app/.cxx/
+ios/build/
+ios/Pods/
+
+# Build output / dist artifacts
+*.apk
+*.aab
+
+# Caches and temporary files
+.cache/
+.turbo/
+.tmp/
+tmp/
+temp/
+.temp/
+%TEMP%/
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
-.DS_Store
-*.pem
+# Media and archive downloads — not in source control
+*.mp4
+*.mov
+*.avi
+*.zip
+*.tar.gz
+*.tar
+*.gz
 
-# local env files
+# Secrets MUST stay out of the repository
+*.jks
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+*.orig.*
+android/keystore.properties
+android/app/release.keystore
+
+# Local env files
 .env*.local
 
-# typescript
+# TypeScript incremental build cache
 *.tsbuildinfo
 
-# test coverage
-coverage/
-
-app-example
+# Editor / OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
 # Expo typegen output junk
-%TEMP%/
-
+app-example

@@ -1,6 +1,25 @@
 # EAS Build archive exclusions
 # EAS uses ONLY this file when it exists (gitignore is not consulted),
-# so the secret-file exclusions are duplicated here from .gitignore.
+# so secret-file exclusions are duplicated here from .gitignore.
+#
+# KEEP (required for the Android APK build — do not remove):
+#   android/          - bare native Android project. MUST stay: the custom
+#                       WatermarkEncoderModule (WatermarkEncoderModule.kt) is
+#                       registered in MainApplication.kt and compiled into the
+#                       APK from this folder. Excluding it would silently drop
+#                       the native overlay composite and break watermarking.
+#   assets/           - app icons, splash, fonts bundled into the APK.
+#   src/, app/        - the JS/TS source that Metro bundles.
+#   scripts/          - preinstall guard (cmd-guard.js) runs on `yarn install`
+#                       on the EAS build server via the `preinstall` hook.
+#   package.json      - dependency manifest + `preinstall` hook target.
+#   yarn.lock         - dependency resolution for the EAS install step.
+#   app.json          - expo + android config (package name, icons, version).
+#   eas.json          - EAS build profile configuration.
+#   metro.config.js   - Metro bundler config.
+#   tsconfig.json     - TS compiler config (bundler/type resolution).
+#   .npmrc            - registry / save flags used during install.
+#   expo-env.d.ts     - Expo env types; small, harmless to include.
 
 # VCS
 .git/
@@ -9,32 +28,47 @@
 # Dependencies — reinstalled on the EAS server
 node_modules/
 
-# Expo
+# Expo local state
 .expo/
+.expo-shared/
 .metro-cache/
-expo-env.d.ts
 
-# Native build outputs (Android/iOS source under android/, ios/ is kept)
-android/app/build/
+# Documentation, plans, and decisions — not needed to build
+docs/
+ADR/
+
+# Tests and test config — not bundled into the APK
+__tests__/
+__mocks__/
+jest.config.js
+jest.setup.ts
+coverage/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+*.test-results.xml
+
+# Native build outputs (Android/iOS SOURCE under android/, ios/ is kept)
 android/build/
+android/app/build/
 android/.gradle/
 android/.kotlin/
 android/app/.cxx/
 ios/build/
 ios/Pods/
 
-# Build / web outputs
+# Build output / dist artifacts
 dist/
-
-# Tests and coverage
-coverage/
-*.test-results.xml
+*.apk
+*.aab
 
 # Caches and temporary files
 .cache/
 .turbo/
 .tmp/
 tmp/
+temp/
 .temp/
 %TEMP%/
 *.log
@@ -42,9 +76,19 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 
+# Media and archive downloads — never bundled
+*.mp4
+*.mov
+*.avi
+*.zip
+*.tar.gz
+*.tar
+*.gz
+
 # Local tooling state
 .superpowers/
 .kilo/
+scripts/__pycache__/
 
 # Screenshots and recordings
 screenshots/
@@ -54,9 +98,13 @@ recordings/
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# ESLint local config — dev-only
+eslint.config.js
 
 # Secrets MUST stay out of the archive
 *.jks
