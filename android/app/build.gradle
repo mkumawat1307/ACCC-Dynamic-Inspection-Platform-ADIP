@@ -141,6 +141,12 @@ android {
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def fileName = "ACCC-Dynamic-Inspection-Platform-${variant.versionName}-${variant.buildType.name}.apk"
+            outputFileName = fileName
+        }
+    }
 }
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
