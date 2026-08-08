@@ -7,6 +7,16 @@ export interface WatermarkOverlayTimings {
   decodeOverlayMs?: number;
   compositeMs?: number;
   jpegEncodeMs?: number;
+
+  /** DEV-only composite diagnostics (present when the native build is a debug build). */
+  overlayWidth?: number;
+  overlayHeight?: number;
+  overlayAlphaNonZero?: boolean;
+  compositeApplied?: boolean;
+  drawX?: number;
+  drawY?: number;
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 export interface WatermarkEncoderNative {

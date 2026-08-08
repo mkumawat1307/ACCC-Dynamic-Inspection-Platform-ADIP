@@ -120,7 +120,7 @@ class WatermarkEncoderModule(reactContext: ReactApplicationContext) :
                 canvas.drawBitmap(overlay, ox.toFloat(), oy.toFloat(), null)
                 timing?.stage("composite", tComposite)
                 outputFile.parentFile?.mkdirs()
-                val tEncode = timing?.mark()
+                val tEnc = timing?.mark()
                 val stream = FileOutputStream(outputFile)
                 try {
                     val ok = composited.compress(Bitmap.CompressFormat.JPEG, quality, stream)
@@ -132,9 +132,18 @@ class WatermarkEncoderModule(reactContext: ReactApplicationContext) :
                 } finally {
                     stream.close()
                 }
-                timing?.stage("jpegEncode", tEncode)
+                timing?.stage("jpegEncode", tEnc)
                 if (timing != null) {
-                    promise.resolve(timing.build())
+                    val map = timing.build()
+                    map.putDouble("sourceWidth", source.width.toDouble())
+                    map.putDouble("sourceHeight", source.height.toDouble())
+                    map.putDouble("drawX", ox.toDouble())
+                    map.putDouble("drawY", oy.toDouble())
+                    map.putDouble("overlayWidth", overlay.width.toDouble())
+                    map.putDouble("overlayHeight", overlay.height.toDouble())
+                    map.putBoolean("overlayAlphaNonZero", overlayHasAlpha(overlay))
+                    map.putBoolean("compositeApplied", compositeChangedPixels(source, composited, ox, oy, overlay.width, overlay.height))
+                    promise.resolve(map)
                 } else {
                     promise.resolve(true)
                 }
@@ -155,6 +164,43 @@ class WatermarkEncoderModule(reactContext: ReactApplicationContext) :
         if (cleaned.startsWith("file://")) cleaned = cleaned.removePrefix("file://")
         else if (cleaned.startsWith("file:/")) cleaned = cleaned.removePrefix("file:")
         return File(cleaned)
+    }
+
+    private fun overlayHasAlpha(overlay: Bitmap): Boolean {
+        val w = overlay.width
+        val h = overlay.height
+        if (w <= 0 || h <= 0) return false
+        val pixels = IntArray(w * h)
+        overlay.getPixels(pixels, 0, w, 0, 0, w, h)
+        for (pixel in pixels) {
+            if (pixel ushr 24 and 0xFF > 0) return true
+        }
+        return false
+    }
+
+    private fun compositeChangedPixels(
+        source: Bitmap,
+        composited: Bitmap,
+        ox: Int,
+        oy: Int,
+        overlayWidth: Int,
+        overlayHeight: Int
+    ): Boolean {
+        val right = (ox + overlayWidth).coerceAtMost(source.width)
+        val bottom = (oy + overlayHeight).coerceAtMost(source.height)
+        if (right <= ox || bottom <= oy) return false
+        val stepX = ((right - ox) / 64).coerceAtLeast(1)
+        val stepY = ((bottom - oy) / 64).coerceAtLeast(1)
+        var x = ox
+        while (x < right) {
+            var y = oy
+            while (y < bottom) {
+                if (source.getPixel(x, y) != composited.getPixel(x, y)) return true
+                y += stepY
+            }
+            x += stepX
+        }
+        return false
     }
 
     private class TimingCollector {

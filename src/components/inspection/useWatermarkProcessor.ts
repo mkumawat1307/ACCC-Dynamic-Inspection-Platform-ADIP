@@ -547,6 +547,17 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
               logger.debug(
                 `[Watermark:overlay] photo=${photoId} success totalMs=${(perfNow() - tOverlayStage).toFixed(1)}`
               );
+              if (typeof nativeTimings === "object" && nativeTimings !== null) {
+                const nt = nativeTimings as WatermarkOverlayTimings;
+                logger.debug(
+                  `[Watermark:overlay] photo=${photoId} position=x=${nt.drawX ?? "n/a"},y=${nt.drawY ?? "n/a"} ` +
+                    `size=${nt.overlayWidth ?? "n/a"}x${nt.overlayHeight ?? "n/a"} ` +
+                    `src=${nt.sourceWidth ?? "n/a"}x${nt.sourceHeight ?? "n/a"}`
+                );
+                logger.debug(
+                  `[Watermark:overlay] photo=${photoId} alphaNonZero=${nt.overlayAlphaNonZero} compositeApplied=${nt.compositeApplied}`
+                );
+              }
               logger.debug(
                 `[Watermark:encode] photo=${photoId} overlayCompositeMs=${(perfNow() - tEnc).toFixed(1)}`
               );

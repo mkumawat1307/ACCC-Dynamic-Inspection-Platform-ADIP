@@ -754,6 +754,168 @@ describe("useWatermarkProcessor overlay encoder stage", () => {
     unmount();
   });
 
+  it("logs overlay composite diagnostics from the native build (position, size, alpha, applied)", async () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    mockOverlayHappyPath();
+    mockSaveChain();
+    // Debug native build returns composite diagnostics alongside per-stage timings.
+    (encodeWatermarkOverlay as jest.Mock).mockResolvedValue({
+      decodeOriginalMs: 220.5,
+      decodeOverlayMs: 8.2,
+      compositeMs: 12.4,
+      jpegEncodeMs: 410.1,
+      sourceWidth: 4000,
+      sourceHeight: 3000,
+      drawX: 88,
+      drawY: 1843,
+      overlayWidth: 550,
+      overlayHeight: 1036,
+      overlayAlphaNonZero: true,
+      compositeApplied: true,
+    });
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, maxTextWidth: 300 }) },
+      });
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            overlay: "PNG_B64",
+            overlayX: 88,
+            overlayY: 1843,
+            overlayWidth: 550,
+            overlayHeight: 1036,
+          }),
+        },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    const overlayLines = lines.filter(l => l.includes("[Watermark:overlay] photo=1 "));
+    const positionLine = overlayLines.find(l => l.includes("position=x="));
+    expect(positionLine).toBeDefined();
+    expect(positionLine as string).toContain("x=88,y=1843");
+    expect(positionLine as string).toContain("size=550x1036");
+    expect(positionLine as string).toContain("src=4000x3000");
+    const appliedLine = overlayLines.find(l => l.includes("alphaNonZero="));
+    expect(appliedLine).toBeDefined();
+    expect(appliedLine as string).toContain("alphaNonZero=true compositeApplied=true");
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    logSpy.mockRestore();
+    unmount();
+  });
+
+  it("logs overlay composite diagnostics when the native build reports a no-op composite", async () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    mockOverlayHappyPath();
+    mockSaveChain();
+    // A fully-transparent overlay produces alphaNonZero=false and compositeApplied=false.
+    (encodeWatermarkOverlay as jest.Mock).mockResolvedValue({
+      decodeOriginalMs: 205.1,
+      decodeOverlayMs: 7.0,
+      compositeMs: 10.9,
+      jpegEncodeMs: 402.3,
+      sourceWidth: 4000,
+      sourceHeight: 3000,
+      drawX: 88,
+      drawY: 1843,
+      overlayWidth: 550,
+      overlayHeight: 1036,
+      overlayAlphaNonZero: false,
+      compositeApplied: false,
+    });
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, maxTextWidth: 300 }) },
+      });
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            overlay: "PNG_B64",
+            overlayX: 88,
+            overlayY: 1843,
+            overlayWidth: 550,
+            overlayHeight: 1036,
+          }),
+        },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    const appliedLine = lines.find(l => l.includes("[Watermark:overlay] photo=1 alphaNonZero="));
+    expect(appliedLine).toBeDefined();
+    expect(appliedLine as string).toContain("alphaNonZero=false compositeApplied=false");
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    logSpy.mockRestore();
+    unmount();
+  });
+
   it("falls back directly to toBlob when the overlay composite is unavailable or errors", async () => {
     mockOverlayHappyPath();
     // hasNativeOverlayEncoder returns true but the composite rejects like a missing native overlay.
