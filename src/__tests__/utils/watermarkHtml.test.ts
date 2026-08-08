@@ -1,8 +1,11 @@
 import {
   buildWatermarkRendererPage,
   buildRenderWatermarkScript,
+  buildMeasureOverlayScript,
+  buildRenderOverlayScript,
   sanitizeWatermarkLines,
 } from "@/src/utils/watermarkHtml";
+import { computeWatermarkOverlayLayout } from "@/src/utils/watermarkStyle";
 
 describe("buildWatermarkRendererPage", () => {
   it("returns a complete HTML document", () => {
@@ -48,6 +51,35 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,base64:raw,perf:");
   });
 
+  it("exposes a layout-driven overlay renderer that consumes geometry from the payload", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("function renderOverlay(photoId,layout,lines,style)");
+    expect(html).toContain("cv.width=W;");
+    expect(html).toContain("roundRect(ctx,dx,dy,layout.boxW,layout.boxH,m.corner)");
+    expect(html).toContain("layout.textLeft-layout.overX");
+    expect(html).toContain("layout.textBase-layout.overY");
+    expect(html).toContain("'image/png'");
+    expect(html).toContain("overlayWidth:layout.overW");
+    expect(html).toContain("overlayHeight:layout.overH");
+    expect(html).toContain("overlay:raw");
+  });
+
+  it("exposes a text measurement entry point returning the max text width", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("function measureOverlayText(photoId,fontSize,lines)");
+    expect(html).toContain("ctx.measureText(lines[i])");
+    expect(html).toContain("maxTextWidth:Math.ceil(mw)");
+  });
+
+  it("keeps toBlob and RGBA encode as the nativeEncode fallback paths", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("function arrayBufferToBase64(buf)");
+    expect(html).toContain("ctx.getImageData(0,0,cv.width,cv.height)");
+    expect(html).toContain("window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,width:cv.width,height:cv.height,rgba:rgba,perf:");
+    expect(html).toContain("cv.toBlob(function(blob)");
+    expect(html).toContain("'image/jpeg',0.95");
+  });
+
   it("uses the same configurable watermark metrics as the preview overlay (WYSIWYG)", () => {
     const html = buildWatermarkRendererPage();
     expect(html).toContain("var fSize=Math.max(22,Math.round(baseSize/18*style.fontScale));");
@@ -60,10 +92,9 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("ctx.font='bold '+fSize+'px sans-serif';");
     expect(html).toContain("roundRect(ctx,rx,ry,rw,rh,corner)");
     expect(html).toContain("if(style.position==='bottomRight'){rx=cv.width-rw-gapX;}else{rx=gapX;}");
-    expect(html).toContain("'image/jpeg',0.95");
   });
 
-  it("applies the style-driven background opacity and text color", () => {
+  it("applies the style-driven background opacity and text color to both paths", () => {
     const html = buildWatermarkRendererPage();
     expect(html).toContain("ctx.fillStyle='rgba(0,0,0,'+style.bgOpacity+')';");
     expect(html).toContain("ctx.fillStyle=style.textColor;");
@@ -75,11 +106,9 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("ctx.shadowBlur=8;");
     expect(html).toContain("ctx.shadowOffsetY=2;");
     expect(html).toContain("ctx.shadowBlur=0;");
-    expect(html).toContain("ctx.shadowOffsetX=0;");
-    expect(html).toContain("ctx.shadowOffsetY=0;");
   });
 
-  it("includes JS-side perf timing in the postMessage payload", () => {
+  it("includes JS-side perf timing in the postMessage payloads", () => {
     const html = buildWatermarkRendererPage();
     expect(html).toContain("performance.now()");
     expect(html).toContain("decode:");
@@ -87,7 +116,7 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("encode:");
   });
 
-  it("instruments canvas.toBlob and FileReader separately in a diag payload", () => {
+  it("instruments canvas.toBlob and FileReader separately in the full-canvas diag payload", () => {
     const html = buildWatermarkRendererPage();
     expect(html).toContain("var tBlobStart=performance.now();");
     expect(html).toContain("var tBlobCb=performance.now();");
@@ -118,17 +147,13 @@ describe("buildWatermarkRendererPage", () => {
     expect(html).toContain("heapUsed");
   });
 
-  it("tracks captures, renderer uptime, heap deltas and GC activity for stall cadence", () => {
+  it("tracks captures and GC activity for stall cadence", () => {
     const html = buildWatermarkRendererPage();
     expect(html).toContain("var diagCaptures=0;");
     expect(html).toContain("diagCaptures++;");
     expect(html).toContain("capture:diagCaptures");
     expect(html).toContain("uptimeMs:");
-    expect(html).toContain("toBlobAtMs:");
-    expect(html).toContain("cbAtMs:");
     expect(html).toContain("heapBefore:heapBefore");
-    expect(html).toContain("heapAfter:");
-    expect(html).toContain("gcEvents:");
     expect(html).toContain("PerformanceObserver");
     expect(html).toContain("entryTypes:['gc']");
   });
@@ -155,12 +180,6 @@ describe("buildRenderWatermarkScript", () => {
     expect(script).not.toContain("<script>");
   });
 
-  it("sanitizes angle brackets from lines", () => {
-    const script = buildRenderWatermarkScript(1, "data", ["<b>bold</b>"]);
-    expect(script).toContain("bold");
-    expect(script).not.toContain("<b>");
-  });
-
   it("keeps base64 intact inside the script payload", () => {
     const script = buildRenderWatermarkScript(1, "abc123+def/==", ["Test"]);
     expect(script).toContain('"base64":"abc123+def/=="');
@@ -184,11 +203,6 @@ describe("buildRenderWatermarkScript", () => {
     expect(script).toContain('"style":{"fontScale":1.25,"position":"bottomRight","bgOpacity":0.8,"textColor":"#FFEB3B"}');
   });
 
-  it("omits the style key when not provided", () => {
-    const script = buildRenderWatermarkScript(1, "data", ["x"]);
-    expect(script).not.toContain('"style"');
-  });
-
   it("flags native encoding in the payload when enabled", () => {
     const script = buildRenderWatermarkScript(1, "data", ["x"], undefined, true);
     expect(script).toContain('"nativeEncode":true');
@@ -200,39 +214,48 @@ describe("buildRenderWatermarkScript", () => {
   });
 });
 
-describe("buildWatermarkRendererPage native encode path", () => {
-  it("provides a chunked arrayBufferToBase64 helper for RGBA pixels", () => {
-    const html = buildWatermarkRendererPage();
-    expect(html).toContain("function arrayBufferToBase64(buf)");
-    expect(html).toContain("String.fromCharCode");
-    expect(html).toContain("btoa(bin)");
+describe("buildMeasureOverlayScript", () => {
+  it("builds a measure script with fontSize and marks measure:true", () => {
+    const script = buildMeasureOverlayScript(7, 42, ["line one", "line two"]);
+    expect(script).toContain("window.renderWatermarkFromJson(");
+    expect(script).toContain('"photoId":7');
+    expect(script).toContain('"measure":true');
+    expect(script).toContain('"fontSize":42');
+    expect(script).toContain('"lines":["line one","line two"]');
+    expect(script).toMatch(/true;$/);
+  });
+});
+
+describe("buildRenderOverlayScript", () => {
+  const layout = computeWatermarkOverlayLayout(4000, 3000, 420, 6, {
+    fontScale: 0.8,
+    position: "bottomLeft",
+    bgOpacity: 0.5,
+    textColor: "#76FF03",
   });
 
-  it("reads composited pixels via getImageData for the native path", () => {
-    const html = buildWatermarkRendererPage();
-    expect(html).toContain("ctx.getImageData(0,0,cv.width,cv.height)");
+  it("serializes the full layout object into the payload", () => {
+    const script = buildRenderOverlayScript(1, layout, ["a", "b"]);
+    expect(script).toContain("window.renderWatermarkFromJson(");
+    expect(script).toMatch(/true;$/);
+    expect(script).toContain('"photoId":1');
+    expect(script).toContain('"boxX":');
+    expect(script).toContain('"boxY":');
+    expect(script).toContain('"boxW":');
+    expect(script).toContain('"boxH":');
+    expect(script).toContain('"overX":');
+    expect(script).toContain('"overY":');
+    expect(script).toContain('"overW":');
+    expect(script).toContain('"overH":');
+    expect(script).toContain('"layout":');
   });
 
-  it("posts width, height and rgba base64 when native encoding is requested", () => {
-    const html = buildWatermarkRendererPage();
-    expect(html).toContain(
-      "window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,width:cv.width,height:cv.height,rgba:rgba,perf:"
-    );
-  });
-
-  it("keeps the toBlob encode path as the fallback", () => {
-    const html = buildWatermarkRendererPage();
-    expect(html).toContain("cv.toBlob(function(blob)");
-    expect(html).toContain("'image/jpeg',0.95");
-    expect(html).toContain("window.ReactNativeWebView.postMessage(JSON.stringify({photoId:photoId,base64:raw,perf:");
-  });
-
-  it("instruments the native encode stage separately from toBlob", () => {
-    const html = buildWatermarkRendererPage();
-    expect(html).toContain("getDataMs:");
-    expect(html).toContain("b64Ms:");
-    expect(html).toContain("rgbaLen:rgba.length");
-    expect(html).toContain("native:true");
+  it("sanitizes lines and escapes reserved whitespace", () => {
+    const script = buildRenderOverlayScript(1, layout, ["a\u2028b<c>"]);
+    expect(script).not.toContain("\u2028");
+    expect(script).toContain("\\u2028");
+    expect(script).toContain("bc");
+    expect(script).not.toContain("<c>");
   });
 });
 

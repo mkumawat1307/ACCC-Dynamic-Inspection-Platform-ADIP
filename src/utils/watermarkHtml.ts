@@ -1,4 +1,4 @@
-import { WatermarkStyleConfig } from "@/src/utils/watermarkStyle";
+import { WatermarkStyleConfig, WatermarkOverlayLayout } from "@/src/utils/watermarkStyle";
 
 export function sanitizeWatermarkLines(lines: string[]): string[] {
   return lines.map(l =>
@@ -15,14 +15,47 @@ export function buildRenderWatermarkScript(
   imageBase64: string,
   lines: string[],
   style?: WatermarkStyleConfig,
-  useNativeEncode = false
+  nativeEncode = false
 ): string {
   const payload = JSON.stringify({
     photoId,
     base64: imageBase64,
     lines: sanitizeWatermarkLines(lines),
     ...(style ? { style } : {}),
-    ...(useNativeEncode ? { nativeEncode: true } : {}),
+    ...(nativeEncode ? { nativeEncode: true } : {}),
+  })
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `window.renderWatermarkFromJson(${payload}); true;`;
+}
+
+export function buildMeasureOverlayScript(
+  photoId: number,
+  fontSize: number,
+  lines: string[]
+): string {
+  const payload = JSON.stringify({
+    photoId,
+    measure: true,
+    fontSize,
+    lines: sanitizeWatermarkLines(lines),
+  })
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `window.renderWatermarkFromJson(${payload}); true;`;
+}
+
+export function buildRenderOverlayScript(
+  photoId: number,
+  layout: WatermarkOverlayLayout,
+  lines: string[],
+  style?: WatermarkStyleConfig
+): string {
+  const payload = JSON.stringify({
+    photoId,
+    layout,
+    lines: sanitizeWatermarkLines(lines),
+    ...(style ? { style } : {}),
   })
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
@@ -68,6 +101,11 @@ function roundRect(ctx,x,y,w,h,r){
   ctx.quadraticCurveTo(x,y,x+r,y);
   ctx.closePath();
 }
+function fileReaderBase64(blob,cb){
+  var fr=new FileReader();
+  fr.onload=function(){cb(fr.result.split(',')[1]||'');};
+  fr.readAsDataURL(blob);
+}
 function arrayBufferToBase64(buf){
   var bytes=new Uint8Array(buf);
   var CHUNK=0x8000,chunks=[],i,j,bin;
@@ -78,6 +116,104 @@ function arrayBufferToBase64(buf){
     chunks.push(btoa(bin));
   }
   return chunks.join('');
+}
+function measureOverlayText(photoId,fontSize,lines){
+  ctx.font='bold '+fontSize+'px sans-serif';
+  var mw=0;
+  for(var i=0;i<lines.length;i++){
+    var m=ctx.measureText(lines[i]);
+    if(m.width>mw)mw=m.width;
+  }
+  window.ReactNativeWebView.postMessage(JSON.stringify({
+    photoId:photoId,
+    maxTextWidth:Math.ceil(mw)
+  }));
+}
+function renderOverlay(photoId,layout,lines,style){
+  diagJobs++;
+  diagCaptures++;
+  if(!style)style={fontScale:0.8,position:'bottomLeft',bgOpacity:0.5,textColor:'#76FF03'};
+  var t0=performance.now();
+  var W=layout.overW,H=layout.overH;
+  var cvPrevW=cv.width,cvPrevH=cv.height;
+  cv.width=W;
+  cv.height=H;
+  var m=layout.metrics;
+  var dx=layout.boxX-layout.overX,dy=layout.boxY-layout.overY;
+  var tDraw0=performance.now();
+  ctx.shadowColor='rgba(0,0,0,0.35)';
+  ctx.shadowBlur=8;
+  ctx.shadowOffsetY=2;
+  ctx.fillStyle='rgba(0,0,0,'+style.bgOpacity+')';
+  roundRect(ctx,dx,dy,layout.boxW,layout.boxH,m.corner);
+  ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.shadowOffsetX=0;
+  ctx.shadowOffsetY=0;
+  ctx.fillStyle=style.textColor;
+  ctx.font='bold '+m.fSize+'px sans-serif';
+  ctx.shadowColor='rgba(0,0,0,0.9)';
+  ctx.shadowBlur=2;
+  ctx.shadowOffsetX=1;
+  ctx.shadowOffsetY=1;
+  var tx=layout.textLeft-layout.overX,ty=layout.textBase-layout.overY;
+  for(var i=0;i<lines.length;i++){
+    ctx.fillText(lines[i],tx,ty+i*m.lh);
+  }
+  ctx.shadowBlur=0;
+  ctx.shadowOffsetX=0;
+  ctx.shadowOffsetY=0;
+  var tDraw=performance.now();
+  var tBlobStart=performance.now();
+  cv.toBlob(function(blob){
+    var tBlobCb=performance.now();
+    var tFrStart=performance.now();
+    fileReaderBase64(blob,function(raw){
+      var tFrEnd=performance.now();
+      var diag={
+        instance:diagInstance,
+        created:diagCreatedAt,
+        capture:diagCaptures,
+        jobs:diagJobs,
+        uptimeMs:Math.round(tBlobCb),
+        t1AtMs:Math.round(tBlobStart),
+        cbAtMs:Math.round(tBlobCb),
+        imgWasSized:true,
+        imgW:0,
+        imgH:0,
+        cvPrevW:cvPrevW,
+        cvPrevH:cvPrevH,
+        cvW:W,
+        cvH:H,
+        canvasReset:(cvPrevW!==W||cvPrevH!==H),
+        overlayPngB64Len:raw.length,
+        overlayX:layout.overX,
+        overlayY:layout.overY,
+        overlayW:layout.overW,
+        overlayH:layout.overH,
+        boxX:layout.boxX,
+        boxY:layout.boxY,
+        boxW:layout.boxW,
+        boxH:layout.boxH,
+        shadowMargin:(layout.overX-layout.boxX)>=0?(layout.overX-layout.boxX):0,
+        toBlobMs:Math.round(tBlobCb-tBlobStart),
+        frMs:Math.round(tFrEnd-tFrStart),
+        quality:0.95,
+        native:true
+      };
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        photoId:photoId,
+        overlay:raw,
+        overlayX:layout.overX,
+        overlayY:layout.overY,
+        overlayWidth:layout.overW,
+        overlayHeight:layout.overH,
+        perf:{decode:0,draw:Math.round(tDraw-t0),encode:Math.round(tFrEnd-t0),total:Math.round(tFrEnd-t0)},
+        diag:diag
+      }));
+      diagJobs--;
+    });
+  },'image/png');
 }
 function renderWatermark(photoId,imageBase64,lines,style,nativeEncode){
   diagJobs++;
@@ -179,9 +315,7 @@ function renderWatermark(photoId,imageBase64,lines,style,nativeEncode){
     cv.toBlob(function(blob){
       var tBlobCb=performance.now();
       var tFrStart=performance.now();
-      var fr=new FileReader();
-      fr.onload=function(){
-        var raw=fr.result.split(',')[1];
+      fileReaderBase64(blob,function(raw){
         var tFrEnd=performance.now();
         var tEncode=tFrEnd;
         var diag={
@@ -219,14 +353,15 @@ function renderWatermark(photoId,imageBase64,lines,style,nativeEncode){
         img.onload=null;
         img.src='';
         diagJobs--;
-      };
-      fr.readAsDataURL(blob);
+      });
     },'image/jpeg',0.95);
   };
   img.src='data:image/jpeg;base64,'+imageBase64;
 }
 window.renderWatermarkFromJson=function(payload){
-  if(payload&&payload.photoId!=null&&payload.base64)renderWatermark(payload.photoId,payload.base64,payload.lines||[],payload.style||{},payload.nativeEncode);
+  if(payload&&payload.photoId!=null&&payload.measure&&payload.fontSize)measureOverlayText(payload.photoId,payload.fontSize,payload.lines||[]);
+  else if(payload&&payload.photoId!=null&&payload.layout)renderOverlay(payload.photoId,payload.layout,payload.lines||[],payload.style||{});
+  else if(payload&&payload.photoId!=null&&payload.base64)renderWatermark(payload.photoId,payload.base64,payload.lines||[],payload.style||{},payload.nativeEncode===true);
 };
 window.ReactNativeWebView.postMessage(JSON.stringify({__ready:true,instance:diagInstance,created:diagCreatedAt}));
 </script>

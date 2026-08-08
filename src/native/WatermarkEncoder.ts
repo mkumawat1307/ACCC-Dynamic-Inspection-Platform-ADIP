@@ -10,6 +10,14 @@ export interface WatermarkEncoderNative {
     quality: number,
     outputPath: string
   ): Promise<void>;
+  encodeOverlay(
+    inputPath: string,
+    overlayBase64: string,
+    overlayX: number,
+    overlayY: number,
+    quality: number,
+    outputPath: string
+  ): Promise<void>;
 }
 
 function getModule(): WatermarkEncoderNative | null {
@@ -19,6 +27,11 @@ function getModule(): WatermarkEncoderNative | null {
 
 export function hasNativeWatermarkEncoder(): boolean {
   return getModule() !== null;
+}
+
+export function hasNativeOverlayEncoder(): boolean {
+  const mod = NativeModules[ENCODER_MODULE] as WatermarkEncoderNative | undefined;
+  return !!mod && typeof mod.encodeOverlay === "function";
 }
 
 export async function encodeWatermarkJpeg(
@@ -33,4 +46,19 @@ export async function encodeWatermarkJpeg(
     throw new Error("WatermarkEncoder native module is not available");
   }
   await mod.encodeJpeg(width, height, rgbaBase64, quality, outputPath);
+}
+
+export async function encodeWatermarkOverlay(
+  inputPath: string,
+  overlayBase64: string,
+  overlayX: number,
+  overlayY: number,
+  quality: number,
+  outputPath: string
+): Promise<void> {
+  const mod = getModule();
+  if (!mod || typeof mod.encodeOverlay !== "function") {
+    throw new Error("WatermarkEncoder overlay composite is not available");
+  }
+  await mod.encodeOverlay(inputPath, overlayBase64, overlayX, overlayY, quality, outputPath);
 }

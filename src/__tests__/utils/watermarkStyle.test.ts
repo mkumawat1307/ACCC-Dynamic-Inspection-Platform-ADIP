@@ -1,8 +1,10 @@
 import {
   computeWatermarkMetrics,
+  computeWatermarkOverlayLayout,
   toWatermarkStyleConfig,
   WATERMARK_SIZE_FONT_SCALE,
   WATERMARK_TEXT_COLORS,
+  WATERMARK_OVERLAY_SHADOW_MARGIN,
 } from "@/src/utils/watermarkStyle";
 import { DEFAULT_WATERMARK_SETTINGS } from "@/src/utils/watermarkSettings";
 
@@ -102,5 +104,63 @@ describe("computeWatermarkMetrics", () => {
         textColor: "#76FF03",
       }).corner
     ).toBe(33);
+  });
+});
+
+describe("computeWatermarkOverlayLayout", () => {
+  const config = {
+    fontScale: 0.5,
+    position: "bottomLeft" as const,
+    bgOpacity: 0.5,
+    textColor: "#76FF03",
+  };
+
+  it("clamps the clip rect inside the image bounds", () => {
+    const layout = computeWatermarkOverlayLayout(400, 600, 300, 2, config);
+    expect(layout.boxX).toBeGreaterThanOrEqual(0);
+    expect(layout.boxY).toBeGreaterThanOrEqual(0);
+    expect(layout.overX).toBeGreaterThanOrEqual(0);
+    expect(layout.overY).toBeGreaterThanOrEqual(0);
+    expect(layout.overX + layout.overW).toBeLessThanOrEqual(400);
+    expect(layout.overY + layout.overH).toBeLessThanOrEqual(600);
+  });
+
+  it("positions the clip rect around the box including the shadow margin", () => {
+    const layout = computeWatermarkOverlayLayout(4000, 3000, 420, 6, config);
+    expect(layout.overX).toBe(layout.boxX - WATERMARK_OVERLAY_SHADOW_MARGIN);
+    expect(layout.overY).toBe(layout.boxY - WATERMARK_OVERLAY_SHADOW_MARGIN);
+    expect(layout.overW).toBe(layout.boxW + WATERMARK_OVERLAY_SHADOW_MARGIN * 2);
+    expect(layout.overH).toBe(layout.boxH + WATERMARK_OVERLAY_SHADOW_MARGIN * 2);
+  });
+
+  it("mirrors the box to the right edge for bottomRight", () => {
+    const right = computeWatermarkOverlayLayout(4000, 3000, 420, 6, {
+      ...config,
+      position: "bottomRight",
+    });
+    expect(right.boxX).toBe(4000 - right.boxW - right.metrics.gapX);
+    expect(right.overX + right.overW).toBe(
+      right.boxX + right.boxW + WATERMARK_OVERLAY_SHADOW_MARGIN
+    );
+  });
+
+  it("derives text baseline and left from the box geometry", () => {
+    const layout = computeWatermarkOverlayLayout(4000, 3000, 420, 6, config);
+    expect(layout.textLeft).toBe(layout.boxX + layout.metrics.rPad);
+    expect(layout.textBase).toBe(
+      layout.boxY + layout.metrics.padY + Math.round(layout.metrics.fSize * 0.8)
+    );
+  });
+
+  it("reuses the same metric math as the preview overlay (WYSIWYG)", () => {
+    const layout = computeWatermarkOverlayLayout(1080, 1920, 300, 3, config);
+    expect(layout.metrics).toEqual(
+      computeWatermarkMetrics(1080, 1920, {
+        fontScale: 0.5,
+        position: "bottomLeft",
+        bgOpacity: 0.5,
+        textColor: "#76FF03",
+      })
+    );
   });
 });

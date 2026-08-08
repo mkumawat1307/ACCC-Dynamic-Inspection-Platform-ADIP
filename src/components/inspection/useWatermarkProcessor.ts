@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { Image } from "react-native";
 import { logger } from "@/src/utils/logger";
 import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
@@ -6,11 +7,40 @@ import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { writePhoto, ensureTreeUri, getProjectDir, getSafCacheState } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
-import { buildRenderWatermarkScript } from "@/src/utils/watermarkHtml";
-import { WatermarkStyleConfig } from "@/src/utils/watermarkStyle";
-import { hasNativeWatermarkEncoder, encodeWatermarkJpeg } from "@/src/native/WatermarkEncoder";
+import {
+  buildRenderWatermarkScript,
+  buildRenderOverlayScript,
+  buildMeasureOverlayScript,
+} from "@/src/utils/watermarkHtml";
+import {
+  WatermarkStyleConfig,
+  WatermarkOverlayLayout,
+  computeWatermarkMetrics,
+  computeWatermarkOverlayLayout,
+} from "@/src/utils/watermarkStyle";
+import {
+  hasNativeWatermarkEncoder,
+  hasNativeOverlayEncoder,
+  encodeWatermarkJpeg,
+  encodeWatermarkOverlay,
+} from "@/src/native/WatermarkEncoder";
 import { useInspection } from "@/src/context/InspectionContext";
 import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator } from "@/src/utils/perf";
+
+type WatermarkStage = "overlay" | "rgba" | "toblob";
+
+const STAGE_WATCHDOG_MS: Record<WatermarkStage, number> = {
+  overlay: 8000,
+  rgba: 8000,
+  toblob: 12000,
+};
+
+const DEFAULT_OVERLAY_STYLE: WatermarkStyleConfig = {
+  fontScale: 0.8,
+  position: "bottomLeft",
+  bgOpacity: 0.5,
+  textColor: "#76FF03",
+};
 
 interface WatermarkJob {
   photoId: number;
@@ -18,9 +48,12 @@ interface WatermarkJob {
   fileName: string;
   lines: string[];
   style?: WatermarkStyleConfig;
-  useNative: boolean;
+  stage: WatermarkStage;
   retries: number;
   startedAtMs: number;
+  width?: number;
+  height?: number;
+  layout?: WatermarkOverlayLayout;
 }
 
 interface JsPerf {
@@ -48,31 +81,47 @@ interface WatermarkDiag {
   canvasReset?: boolean;
   blobSize?: number;
   b64Len?: number;
+  overlayPngB64Len?: number;
   quality?: number;
-  toBlobStart?: number;
-  toBlobCb?: number;
-  frStart?: number;
-  frEnd?: number;
   toBlobMs?: number;
   frMs?: number;
+  getDataMs?: number;
+  b64Ms?: number;
+  rgbaLen?: number;
+  native?: boolean;
   heapBefore?: number;
   heapAfter?: number;
   heapUsed?: number;
   heapLimit?: number;
   gcEvents?: number;
   gcMs?: number;
-  getDataAtMs?: number;
-  getDataStart?: number;
-  getDataCb?: number;
-  getDataMs?: number;
-  b64Ms?: number;
-  rgbaLen?: number;
-  native?: boolean;
 }
 
 interface UseWatermarkProcessorOptions {
   project: Project | null;
   onPhotosUpdated: () => void;
+}
+
+function watermarkFallbackReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message.indexOf("E_OOM") === 0) return "oom";
+  if (message.indexOf("E_DECODE") === 0) return "rgba-buffer-mismatch";
+  if (message.indexOf("E_ENCODE") === 0) return "encode-error";
+  if (message.indexOf("E_INVALID_ARGS") === 0) return "invalid-args";
+  if (message.indexOf("overlay composite is not available") !== -1) return "overlay-module-missing";
+  if (message.indexOf("native module is not available") !== -1) return "module-missing";
+  const line = message.split("\n")[0].slice(0, 80);
+  return line || "unknown";
+}
+
+function resolveImageSize(inputPath: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    Image.getSize(
+      inputPath,
+      (width, height) => resolve({ width, height }),
+      (error) => reject(error)
+    );
+  });
 }
 
 export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermarkProcessorOptions) {
@@ -85,6 +134,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const webViewRef = useRef<WebView>(null);
   const readyRef = useRef(false);
   const readyWaitStartRef = useRef(0);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const perfRef = useRef<PerfAccumulator | null>(null);
   const loadCountRef = useRef(0);
   const readyCountRef = useRef(0);
@@ -114,16 +164,44 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     });
     queueRef.current = queueRef.current.filter(j => j.photoId !== photoId);
     failedJobsRef.current.delete(photoId);
+    clearWatchdog();
+  }
+
+  function clearWatchdog() {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  }
+
+  function armWatchdog(job: WatermarkJob, onTimeout: () => void) {
+    clearWatchdog();
+    const ms = STAGE_WATCHDOG_MS[job.stage];
+    if (__DEV__) {
+      logger.debug(
+        `[Watermark:watchdog] photo=${job.photoId} stage=${job.stage} armed=${ms}ms`
+      );
+    }
+    watchdogRef.current = setTimeout(() => {
+      watchdogRef.current = null;
+      if (__DEV__) {
+        logger.debug(
+          `[Watermark:watchdog] photo=${job.photoId} stage=${job.stage} FIRED`
+        );
+      }
+      onTimeout();
+    }, ms);
   }
 
   function retryWatermark(photoId: number) {
     const job = failedJobsRef.current.get(photoId);
     if (!job) return;
     failedJobsRef.current.delete(photoId);
-    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style, job.useNative);
+    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style);
   }
 
   function handleJobFailure(job: WatermarkJob) {
+    clearWatchdog();
     if (job.retries < 1) {
       const retry = { ...job, retries: job.retries + 1 };
       queueRef.current[0] = retry;
@@ -140,6 +218,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   }
 
   async function handleJobComplete(photoId: number) {
+    clearWatchdog();
     const idx = queueRef.current.findIndex(j => j.photoId === photoId);
     if (idx < 0) return;
 
@@ -167,6 +246,133 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     setTimeout(() => processNext(), 50);
   }
 
+  function downshiftStage(job: WatermarkJob): WatermarkStage | null {
+    if (job.stage === "overlay") return "rgba";
+    if (job.stage === "rgba") return "toblob";
+    return null;
+  }
+
+  function injectJourneyScript(job: WatermarkJob, script: string) {
+    const wv = webViewRef.current;
+    if (!wv) throw new Error("webview not available");
+    wv.injectJavaScript(script);
+    perfStage(perfRef.current!, "webviewSend");
+  }
+
+  async function startOverlayStage(job: WatermarkJob) {
+    if (!job.width || !job.height) {
+      try {
+        const dims = await resolveImageSize(job.inputPath);
+        job.width = dims.width;
+        job.height = dims.height;
+        if (__DEV__) {
+          logger.debug(
+            `[Watermark:overlay] photo=${job.photoId} dims=${dims.width}x${dims.height} cached`
+          );
+        }
+      } catch (error) {
+        if (__DEV__) {
+          logger.debug(
+            `[Watermark:overlay] photo=${job.photoId} imageSizeFailed reason=${watermarkFallbackReason(error)}`
+          );
+        }
+        scheduleStage(job, "rgba");
+        return;
+      }
+    }
+    const style = job.style ?? DEFAULT_OVERLAY_STYLE;
+    const metrics = computeWatermarkMetrics(job.width, job.height, style);
+    injectJourneyScript(job, buildMeasureOverlayScript(job.photoId, metrics.fSize, job.lines));
+  }
+
+  function startStage(job: WatermarkJob) {
+    if (__DEV__) {
+      logger.debug(
+        `[Watermark:path] photo=${job.photoId} stage=${job.stage} attempt=${job.retries + 1}`
+      );
+    }
+    clearWatchdog();
+    armWatchdog(job, () => {
+      const next = downshiftStage(job);
+      scheduleStage(job, next);
+    });
+
+    if (job.stage === "overlay") {
+      startOverlayStage(job).catch((error) => {
+        if (__DEV__) {
+          logger.debug(
+            `[Watermark:fallback] photo=${job.photoId} stage=overlay reason=${watermarkFallbackReason(error)}`
+          );
+        }
+        scheduleStage(job, "rgba");
+      });
+      return;
+    }
+
+    if (job.stage === "rgba") {
+      startupRgbaStage(job);
+      return;
+    }
+
+    startupToblobStage(job);
+  }
+
+  function startupRgbaStage(job: WatermarkJob) {
+    FileSystem.readAsStringAsync(job.inputPath, {
+      encoding: FileSystem.EncodingType.Base64,
+    })
+      .then((base64) => {
+        injectJourneyScript(
+          job,
+          buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style, true)
+        );
+      })
+      .catch((error) => {
+        if (__DEV__) {
+          logger.debug(
+            `[Watermark:fallback] photo=${job.photoId} stage=rgba reason=${watermarkFallbackReason(error)}`
+          );
+        }
+        scheduleStage(job, "toblob");
+      });
+  }
+
+  function startupToblobStage(job: WatermarkJob) {
+    FileSystem.readAsStringAsync(job.inputPath, {
+      encoding: FileSystem.EncodingType.Base64,
+    })
+      .then((base64) => {
+        injectJourneyScript(
+          job,
+          buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style, false)
+        );
+      })
+      .catch((error) => {
+        if (__DEV__) {
+          logger.debug(
+            `[Watermark:fallback] photo=${job.photoId} stage=toblob reason=${watermarkFallbackReason(error)}`
+          );
+        }
+        handleJobFailure(job);
+      });
+  }
+
+  function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
+    clearWatchdog();
+    if (!next || next === job.stage) {
+      handleJobFailure(job);
+      return;
+    }
+    const queued = queueRef.current.find(j => j.photoId === job.photoId);
+    if (!queued) return;
+    queued.stage = next;
+    if (__DEV__) {
+      logger.debug(`[Watermark:fallback] photo=${job.photoId} overlay->${next}`);
+    }
+    processingRef.current = false;
+    setTimeout(() => processNext(), 0);
+  }
+
   async function processNext() {
     if (processingRef.current || queueRef.current.length === 0) return;
     if (!readyRef.current) {
@@ -182,20 +388,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     const perf = perfStart(job.photoId);
     perfRef.current = perf;
 
-    try {
-      const base64 = await FileSystem.readAsStringAsync(job.inputPath, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      perfStage(perf, "fileRead");
-
-      const wv = webViewRef.current;
-      if (!wv) throw new Error("webview not available");
-      wv.injectJavaScript(buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style, job.useNative));
-      perfStage(perf, "webviewSend");
-    } catch (error) {
-      logger.warn("[Watermark] read or send failed:", error);
-      handleJobFailure(job);
-    }
+    startStage(job);
   }
 
   const handleWebViewLoadEnd = useCallback(() => {
@@ -213,6 +406,34 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         `reason=${details.reason ?? "unknown"} loadCount=${loadCountRef.current}`
     );
   }, []);
+
+  function saveAndComplete(job: WatermarkJob, base64: string) {
+    return (async () => {
+      clearWatchdog();
+      const label = project ? canonicalProjectLabel(project) : "";
+
+      const tSave = perfNow();
+      const treeUri = await ensureTreeUri();
+      const projectDir = await getProjectDir(treeUri, label);
+      const contentUri = await writePhoto(projectDir, job.fileName, base64);
+      if (perfRef.current) perfStage(perfRef.current, "safWrite");
+      const saf = getSafCacheState();
+      logger.debug(`[SAF] ProjectDirCache: ${saf.projectDirHit ? "HIT" : "MISS"}`);
+      logger.debug(`[SAF] TreeUriCache: ${saf.treeUriHit ? "HIT" : "MISS"}`);
+      logger.debug(`[SAF] WriteTime: ${(perfNow() - tSave).toFixed(1)} ms`);
+
+      const tDb = perfNow();
+      await PhotoRepository.updateFilePath(job.photoId, contentUri);
+      if (perfRef.current) perfStage(perfRef.current, "sqliteUpdate");
+      else logger.debug(`[Perf] watermark photo=${job.photoId} sqliteUpdate: ${(perfNow() - tDb).toFixed(1)}ms`);
+
+      onPhotosUpdated();
+      await handleJobComplete(job.photoId);
+    })().catch(() => {
+      if (perfRef.current) perfStage(perfRef.current, "saveError");
+      handleJobFailure(job);
+    });
+  }
 
   const handleWebViewMessage = useCallback((event: any) => {
     try {
@@ -249,11 +470,95 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         return;
       }
 
-      const { photoId, base64, rgba, width, height } = data;
+      const { photoId } = data;
+      const job = queueRef.current.find(j => j.photoId === photoId);
+      if (photoId == null || !job) return;
 
-      if (rgba != null && photoId != null && width != null && height != null) {
-        const job = queueRef.current.find(j => j.photoId === photoId);
-        if (!job) return;
+      if (data.maxTextWidth != null) {
+        if (job.stage !== "overlay") return;
+        if (!job.width || !job.height) return;
+        const style = job.style ?? DEFAULT_OVERLAY_STYLE;
+        job.layout = computeWatermarkOverlayLayout(
+          job.width,
+          job.height,
+          data.maxTextWidth,
+          job.lines.length,
+          style
+        );
+        try {
+          injectJourneyScript(job, buildRenderOverlayScript(job.photoId, job.layout, job.lines, job.style));
+        } catch (error) {
+          if (__DEV__) {
+            logger.debug(
+              `[Watermark:overlay] photo=${photoId} measureOk but render failed reason=${watermarkFallbackReason(error)}`
+            );
+          }
+          scheduleStage(job, "rgba");
+        }
+        return;
+      }
+
+      if (data.overlay != null) {
+        if (job.stage !== "overlay") return;
+        clearWatchdog();
+        if (__DEV__) {
+          logger.debug(
+            `[Watermark:overlay] photo=${photoId} pngB64Len=${(data.diag?.overlayPngB64Len ?? data.overlay.length)} ` +
+              `x=${data.overlayX} y=${data.overlayY} size=${data.overlayWidth}x${data.overlayHeight}`
+          );
+        }
+        const wrapped = { ...data, overlay: data.overlay } as typeof data & { overlay: string };
+        (async () => {
+          const outputPath = `${job.inputPath}.wm.jpg`;
+          try {
+            const tEnc = perfNow();
+            await encodeWatermarkOverlay(
+              job.inputPath,
+              wrapped.overlay,
+              data.overlayX ?? 0,
+              data.overlayY ?? 0,
+              95,
+              outputPath
+            );
+            if (__DEV__) {
+              logger.debug(
+                `[Watermark:encode] photo=${photoId} overlayCompositeMs=${(perfNow() - tEnc).toFixed(1)}`
+              );
+            }
+            if (perfRef.current) perfStage(perfRef.current, "nativeComposite");
+
+            const fileBase64 = await FileSystem.readAsStringAsync(outputPath, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            try {
+              await FileSystem.deleteAsync(outputPath, { idempotent: true });
+            } catch {}
+            await saveAndComplete(job, fileBase64);
+          } catch (error) {
+            if (__DEV__) {
+              logger.debug(
+                `[Watermark:fallback] photo=${photoId} stage=overlay reason=${watermarkFallbackReason(error)}`
+              );
+            }
+            logger.warn("[Watermark] overlay composite failed, falling back to RGBA encode:", error);
+            try {
+              await FileSystem.deleteAsync(outputPath, { idempotent: true });
+            } catch {}
+            scheduleStage(job, "rgba");
+          }
+        })();
+        return;
+      }
+
+      if (data.rgba != null && data.width != null && data.height != null) {
+        if (job.stage !== "rgba") return;
+        clearWatchdog();
+        if (__DEV__) {
+          const rgbaTransferMs = perfRef.current ? perfNow() - perfRef.current.last : 0;
+          logger.debug(
+            `[Watermark:transfer] photo=${photoId} rgbaTransferMs=${rgbaTransferMs.toFixed(1)}`
+          );
+        }
 
         const perf = perfRef.current;
         const jsPerf = (data.perf ?? {}) as JsPerf;
@@ -271,8 +576,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
               `mode=native getData=${diag.getDataMs}ms b64=${diag.b64Ms}ms ` +
               `img=${diag.imgW}x${diag.imgH} resident=${diag.imgWasResident} ` +
               `cv=${diag.cvPrevW}x${diag.cvPrevH}->${diag.cvW}x${diag.cvH} reset=${diag.canvasReset} ` +
-              `rgba=${diag.rgbaLen} q=${diag.quality} ` +
-              `heap=${diag.heapBefore}->${diag.heapAfter}/${diag.heapLimit} gc=${diag.gcEvents}/${diag.gcMs}ms`
+              `rgba=${diag.rgbaLen} q=${diag.quality}`
           );
         }
 
@@ -280,57 +584,41 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
           const outputPath = `${job.inputPath}.wm.jpg`;
           try {
             const tEnc = perfNow();
-            await encodeWatermarkJpeg(width, height, rgba, 95, outputPath);
+            await encodeWatermarkJpeg(data.width, data.height, data.rgba, 95, outputPath);
+            if (__DEV__) {
+              logger.debug(
+                `[Watermark:encode] photo=${photoId} rgbaEncodeMs=${(perfNow() - tEnc).toFixed(1)}`
+              );
+            }
             if (perf) perfStage(perf, "nativeEncode");
 
             const fileBase64 = await FileSystem.readAsStringAsync(outputPath, {
               encoding: FileSystem.EncodingType.Base64,
             });
-
-            const label = project ? canonicalProjectLabel(project) : "";
-            const tSave = perfNow();
-            const treeUri = await ensureTreeUri();
-            const projectDir = await getProjectDir(treeUri, label);
-            const contentUri = await writePhoto(projectDir, job.fileName, fileBase64);
-            if (perf) perfStage(perf, "safWrite");
-            const saf = getSafCacheState();
-            logger.debug(`[SAF] ProjectDirCache: ${saf.projectDirHit ? "HIT" : "MISS"}`);
-            logger.debug(`[SAF] TreeUriCache: ${saf.treeUriHit ? "HIT" : "MISS"}`);
-            logger.debug(`[SAF] WriteTime: ${(perfNow() - tSave).toFixed(1)} ms`);
-
-            const tDb = perfNow();
-            await PhotoRepository.updateFilePath(photoId, contentUri);
-            if (perf) perfStage(perf, "sqliteUpdate");
-            else logger.debug(`[Perf] watermark photo=${photoId} sqliteUpdate: ${(perfNow() - tDb).toFixed(1)}ms`);
-
-            onPhotosUpdated();
             try {
               await FileSystem.deleteAsync(outputPath, { idempotent: true });
-            } catch (e) {
-              logger.warn("[Watermark] Failed to clean up encoded temp file:", outputPath, e);
-            }
-            handleJobComplete(photoId);
+            } catch {}
+            await saveAndComplete(job, fileBase64);
           } catch (error) {
+            if (__DEV__) {
+              logger.debug(
+                `[Watermark:fallback] photo=${photoId} stage=rgba reason=${watermarkFallbackReason(error)}`
+              );
+            }
             logger.warn("[Watermark] native encode failed, falling back to toBlob:", error);
             try {
               await FileSystem.deleteAsync(outputPath, { idempotent: true });
             } catch {}
-            const queued = queueRef.current.find(j => j.photoId === photoId);
-            if (queued) queued.useNative = false;
-            handleJobFailure(job);
+            scheduleStage(job, "toblob");
           }
         })();
         return;
       }
 
-      if (!base64 || photoId == null) {
-        const job = queueRef.current[0];
-        if (job) handleJobFailure(job);
+      if (!data.base64 || photoId == null) {
+        handleJobFailure(job);
         return;
       }
-
-      const job = queueRef.current.find(j => j.photoId === photoId);
-      if (!job) return;
 
       const perf = perfRef.current;
       const jsPerf = (data.perf ?? {}) as JsPerf;
@@ -339,6 +627,12 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         perf.stages.push({ name: "jsDraw", ms: jsPerf.draw ?? 0 });
         perf.stages.push({ name: "jsEncode", ms: jsPerf.encode ?? 0 });
         perfStage(perf, "webviewReturn");
+      }
+
+      if (__DEV__ && jsPerf.encode != null) {
+        logger.debug(
+          `[Watermark:encode] photo=${photoId} jsEncodeMs=${jsPerf.encode.toFixed(1)}`
+        );
       }
 
       const diag = (data.diag ?? {}) as WatermarkDiag;
@@ -354,35 +648,13 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         );
       }
 
-      (async () => {
-        const label = project ? canonicalProjectLabel(project) : "";
-
-        const tSave = perfNow();
-        const treeUri = await ensureTreeUri();
-        const projectDir = await getProjectDir(treeUri, label);
-        const contentUri = await writePhoto(projectDir, job.fileName, base64);
-        if (perf) perfStage(perf, "safWrite");
-        const saf = getSafCacheState();
-        logger.debug(`[SAF] ProjectDirCache: ${saf.projectDirHit ? "HIT" : "MISS"}`);
-        logger.debug(`[SAF] TreeUriCache: ${saf.treeUriHit ? "HIT" : "MISS"}`);
-        logger.debug(`[SAF] WriteTime: ${(perfNow() - tSave).toFixed(1)} ms`);
-
-        const tDb = perfNow();
-        await PhotoRepository.updateFilePath(photoId, contentUri);
-        if (perf) perfStage(perf, "sqliteUpdate");
-        else logger.debug(`[Perf] watermark photo=${photoId} sqliteUpdate: ${(perfNow() - tDb).toFixed(1)}ms`);
-
-        onPhotosUpdated();
-        handleJobComplete(photoId);
-      })().catch(() => {
-        const j = queueRef.current.find(j => j.photoId === photoId);
-        if (j) handleJobFailure(j);
-      });
+      clearWatchdog();
+      saveAndComplete(job, data.base64);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     } catch {
       const job = queueRef.current[0];
       if (job) handleJobFailure(job);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, onPhotosUpdated]);
 
   function enqueueWatermark(
@@ -393,13 +665,20 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     style?: WatermarkStyleConfig,
     useNativeOverride?: boolean
   ) {
+    let stage: WatermarkStage;
+    if (useNativeOverride === false) stage = "toblob";
+    else if (useNativeOverride === true) stage = "overlay";
+    else if (hasNativeWatermarkEncoder() && hasNativeOverlayEncoder()) stage = "overlay";
+    else if (hasNativeWatermarkEncoder()) stage = "rgba";
+    else stage = "toblob";
+
     const job: WatermarkJob = {
       photoId,
       inputPath,
       fileName,
       lines,
       style,
-      useNative: useNativeOverride ?? hasNativeWatermarkEncoder(),
+      stage,
       retries: 0,
       startedAtMs: perfNow(),
     };
