@@ -2,6 +2,13 @@ import { NativeModules } from "react-native";
 
 const ENCODER_MODULE = "WatermarkEncoder";
 
+export interface WatermarkOverlayTimings {
+  decodeOriginalMs?: number;
+  decodeOverlayMs?: number;
+  compositeMs?: number;
+  jpegEncodeMs?: number;
+}
+
 export interface WatermarkEncoderNative {
   encodeJpeg(
     width: number,
@@ -17,7 +24,7 @@ export interface WatermarkEncoderNative {
     overlayY: number,
     quality: number,
     outputPath: string
-  ): Promise<void>;
+  ): Promise<void | WatermarkOverlayTimings>;
 }
 
 function getModule(): WatermarkEncoderNative | null {
@@ -55,10 +62,11 @@ export async function encodeWatermarkOverlay(
   overlayY: number,
   quality: number,
   outputPath: string
-): Promise<void> {
+): Promise<WatermarkOverlayTimings | undefined> {
   const mod = getModule();
   if (!mod || typeof mod.encodeOverlay !== "function") {
     throw new Error("WatermarkEncoder overlay composite is not available");
   }
-  await mod.encodeOverlay(inputPath, overlayBase64, overlayX, overlayY, quality, outputPath);
+  const result = await mod.encodeOverlay(inputPath, overlayBase64, overlayX, overlayY, quality, outputPath);
+  return typeof result === "object" && result !== null ? result : undefined;
 }

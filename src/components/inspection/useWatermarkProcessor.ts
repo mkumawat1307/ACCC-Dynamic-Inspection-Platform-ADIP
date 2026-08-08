@@ -23,6 +23,7 @@ import {
   hasNativeOverlayEncoder,
   encodeWatermarkJpeg,
   encodeWatermarkOverlay,
+  WatermarkOverlayTimings,
 } from "@/src/native/WatermarkEncoder";
 import { useInspection } from "@/src/context/InspectionContext";
 import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator } from "@/src/utils/perf";
@@ -54,6 +55,12 @@ interface WatermarkJob {
   width?: number;
   height?: number;
   layout?: WatermarkOverlayLayout;
+}
+
+interface SaveStageTimings {
+  nativeTimings?: WatermarkOverlayTimings;
+  tempFileReadMs?: number;
+  saveStartMs: number;
 }
 
 interface JsPerf {
@@ -407,7 +414,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     );
   }, []);
 
-  function saveAndComplete(job: WatermarkJob, base64: string) {
+function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveStageTimings) {
     return (async () => {
       clearWatchdog();
       const label = project ? canonicalProjectLabel(project) : "";
@@ -417,15 +424,29 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
       const projectDir = await getProjectDir(treeUri, label);
       const contentUri = await writePhoto(projectDir, job.fileName, base64);
       if (perfRef.current) perfStage(perfRef.current, "safWrite");
+      const safWriteMs = perfNow() - tSave;
       const saf = getSafCacheState();
       logger.debug(`[SAF] ProjectDirCache: ${saf.projectDirHit ? "HIT" : "MISS"}`);
       logger.debug(`[SAF] TreeUriCache: ${saf.treeUriHit ? "HIT" : "MISS"}`);
-      logger.debug(`[SAF] WriteTime: ${(perfNow() - tSave).toFixed(1)} ms`);
+      logger.debug(`[SAF] WriteTime: ${safWriteMs.toFixed(1)} ms`);
 
       const tDb = perfNow();
       await PhotoRepository.updateFilePath(job.photoId, contentUri);
       if (perfRef.current) perfStage(perfRef.current, "sqliteUpdate");
       else logger.debug(`[Perf] watermark photo=${job.photoId} sqliteUpdate: ${(perfNow() - tDb).toFixed(1)}ms`);
+      const dbUpdateMs = perfNow() - tDb;
+
+      if (__DEV__ && saveTimings) {
+        const totalNativeSaveMs = perfNow() - saveTimings.saveStartMs;
+        const nt = saveTimings.nativeTimings;
+        const fmt = (n: number | undefined) => (n == null ? "n/a" : n.toFixed(1));
+        logger.debug(
+          `[Save] decode=${fmt(nt?.decodeOriginalMs ?? undefined)} overlay=${fmt(nt?.decodeOverlayMs ?? undefined)} ` +
+            `composite=${fmt(nt?.compositeMs ?? undefined)} encode=${fmt(nt?.jpegEncodeMs ?? undefined)} ` +
+            `read=${fmt(saveTimings.tempFileReadMs)} saf=${fmt(safWriteMs)} db=${fmt(dbUpdateMs)} ` +
+            `total=${fmt(totalNativeSaveMs)}`
+        );
+      }
 
       onPhotosUpdated();
       await handleJobComplete(job.photoId);
@@ -511,8 +532,9 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
         (async () => {
           const outputPath = `${job.inputPath}.wm.jpg`;
           try {
+            const saveStartMs = perfNow();
             const tEnc = perfNow();
-            await encodeWatermarkOverlay(
+            const nativeTimings = await encodeWatermarkOverlay(
               job.inputPath,
               wrapped.overlay,
               data.overlayX ?? 0,
@@ -527,13 +549,19 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
             }
             if (perfRef.current) perfStage(perfRef.current, "nativeComposite");
 
+            const tRead = perfNow();
             const fileBase64 = await FileSystem.readAsStringAsync(outputPath, {
               encoding: FileSystem.EncodingType.Base64,
             });
+            const tempFileReadMs = perfNow() - tRead;
             try {
               await FileSystem.deleteAsync(outputPath, { idempotent: true });
             } catch {}
-            await saveAndComplete(job, fileBase64);
+            await saveAndComplete(job, fileBase64, {
+              nativeTimings,
+              tempFileReadMs,
+              saveStartMs,
+            });
           } catch (error) {
             if (__DEV__) {
               logger.debug(

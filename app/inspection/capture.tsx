@@ -156,6 +156,10 @@ export default function CaptureScreen() {
     return () => clearTimeout(t);
   }, [flow.phase]);
 
+  useEffect(() => {
+    logger.debug(`[UI] saving=${flow.phase === "merging"}`);
+  }, [flow.phase]);
+
   const cleanupPending = useCallback(async () => {
     const pending = flow.pending;
     if (!pending) return;

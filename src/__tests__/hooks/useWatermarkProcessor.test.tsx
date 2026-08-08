@@ -613,6 +613,84 @@ describe("useWatermarkProcessor overlay encoder stage", () => {
     unmount();
   });
 
+  it("logs a compact [Save] line with native stage and SAF/DB split timings", async () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    mockOverlayHappyPath();
+    (encodeWatermarkOverlay as jest.Mock).mockResolvedValue({
+      decodeOriginalMs: 220.5,
+      decodeOverlayMs: 8.2,
+      compositeMs: 12.4,
+      jpegEncodeMs: 410.1,
+    });
+    mockSaveChain();
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, maxTextWidth: 300 }) },
+      });
+    });
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            overlay: "PNG_B64",
+            overlayX: 88,
+            overlayY: 1843,
+            overlayWidth: 550,
+            overlayHeight: 1036,
+          }),
+        },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    const lines = logSpy.mock.calls.map(args => args.join(" "));
+    const saveLine = lines.find(l => l.includes("[Save]"));
+    expect(saveLine).toBeDefined();
+    const line = saveLine as string;
+    expect(line).toContain("decode=220.5");
+    expect(line).toContain("overlay=8.2");
+    expect(line).toContain("composite=12.4");
+    expect(line).toContain("encode=410.1");
+    expect(line).toMatch(/read=\d+\.\d/);
+    expect(line).toMatch(/saf=\d+\.\d/);
+    expect(line).toMatch(/db=\d+\.\d/);
+    expect(line).toMatch(/total=\d+\.\d/);
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    logSpy.mockRestore();
+    unmount();
+  });
+
   it("falls back to RGBA when the overlay composite is unavailable or errors", async () => {
     mockOverlayHappyPath();
     // hasNativeOverlayEncoder returns true but the composite rejects like a missing native overlay.
