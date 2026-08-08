@@ -1,0 +1,70 @@
+# EAS Build archive exclusions
+# EAS uses ONLY this file when it exists (gitignore is not consulted),
+# so the secret-file exclusions are duplicated here from .gitignore.
+
+# VCS
+.git/
+.gitignore
+
+# Dependencies — reinstalled on the EAS server
+node_modules/
+
+# Expo
+.expo/
+.metro-cache/
+expo-env.d.ts
+
+# Native build outputs (Android/iOS source under android/, ios/ is kept)
+android/app/build/
+android/build/
+android/.gradle/
+android/.kotlin/
+android/app/.cxx/
+ios/build/
+ios/Pods/
+
+# Build / web outputs
+dist/
+
+# Tests and coverage
+coverage/
+*.test-results.xml
+
+# Caches and temporary files
+.cache/
+.turbo/
+.tmp/
+tmp/
+.temp/
+%TEMP%/
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Local tooling state
+.superpowers/
+.kilo/
+
+# Screenshots and recordings
+screenshots/
+recordings/
+
+# Editor / OS junk
+.vscode/
+.idea/
+.DS_Store
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Secrets MUST stay out of the archive
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.orig.*
+android/keystore.properties
+android/app/release.keystore
