@@ -320,7 +320,15 @@ export default function CaptureScreen() {
       });
 
       flow.beginCapture({ photoId, tempUri: result.uri, fileName, lines, timestamp });
-      enqueueWatermark(photoId, result.uri, fileName, lines, toWatermarkStyleConfig(settings));
+      enqueueWatermark(
+        photoId,
+        result.uri,
+        fileName,
+        lines,
+        toWatermarkStyleConfig(settings),
+        undefined,
+        { width: result.width, height: result.height }
+      );
     } catch (error) {
       logger.error("Capture Error:", error);
       Alert.alert("Error", "Failed to capture photo.");

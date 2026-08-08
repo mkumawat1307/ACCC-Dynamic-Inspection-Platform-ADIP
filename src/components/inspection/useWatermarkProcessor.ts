@@ -54,6 +54,8 @@ interface WatermarkJob {
   startedAtMs: number;
   width?: number;
   height?: number;
+  previewWidth?: number;
+  previewHeight?: number;
   layout?: WatermarkOverlayLayout;
 }
 
@@ -204,7 +206,9 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     const job = failedJobsRef.current.get(photoId);
     if (!job) return;
     failedJobsRef.current.delete(photoId);
-    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style);
+    const dims =
+      job.width && job.height ? { width: job.width, height: job.height } : undefined;
+    enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style, undefined, dims);
   }
 
   function handleJobFailure(job: WatermarkJob) {
@@ -267,7 +271,18 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   }
 
   async function startOverlayStage(job: WatermarkJob) {
-    if (!job.width || !job.height) {
+    if (job.width && job.height) {
+      if (__DEV__) {
+        try {
+          const dims = await resolveImageSize(job.inputPath);
+          job.previewWidth = dims.width;
+          job.previewHeight = dims.height;
+        } catch {
+          job.previewWidth = undefined;
+          job.previewHeight = undefined;
+        }
+      }
+    } else {
       try {
         const dims = await resolveImageSize(job.inputPath);
         job.width = dims.width;
@@ -510,6 +525,18 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
           job.lines.length,
           style
         );
+        if (__DEV__) {
+          const previewW = job.previewWidth ?? job.width;
+          const previewH = job.previewHeight ?? job.height;
+          logger.debug(
+            `[Watermark:layout] photo=${photoId} preview=${previewW}x${previewH} ` +
+              `final=${job.width}x${job.height}`
+          );
+          logger.debug(
+            `[Watermark:layout] photo=${photoId} x=${job.layout.overX} y=${job.layout.overY} ` +
+              `w=${job.layout.overW} h=${job.layout.overH}`
+          );
+        }
         try {
           injectJourneyScript(job, buildRenderOverlayScript(job.photoId, job.layout, job.lines, job.style));
         } catch (error) {
@@ -713,7 +740,8 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
     fileName: string,
     lines: string[],
     style?: WatermarkStyleConfig,
-    useNativeOverride?: boolean | "rgba"
+    useNativeOverride?: boolean | "rgba",
+    size?: { width: number; height: number }
   ) {
     let stage: WatermarkStage;
     if (useNativeOverride === "rgba") stage = "rgba";
@@ -731,6 +759,8 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
       stage,
       retries: 0,
       startedAtMs: perfNow(),
+      width: size?.width,
+      height: size?.height,
     };
     queueRef.current.push(job);
     setWatermarkState(prev => ({ ...prev, [photoId]: "pending" }));

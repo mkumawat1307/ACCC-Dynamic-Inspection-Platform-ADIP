@@ -78,6 +78,9 @@ android/app/release.keystore
 # Local env files
 .env*.local
 
+# Local-only package manager flag (save-exact=true; no registry/auth, not needed upstream)
+.npmrc
+
 # TypeScript incremental build cache
 *.tsbuildinfo
 
