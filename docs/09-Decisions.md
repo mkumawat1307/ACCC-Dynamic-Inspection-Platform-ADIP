@@ -2,9 +2,9 @@
 
 # Architecture Decision Records (ADR)
 
-Version: 1.6
+Version: 1.7
 
-Last Updated: 2026-08-06
+Last Updated: 2026-08-08
 
 Status: Active
 
@@ -1073,7 +1073,7 @@ Native JPEG Encoder for Watermark Burn-In — Replacing `canvas.toBlob("image/jp
 
 ### Status
 
-Implemented (August 2026)
+Implemented (August 2026). **Superseded in the same month by [ADR-023](#adr-023)** for the default native path — overlay-native composite replaces full-frame RGBA as the primary stage; the ADR-022 `rgba` path remains on the fallback ladder (`overlay → rgba → toblob`).
 
 ### Date
 
@@ -1237,6 +1237,168 @@ Open acceptance items (need a physical device):
 4. Fallback test with the module disabled.
 
 Note: **Expo Go cannot load custom native modules.** The native path only activates in a custom build (`npx expo run:android`) or release APK; in Expo Go `hasNativeWatermarkEncoder()` returns `false` and every photo takes the `toBlob` path (intermittent 4s stalls persist there by design).
+
+---
+
+# ADR-023
+
+## Title
+
+Overlay-Native Composite for Watermark Burn-In — Composite a Small Rendered Overlay onto the Original Photo on the Kotlin Side
+
+### Status
+
+Implemented (August 2026)
+
+### Date
+
+August 2026
+
+### Context
+
+ADR-022 replaced the stalled `canvas.toBlob("image/jpeg")` encode stage with a native JPEG encoder (`WatermarkEncoderModule.encodeJpeg`). That path is correct and shipped, but it still moves the **entire composited photo** across the WebView↔RN boundary as a full-resolution RGBA buffer (base64 ~64MB @ 4000×3000, decode ~48MB, Bitmap ~48MB, peak transient ~210MB). It also re-rasterizes the photo: the source JPEG is decoded, drawn to canvas, then all pixels are read back via `getImageData` even though only the small watermark area changes.
+
+Diagnosis of the remaining traffic:
+
+- The photo occupies the whole frame; the watermark occupies a small box in the corner (typically ~500×1000, a few percent of the frame).
+- The full-RGBA path pays `getImageData` (~50–150ms) + base64 (~250–450ms) + bridge + native Bitmap create **for every pixel of the frame**, most of which are never modified by the watermark.
+
+The decision re-examines where the native boundary should sit: draw only the watermark in the WebView, hand over a **small standalone overlay PNG plus its placement rectangle**, and do the only remaining step — JPEG re-encode — on the native side where the source photo is decoded just once.
+
+Constraints carried over from ADR-022 (must keep):
+
+1. Preserve the HTML/CSS canvas renderer as the single source of truth for watermark composition (fonts, metrics, style → WYSIWYG with the live preview).
+2. Preserve pixel-identical preview ↔ saved output (shared `computeWatermarkMetrics`/`computeWatermarkOverlayLayout`).
+3. Replace the in-WebView full-frame JPEG encode; the encode/readback that can stall must be bypassed.
+4. Must not rely on the WebView process for pixels that can stall.
+
+### Decision
+
+Split the burn-in into three stages and composite **only the watermark overlay** natively onto the original photo file:
+
+1. **Measure (WebView):** `buildMeasureOverlayScript` asks the renderer to set the watermark font (`bold <fSize>px sans-serif`) and return the max text width via `ctx.measureText` → `postMessage({ photoId, maxTextWidth })`.
+2. **Compute (RN JS):** `computeWatermarkOverlayLayout(imgWidth, imgHeight, maxTextWidthPx, lineCount, style)` derives the box geometry, text origin, and a **clip rect** (`overX/overY/overW/overH`) = the box plus a 12px shadow margin, clamped to the image bounds. This is pure JS — the layout metrics are shared verbatim with the live preview (`computeWatermarkMetrics`), preserving WYSIWYG.
+3. **Render overlay (WebView):** `buildRenderOverlayScript` resizes the canvas to just the clip rect (`W×H` few percent of the photo), draws the rounded-rect backdrop + shadowed text at layout-relative offsets, and `canvas.toBlob("image/png")` (PNG of a tiny, mostly-transparent tile) → `postMessage({ photoId, overlay: base64, overlayX, overlayY, overlayWidth, overlayHeight })`.
+4. **Composite (native):** `WatermarkEncoderModule.encodeOverlay(inputPath, overlayBase64, overlayX, overlayY, quality, outputPath)` decodes the **original JPEG** from file, decodes the overlay PNG, draws the overlay onto a copy at the given offset via `Canvas.drawBitmap`, and `Bitmap.compress(JPEG, quality)` → temp file. `saveAndComplete` then reuses the existing SAF `writePhoto` → `PhotoRepository.updateFilePath` → `onPhotosUpdated` chain unchanged from ADR-022.
+
+Stage selection (`enqueueWatermark`):
+
+- `useNativeOverride === false` → `toblob` (force the durable fallback, used by retries).
+- `useNativeOverride === true` → `overlay`.
+- default: `hasNativeWatermarkEncoder() && hasNativeOverlayEncoder()` → `overlay`; else `hasNativeWatermarkEncoder()` → `rgba` (ADR-022's full-RGBA path); else `toblob`.
+
+Fallback ladder per job: **`overlay` → `rgba` → `toblob`**. Failure triggers — measure throws, layout computation unavailable, overlay PNG render fails, or `encodeOverlay` rejects (including `E_OOM`) — downshift the job's stage one step and reprocess, preserving the existing retry/watchdog semantics. The `toBlob` path remains the durable fallback and is unchanged.
+
+This is not "draw the watermark in Kotlin" (rejected in ADR-022 Alternative 3): all layout/font/metric/shadow/rounded-rect logic still runs in the WebView renderer, so the saved output inherits the exact same preview geometry. Only the compositing onto the photo is native.
+
+### Data Movement (WebView → RN → Native)
+
+```
+WebView (JS)                       RN (JS)                             Native (Kotlin)
+───────────                        ───────                             ───────────────
+measureOverlayText(photoId, fSize, lines)                               
+   │  ctx.measureText → maxTextWidth                                    
+   │  postMessage({photoId,maxTextWidth})                               │
+   │────────────────────────────────►  onMessage → measure branch       │
+   │                                  computeWatermarkOverlayLayout      │
+   │                                  container.job.layout = layout      │
+   │  renderOverlay(photoId,layout,lines,style)                        │
+   │  canvas W×H = clip rect box+12px  │  buildRenderOverlayScript       │
+   │  draw rounded-rect + box + text   │──────────────────────────►     │
+   │  toBlob('image/png') (tiny tile)  │                                 │
+   │  postMessage({overlay, overlayX, overlayY, overlayW, overlayH})     │
+   │◄───────────────────────────────── │  message overlay branch         │
+   │                                 │  NativeModules.WatermarkEncoder   │
+   │                                 │    .encodeOverlay(inputPath,      │
+   │                                 │      overlay, x, y, quality, out) │
+   │                                 │───────────────────────────────────►│  Thread
+   │                                 │                                   │  decode JPEG (BitmapFactory)
+   │                                 │                                   │  decode overlay PNG
+   │                                 │                                   │  drawBitmap(overlay, x, y)
+   │                                 │                                   │  compress(JPEG, 95, out)
+   │                                 │                                   │  recycle all; resolve(true)
+   │                                 │◄──────────────────────────────────│
+   │                                 │  temp JPEG (2–5MB)
+   │                                 │  → writePhoto → SAF project folder
+   │                                 │  → PhotoRepository.updateFilePath
+   │                                 │  → delete temp + source temp
+```
+
+Key properties:
+
+- The **only** large object is now the small overlay PNG (~box-sized tile, bytes for a few percent of the frame) — not the full photo. The original JPEG is never re-encoded pixel-by-pixel in the WebView; it is read once natively and written once.
+- The photo's JPEG bytes never round-trip through the bridge; they go file → `BitmapFactory` → `Bitmap.compress`. Layout and overlay content come from the WebView, so WYSIWYG is preserved by construction.
+- Pixel identity: the overlay tile is drawn at the measured/metric-computed origin, so text of the saved photo equals what the live `WatermarkOverlay` preview shows (same `computeWatermarkMetrics`/layout inputs).
+- The native module exposes both `encodeJpeg` (ADR-022) and `encodeOverlay`; the RN processor selects the stage per job, so no module-level enable flag is needed.
+
+### Alternatives Considered
+
+### Alternative 1 — Keep ADR-022 full-frame RGBA (status quo)
+
+- **Pros:** already implemented, correct, deterministic.
+- **Cons:** still moves the full photo base64 (~64MB) and re-reads every pixel via `getImageData`; Peak transient ~210MB on 4000×3000; the native step re-encodes nothing but copies the whole frame into a new Bitmap. The stall-prone path is bypassed, but expensive bridge traffic and memory remain.
+
+### Alternative 2 — Full native compositing in Kotlin (ADR-022 Alternative 3 reconsidered)
+
+- **Decision:** draw the watermark entirely in Kotlin (`Paint.measureText`) — rejected on WYSIWYG drift grounds: `Paint.measureText` / Skia hinting can render text slightly differently from the canvas renderer, and there is no preview hook to verify. Rejected on constraint #1.
+
+### Alternative 3 — WebView draws watermark onto a downscaled/blurred backdrop in the overlay tile
+
+- unnecessary complexity; the original JPEG is already under the overlay at full resolution in the native composite. Rejected.
+
+### Consequences
+
+Positive:
+
+- The encode reads the photo once and writes it once, with no full-frame bridge transfer, so both signal time and peak memory drop sharply relative to full-RGBA.
+- The overlay tile PNG is small; its per-encode cost is trivial; the previous `getImageData`/base64 cost no longer scales with the photo resolution.
+- WYSIWYG is preserved by construction — the WebView remains the layout/typo source of truth, and the composite origins from the layout's clip rect.
+- The `rgba`/`toblob` fallbacks from ADR-022 remain on the ladder, so a device without `encodeOverlay` degrades to the full-RGBA path, not to a broken capture.
+- Overlay text/box geometry can be reused for diagnostics (diag fields `overlayPngB64Len`, `overlayX/Y/W/H`, `boxX/Y/W/H`, `shadowMargin`).
+
+Negative:
+
+- Adds a second Kotlin method (`encodeOverlay`) and a two-message protocol (measure → render) per photo, a slightly more complex state machine than a single native call.
+- The overlay PNG must stay **lossless** (`image/png`), and its clip rectangle must be ≥ the box plus the shadow extent, otherwise shadows clip at the overlay edge — hence the explicit 12px margin.
+- Alpha edge: `drawBitmap` composites RGBA over the source (true alpha), whereas the full-canvas `toBlob` JPEG path flattened alpha over black. In practice the overlay area is a rounded-rect with a fully opaque back drop on the opaque source photo, so the visible difference vs the legacy JPEG is limited to the shadow anti-aliased fringe; the alpha-blend is *more* faithful to the preview.
+- Requires a custom build to even run the overlay path (same native-module constraint as ADR-022).
+
+### Acceptance Criteria
+
+1. Full suite green: `npx tsc --noEmit`, `yarn lint` (0 errors), `yarn test` — **772 tests**, 67 suites.
+2. Overlay-stage behavior tests: measured→layout→render→native composite→SAF save; and rgba fallback when the overlay composite rejects.
+3. WYSIWYG: overlay layout == `computeWatermarkOverlayMetrics` of the preview (unit-tested); clip rect = box + 12px margin, clamped to image bounds.
+4. Renderer page emits the measure/render/overlay protocol entry points without the legacy full-frame decode (diag shows `imgWasSized`, `overlayPngB64Len`, no `rgba`).
+5. Device-only gates (from ADR-022 open items, now apply to the overlay path's composite):
+    - pixel-diff test: overlay-native composite vs `toBlob` output stays below an agreed perceptual threshold;
+    - 20-capture release-APK run: no stage > 2,500ms; median < 1,200ms;
+    - 2GB-device memory test: peak native heap < 150MB, no OOM;
+    - module-disabled fallback: `toblob` produces valid output with retry semantics intact.
+
+### Implementation Status (August 2026)
+
+Implemented end-to-end and verified in CI/test; commit on `main`:
+
+- `0bfd1eb` camera: switch watermark pipeline to overlay-native composite architecture
+
+What shipped:
+
+- **`src/native/WatermarkEncoder.ts`** — `hasNativeOverlayEncoder()` (checks `NativeModules.WatermarkEncoder.encodeOverlay` is a function) and `encodeWatermarkOverlay(inputPath, overlayBase64, overlayX, overlayY, quality, outputPath)`, throws `"WatermarkEncoder overlay composite is not available"` when absent.
+- **`src/utils/watermarkStyle.ts`** — `computeWatermarkOverlayLayout` (box geometry, text origin, clip rect) + exported `WATERMARK_OVERLAY_SHADOW_MARGIN = 12`; the same `computeWatermarkMetrics` the preview overlay uses (WYSIWYG).
+- **`src/utils/watermarkHtml.ts`** — `buildMeasureOverlayScript` + `buildRenderOverlayScript` entry points and the `measureOverlayText`/`renderOverlay` functions in the renderer page; `renderOverlay` draws only the clip-rect tile as PNG and reports its geometry + perf, diag (`toBlobMs`/`frMs` for the small tile, `overlayPngB64Len`, `overlayX/Y/W/H`, `boxX/Y/W/H`, `shadowMargin`).
+- **`src/components/inspection/useWatermarkProcessor.ts`** — new `overlay` stage at the top of the waterfall, watchdog 8s, two-message handshake (measure → overlay), stage downshift overlay→rgba→toblob; `enqueueWatermark` default-selection and `useNativeOverride`; full overlay save path via `saveAndComplete`.
+- **`android/.../WatermarkEncoderModule.kt`** — `@ReactMethod encodeOverlay(inputPath, overlayBase64, overlayX, overlayY, quality, outputPath)`: background Thread; `BitmapFactory.decodeFile` source + decode overlay → `drawBitmap` at (x,y) with clamping → `compress(JPEG, quality=95)` → resolve/typed rejection (`E_DECODE`/`E_ENCODE`/`E_OOM`); all bitmaps `recycle()` in `finally`. Registered alongside the existing module (single registration already present from ADR-022).
+- **Tests** — overlay-stage tests for the processor (measure→composite save, rgba fallback on composite failure), layout-equivalence tests for `computeWatermarkOverlayLayout` (`bottomLeft`/`bottomRight`, shadow margin, clip-contents), and full renderer-page tests for measure/overlay entry points, sanitization, U+2028, perf fields. 772 tests across 67 suites.
+
+Known deviations:
+
+- The overlay PNG still uses `canvas.toBlob("image/png")` for the (small, transparent) tile. PNG in a persistent WebView uses the same Chromium encoder as JPEG, but on a tiny canvas the stall risk is negligible and the earlier stall was specific to JPEG quality 0.95 on large canvases. If a stall ever shows up, the tile path can drop to `getImageData` for a ~1MB buffer.
+- Encode quality for the composite is the same `95` (0–100) as the ADR-022 path.
+- The `rgba` stage from ADR-022 remains compiled in as the middle rung; it is no longer the default on devices that expose both modules.
+
+Open or device-only acceptance:
+
+- Physical-device gates from the "Risks and Acceptance" above (pixel-diff, 20× capture, 2GB memory, module-disabled fallback) remain to be validated; the JS/test gates listed in the Risk/Acceptance section are green.
 
 ---
 
