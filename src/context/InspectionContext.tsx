@@ -12,6 +12,7 @@ import { clearActiveProject } from "@/src/database/db";
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
 import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
 import { logger } from "@/src/utils/logger";
+import { requestAndroidBackup } from "@/src/utils/androidBackup";
 
 export interface InspectionContextType {
   project: Project | null;
@@ -75,6 +76,7 @@ const removeProject = useCallback(async (p: Project) => {
   if (p.DBPath) {
     await deleteProjectDb(p.DBPath);
   }
+  requestAndroidBackup();
 }, [project, closeProject]);
 
 const value = useMemo(

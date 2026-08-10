@@ -5,6 +5,7 @@ import { logger } from "@/src/utils/logger";
 import { InspectionSection, InspectionField } from "./InspectionTypes";
 import { deleteInspectionData } from "./inspectionDataHelper";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
+import { requestAndroidBackup } from "@/src/utils/androidBackup";
 
 export const INSPECTION_FINAL_STATUSES = ["Completed", "Submitted"] as const;
 
@@ -419,6 +420,8 @@ static async deleteInspection(
   });
 
   InspectionDataBus.emitInspectionsChanged(projectId);
+
+  requestAndroidBackup();
 }
 
 static async deleteMultipleInspections(
@@ -435,5 +438,7 @@ static async deleteMultipleInspections(
   });
 
   InspectionDataBus.emitInspectionsChanged(projectId);
+
+  requestAndroidBackup();
 }
 }

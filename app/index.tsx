@@ -18,6 +18,7 @@ import { DeleteProjectDialog, CloneProjectDialog } from "@/src/components/app/co
 import { styles } from "@/src/components/app/index.styles";
 import { useInspection } from "@/src/context/InspectionContext";
 import { createProjectDb, cloneProjectDb, deleteProjectDb, getProjectDbPath } from "@/src/database/helpers/ProjectDBManager";
+import { requestAndroidBackup } from "@/src/utils/androidBackup";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -125,6 +126,7 @@ export default function HomeScreen() {
       }
       // Delete the project record from global DB
       await ProjectRepository.deleteProject(selectedProject.ProjectID);
+      requestAndroidBackup();
       setDeleteDialogVisible(false);
       setSelectedProject(null);
       loadProjects();
@@ -179,6 +181,7 @@ export default function HomeScreen() {
       } catch (cleanupError) {
         logger.error("Clone cleanup error:", cleanupError);
       }
+      requestAndroidBackup();
       Alert.alert("Error", "Unable to clone project.");
     }
   };
