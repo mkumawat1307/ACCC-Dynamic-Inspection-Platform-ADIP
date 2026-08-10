@@ -84,7 +84,7 @@ def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 android {
     ndkVersion rootProject.ext.ndkVersion
 
-    buildToolsVersion "35.0.0"
+    buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace 'com.accc.dynamicinspection'
@@ -104,26 +104,15 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        release {
-            def keystorePropertiesFile = rootProject.file('keystore.properties')
-            if (keystorePropertiesFile.exists()) {
-                def keystoreProperties = new Properties()
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-                storeFile file(keystoreProperties['MYAPP_UPLOAD_STORE_FILE'])
-                storePassword keystoreProperties['MYAPP_UPLOAD_STORE_PASSWORD']
-                keyAlias keystoreProperties['MYAPP_UPLOAD_KEY_ALIAS']
-                keyPassword keystoreProperties['MYAPP_UPLOAD_KEY_PASSWORD']
-            }
-        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Signed with release keystore via android/keystore.properties (gitignored).
-            // See https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.release
+            // Caution! In production, you need to generate your own keystore file.
+            // see https://reactnative.dev/docs/signed-apk-android.
+            signingConfig signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
@@ -132,6 +121,12 @@ android {
             crunchPngs enablePngCrunchInRelease.toBoolean()
         }
     }
+    applicationVariants.all { variant ->
+    variant.outputs.all { output ->
+        def versionName = variant.versionName
+        outputFileName = "ACCC-Dynamic-Inspection-Platform-v${versionName}.apk"
+    }
+}
     packagingOptions {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
@@ -140,12 +135,6 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
-    }
-    applicationVariants.all { variant ->
-        variant.outputs.all { output ->
-            def fileName = "ACCC-Dynamic-Inspection-Platform-${variant.versionName}-${variant.buildType.name}.apk"
-            outputFileName = fileName
-        }
     }
 }
 
