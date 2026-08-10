@@ -173,23 +173,17 @@ export async function reverseGeocode(
 function buildFullFormattedAddress(address: GeocodedAddress): string {
   const parts: string[] = [];
 
-  // name / building / featureName
-  if (address.name?.trim()) parts.push(address.name.trim());
-
   // street / road
   const streetNumber = address.streetNumber?.trim() ?? "";
   const street = address.street?.trim() ?? "";
   if (streetNumber && street) parts.push(`${streetNumber} ${street}`);
   else if (street) parts.push(street);
 
-  // subregion / area (subAdminArea - district level on Android)
+  // area / sub-locality (subregion = subAdminArea on Android)
   if (address.subregion?.trim()) parts.push(address.subregion.trim());
 
   // city / locality
   if (address.city?.trim()) parts.push(address.city.trim());
-
-  // district (from expo-location's district = subLocality)
-  if (address.district?.trim()) parts.push(address.district.trim());
 
   // state / region
   if (address.region?.trim()) parts.push(address.region.trim());
@@ -200,5 +194,18 @@ function buildFullFormattedAddress(address: GeocodedAddress): string {
   // country
   if (address.country?.trim()) parts.push(address.country.trim());
 
-  return parts.join(", ");
+  // Filter out Plus Codes and administrative divisions
+  const filtered = parts
+    .map((p) => stripPlusCode(p))
+    .filter((p) => p && !/^(Jaipur|Jodhpur|Bikaner|Udaipur|Ajmer|Bharatpur|Kota|Revenue|Sub|Tehsil)\s+(Division|Subdivision|Tehsil)$/i.test(p))
+    .filter((p) => !/^[A-Z0-9]+\+[A-Z0-9]+$/.test(p)); // bare plus code
+
+  // If everything was filtered out (e.g. only plus code existed), fall back to original
+  const result = filtered.length > 0 ? filtered.join(", ") : parts.join(", ");
+
+  if (__DEV__) {
+    logger.debug(`[Geo:reverse] cleaned=${result}`);
+  }
+
+  return result;
 }

@@ -34,6 +34,9 @@ export default function WatermarkOverlay({
   let boxY: number;
 
   if (photoWidth && photoHeight && photoWidth > 0 && photoHeight > 0) {
+    // Apply visual correction (~10%) so preview matches saved photo visually
+    const visualCorrection = 1.10;
+
     // Compute metrics at photo resolution (source of truth for saved photo)
     const photoMetrics = computeWatermarkMetrics(photoWidth, photoHeight, config);
     const photoLayout = computeWatermarkOverlayLayout(
@@ -50,6 +53,9 @@ export default function WatermarkOverlay({
     const scaleY = height / photoHeight;
     const coverScale = Math.max(scaleX, scaleY);
 
+    // Apply visual correction to coverScale
+    const correctedScale = coverScale * visualCorrection;
+
     // Content rect: the photo area visible in the preview (centered crop)
     const contentWidth = width / coverScale;
     const contentHeight = height / coverScale;
@@ -60,30 +66,30 @@ export default function WatermarkOverlay({
     const photoBoxX = photoLayout.boxX;
     const photoBoxY = photoLayout.boxY;
 
-    // Transform to preview space: apply coverScale and content offset
-    boxX = Math.round((photoBoxX - contentOffsetX) * coverScale);
-    boxY = Math.round((photoBoxY - contentOffsetY) * coverScale);
+    // Transform to preview space: apply corrected coverScale and content offset
+    boxX = Math.round((photoBoxX - contentOffsetX) * correctedScale);
+    boxY = Math.round((photoBoxY - contentOffsetY) * correctedScale);
 
-    // Scale all metrics uniformly by coverScale
+    // Scale all metrics uniformly by correctedScale
     m = {
-      fSize: Math.max(12, Math.round(photoMetrics.fSize * coverScale)),
-      lh: Math.max(14, Math.round(photoMetrics.lh * coverScale)),
-      padY: Math.max(4, Math.round(photoMetrics.padY * coverScale)),
-      rPad: Math.max(4, Math.round(photoMetrics.rPad * coverScale)),
-      gapX: Math.max(8, Math.round(photoMetrics.gapX * coverScale)),
-      gapY: Math.max(10, Math.round(photoMetrics.gapY * coverScale)),
-      corner: Math.max(2, Math.round(photoMetrics.corner * coverScale)),
+      fSize: Math.max(12, Math.round(photoMetrics.fSize * correctedScale)),
+      lh: Math.max(14, Math.round(photoMetrics.lh * correctedScale)),
+      padY: Math.max(4, Math.round(photoMetrics.padY * correctedScale)),
+      rPad: Math.max(4, Math.round(photoMetrics.rPad * correctedScale)),
+      gapX: Math.max(8, Math.round(photoMetrics.gapX * correctedScale)),
+      gapY: Math.max(10, Math.round(photoMetrics.gapY * correctedScale)),
+      corner: Math.max(2, Math.round(photoMetrics.corner * correctedScale)),
     };
 
-    if (__DEV__) {
+if (__DEV__) {
       logger.debug(
-        `[Watermark:preview] fitScale=${Math.min(width / photoWidth, height / photoHeight).toFixed(3)} coverScale=${coverScale.toFixed(3)} photo=${photoWidth}x${photoHeight} preview=${width}x${height}`
+        `[Watermark:preview] fitScale=${Math.min(width / photoWidth, height / photoHeight).toFixed(3)} coverScale=${coverScale.toFixed(3)} visualCorrection=${visualCorrection.toFixed(2)} photo=${photoWidth}x${photoHeight} preview=${width}x${height}`
       );
       logger.debug(
         `[Watermark:preview] contentRect=photo(${contentOffsetX.toFixed(0)},${contentOffsetY.toFixed(0)}) ${contentWidth.toFixed(0)}x${contentHeight.toFixed(0)}`
       );
       logger.debug(
-        `[Watermark:preview] finalVisualScale=${coverScale.toFixed(3)} boxX=${boxX} boxY=${boxY} fs=${m.fSize} lh=${m.lh} padY=${m.padY} rPad=${m.rPad} gapX=${m.gapX} gapY=${m.gapY} corner=${m.corner}`
+        `[Watermark:preview] finalVisualScale=${correctedScale.toFixed(3)} boxX=${boxX} boxY=${boxY} fs=${m.fSize} lh=${m.lh} padY=${m.padY} rPad=${m.rPad} gapX=${m.gapX} gapY=${m.gapY} corner=${m.corner}`
       );
     }
   } else {

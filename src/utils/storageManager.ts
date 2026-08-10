@@ -23,6 +23,19 @@ export function getSafCacheState(): { treeUriHit: boolean; projectDirHit: boolea
   return { treeUriHit: lastTreeUriCacheHit, projectDirHit: lastProjectDirCacheHit };
 }
 
+async function testWritable(uri: string): Promise<boolean> {
+  try {
+    // First check if the directory exists and is readable
+    await FileSystem.StorageAccessFramework.readDirectoryAsync(uri);
+    // If we can read it, try to create a test directory to verify writability
+    const testDir = await FileSystem.StorageAccessFramework.makeDirectoryAsync(uri, ".accc_write_test");
+    await FileSystem.StorageAccessFramework.deleteAsync(testDir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureTreeUri(): Promise<string> {
   if (cachedTreeUri) {
     lastTreeUriCacheHit = true;
@@ -35,17 +48,34 @@ export async function ensureTreeUri(): Promise<string> {
 
   const saved = await AsyncStorage.getItem(TREE_URI_KEY);
   if (saved) {
-    cachedTreeUri = saved;
-    return saved;
+    logger.debug("[FolderManager] validating=" + saved);
+    const writable = await testWritable(saved);
+    logger.debug("[FolderManager] writable=" + writable);
+    if (writable) {
+      cachedTreeUri = saved;
+      logger.debug("[FolderManager] selected=" + saved);
+      return saved;
+    }
+    logger.debug("[FolderManager] clearing invalid uri");
+    await AsyncStorage.removeItem(TREE_URI_KEY).catch(() => {});
   }
 
+  logger.debug("[FolderManager] requesting new folder");
   const permission = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(DCIM_URI);
   if (!permission.granted) {
     throw new Error("SAF permission denied");
   }
 
+  logger.debug("[FolderManager] testing=" + permission.directoryUri);
+  const writable = await testWritable(permission.directoryUri);
+  logger.debug("[FolderManager] writable=" + writable);
+  if (!writable) {
+    throw new Error("Selected directory is not writable");
+  }
+
   cachedTreeUri = permission.directoryUri;
   await AsyncStorage.setItem(TREE_URI_KEY, permission.directoryUri);
+  logger.debug("[FolderManager] selected=" + permission.directoryUri);
   return permission.directoryUri;
 }
 
