@@ -88,13 +88,13 @@ describe("formatAddressLines", () => {
     expect(formatAddressLines(null)).toEqual([]);
   });
 
-  it("joins village, district, division and state into one line", () => {
+  it("groups village, district+division, state into 3 lines", () => {
     const out = formatAddressLines({
       district: "Doliyoh Ka Bass",
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Doliyoh Ka Bass Sikar Jaipur Division Rajasthan"]);
+    expect(out).toEqual(["Doliyoh Ka Bass", "Sikar Jaipur Division", "Rajasthan"]);
   });
 
   it("prefers the sub-locality (village) over the landmark name", () => {
@@ -104,7 +104,7 @@ describe("formatAddressLines", () => {
       city: "Alwar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Alwar Jaipur Division Rajasthan"]);
+    expect(out).toEqual(["Alwar", "Alwar Jaipur Division", "Rajasthan"]);
   });
 
   it("falls back to the landmark name when no sub-locality exists", () => {
@@ -113,7 +113,7 @@ describe("formatAddressLines", () => {
       subregion: "Alwar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Near Collector Office Alwar Jaipur Division Rajasthan"]);
+    expect(out).toEqual(["Near Collector Office", "Alwar Jaipur Division", "Rajasthan"]);
   });
 
   it("appends the Rajasthan division for a known district", () => {
@@ -121,7 +121,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Sikar Jaipur Division Rajasthan"]);
+    expect(out).toEqual(["Sikar Jaipur Division", "Rajasthan"]);
   });
 
   it("omits the division for a non-Rajasthan district", () => {
@@ -130,7 +130,7 @@ describe("formatAddressLines", () => {
       subregion: "Hooghly",
       region: "West Bengal",
     });
-    expect(out).toEqual(["Park View Hooghly West Bengal"]);
+    expect(out).toEqual(["Park View", "Hooghly", "West Bengal"]);
   });
 
   it("shows the state only when no other parts exist", () => {
@@ -138,7 +138,7 @@ describe("formatAddressLines", () => {
       name: "Farm Road",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Farm Road Rajasthan"]);
+    expect(out).toEqual(["Farm Road", "Rajasthan"]);
   });
 
   it("returns only the state when nothing else is available", () => {
@@ -163,7 +163,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Main Bazaar Sikar Jaipur Division Rajasthan"]);
+    expect(out).toEqual(["Main Bazaar", "Sikar Jaipur Division", "Rajasthan"]);
   });
 
   it("drops a bare Plus Code used as the locality", () => {
@@ -172,7 +172,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Sikar Jaipur Division Rajasthan"]);
+    expect(out).toEqual(["Sikar Jaipur Division", "Rajasthan"]);
   });
 
   it("strips a Plus Code token embedded in the locality", () => {
@@ -181,7 +181,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["police lines Sikar Jaipur Division Rajasthan"]);
+    expect(out).toEqual(["police lines", "Sikar Jaipur Division", "Rajasthan"]);
   });
 
   it("returns [] when no usable parts exist", () => {

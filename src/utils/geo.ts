@@ -100,18 +100,44 @@ export function formatAddressLines(address: GeocodedAddress | null): string[] {
   const division = district ? RAJASTHAN_DIVISIONS[district] ?? "" : "";
   const state = address.region?.trim() || "";
 
+  // Apply stripPlusCode and dedupe while preserving original position
+  const clean = (s: string) => stripPlusCode(s).trim();
+  const hasLocality = Boolean(locality);
+  const hasDistrict = Boolean(district);
+  const hasState = Boolean(state);
+
+  const lines: string[] = [];
   const seen = new Set<string>();
-  const parts: string[] = [];
-  for (const raw of [locality, district, division, state].map(stripPlusCode)) {
-    const part = raw.trim();
-    if (!part) continue;
+
+  const add = (raw: string, condition: boolean) => {
+    if (!condition) return;
+    const part = clean(raw);
+    if (!part) return;
     const key = part.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return;
     seen.add(key);
-    parts.push(part);
+    lines.push(part);
+  };
+
+  if (hasLocality) {
+    // Line 1: locality
+    add(locality, true);
+    // Line 2: district + division
+    const mid = [district, division].filter(Boolean).join(" ");
+    add(mid, true);
+    // Line 3: state
+    add(state, true);
+  } else if (hasDistrict) {
+    // No locality: line 1 = district + division, line 2 = state
+    const mid = [district, division].filter(Boolean).join(" ");
+    add(mid, true);
+    add(state, true);
+  } else if (hasState) {
+    // Only state
+    add(state, true);
   }
 
-  return parts.length > 0 ? [parts.join(" ")] : [];
+  return lines;
 }
 
 export async function reverseGeocode(
