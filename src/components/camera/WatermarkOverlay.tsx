@@ -3,6 +3,7 @@ import { StyleSheet, View, Text } from "react-native";
 import {
   computeWatermarkMetrics,
   toWatermarkStyleConfig,
+  computeWatermarkOverlayLayout,
 } from "@/src/utils/watermarkStyle";
 import { WatermarkSettings } from "@/src/utils/watermarkSettings";
 import { logger } from "@/src/utils/logger";
@@ -26,40 +27,76 @@ export default function WatermarkOverlay({
 }: Props) {
   const config = toWatermarkStyleConfig(settings);
 
-  // WYSIWYG: If photo dimensions are known, compute metrics at photo scale then scale to preview
+  // If photo dimensions are known, use cover transform to match CameraView's
+  // cover behavior (crop to fill). The preview shows a centered crop of the photo.
   let m: ReturnType<typeof computeWatermarkMetrics>;
+  let boxX: number;
+  let boxY: number;
 
   if (photoWidth && photoHeight && photoWidth > 0 && photoHeight > 0) {
-    // Compute metrics at photo resolution (source of truth)
+    // Compute metrics at photo resolution (source of truth for saved photo)
     const photoMetrics = computeWatermarkMetrics(photoWidth, photoHeight, config);
-    // Uniform scale factor from photo to preview (preserves aspect)
+    const photoLayout = computeWatermarkOverlayLayout(
+      photoWidth,
+      photoHeight,
+      // Use a large enough maxTextWidth to not constrain layout
+      photoMetrics.fSize * 100,
+      lines.length,
+      config
+    );
+
+    // Cover transform: scale to fill preview, cropping excess (matches CameraView)
     const scaleX = width / photoWidth;
     const scaleY = height / photoHeight;
-    const scale = Math.min(scaleX, scaleY);
+    const coverScale = Math.max(scaleX, scaleY);
 
-    // Scale all metrics uniformly
+    // Content rect: the photo area visible in the preview (centered crop)
+    const contentWidth = width / coverScale;
+    const contentHeight = height / coverScale;
+    const contentOffsetX = (photoWidth - contentWidth) / 2;
+    const contentOffsetY = (photoHeight - contentHeight) / 2;
+
+    // Watermark position in photo space (from layout)
+    const photoBoxX = photoLayout.boxX;
+    const photoBoxY = photoLayout.boxY;
+
+    // Transform to preview space: apply coverScale and content offset
+    boxX = Math.round((photoBoxX - contentOffsetX) * coverScale);
+    boxY = Math.round((photoBoxY - contentOffsetY) * coverScale);
+
+    // Scale all metrics uniformly by coverScale
     m = {
-      fSize: Math.max(12, Math.round(photoMetrics.fSize * scale)),
-      lh: Math.max(14, Math.round(photoMetrics.lh * scale)),
-      padY: Math.max(4, Math.round(photoMetrics.padY * scale)),
-      rPad: Math.max(4, Math.round(photoMetrics.rPad * scale)),
-      gapX: Math.max(8, Math.round(photoMetrics.gapX * scale)),
-      gapY: Math.max(10, Math.round(photoMetrics.gapY * scale)),
-      corner: Math.max(2, Math.round(photoMetrics.corner * scale)),
+      fSize: Math.max(12, Math.round(photoMetrics.fSize * coverScale)),
+      lh: Math.max(14, Math.round(photoMetrics.lh * coverScale)),
+      padY: Math.max(4, Math.round(photoMetrics.padY * coverScale)),
+      rPad: Math.max(4, Math.round(photoMetrics.rPad * coverScale)),
+      gapX: Math.max(8, Math.round(photoMetrics.gapX * coverScale)),
+      gapY: Math.max(10, Math.round(photoMetrics.gapY * coverScale)),
+      corner: Math.max(2, Math.round(photoMetrics.corner * coverScale)),
     };
 
     if (__DEV__) {
       logger.debug(
-        `[Watermark:preview] scale=${scale.toFixed(3)} photo=${photoWidth}x${photoHeight} preview=${width}x${height}`
+        `[Watermark:preview] fitScale=${Math.min(width / photoWidth, height / photoHeight).toFixed(3)} coverScale=${coverScale.toFixed(3)} photo=${photoWidth}x${photoHeight} preview=${width}x${height}`
       );
       logger.debug(
-        `[Watermark:preview] box fs=${m.fSize} lh=${m.lh} padY=${m.padY} rPad=${m.rPad} gapX=${m.gapX} gapY=${m.gapY} corner=${m.corner}`
+        `[Watermark:preview] contentRect=photo(${contentOffsetX.toFixed(0)},${contentOffsetY.toFixed(0)}) ${contentWidth.toFixed(0)}x${contentHeight.toFixed(0)}`
+      );
+      logger.debug(
+        `[Watermark:preview] finalVisualScale=${coverScale.toFixed(3)} boxX=${boxX} boxY=${boxY} fs=${m.fSize} lh=${m.lh} padY=${m.padY} rPad=${m.rPad} gapX=${m.gapX} gapY=${m.gapY} corner=${m.corner}`
       );
     }
   } else {
     // Fallback: compute directly at preview resolution (legacy behavior)
+    // Uses gapX/gapY directly for positioning (matches legacy behavior)
     m = computeWatermarkMetrics(width, height, config);
+    boxX = config.position === "bottomRight" ? m.gapX : m.gapX;
+    boxY = m.gapY;
   }
+
+  // Clamp to preview bounds
+  const finalBoxX = Math.max(0, Math.min(width - 1, boxX));
+  const finalBoxY = Math.max(0, Math.min(height - 1, boxY));
 
   return (
     <View
@@ -67,8 +104,8 @@ export default function WatermarkOverlay({
       style={[
         styles.box,
         {
-          bottom: m.gapY,
-          [config.position === "bottomRight" ? "right" : "left"]: m.gapX,
+          bottom: finalBoxY,
+          [config.position === "bottomRight" ? "right" : "left"]: finalBoxX,
           paddingVertical: m.padY,
           paddingHorizontal: m.rPad,
           borderRadius: m.corner,

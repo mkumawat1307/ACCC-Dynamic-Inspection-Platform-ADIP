@@ -14,10 +14,13 @@ import {
 jest.mock("expo-location");
 
 let lastLines: string[] | null = null;
+let lastFullAddress: string = "";
 let setDriverCoords: ((c: { latitude: number; longitude: number } | null) => void) | null = null;
 
 function Driver({ coords }: { coords: { latitude: number; longitude: number } | null }) {
-  lastLines = useAddressLookup(coords);
+  const { lines, fullAddress } = useAddressLookup(coords);
+  lastLines = lines;
+  lastFullAddress = fullAddress;
   return <Text>{lastLines.join("|")}</Text>;
 }
 
@@ -37,6 +40,7 @@ describe("useAddressLookup", () => {
   beforeEach(() => {
     __resetLocationState();
     lastLines = null;
+    lastFullAddress = "";
     setDriverCoords = null;
   });
 
@@ -65,6 +69,7 @@ describe("useAddressLookup", () => {
       setDriverCoords!({ latitude: 27.6, longitude: 75.15 });
     });
     await flush();
+    console.log("DEBUG lastLines:", JSON.stringify(lastLines));
     expect(lastLines).toEqual(["Alwar Jaipur Division Rajasthan"]);
   });
 

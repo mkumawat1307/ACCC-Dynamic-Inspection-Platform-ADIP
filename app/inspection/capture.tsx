@@ -14,6 +14,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
+import InspectionValueRepository from "@/src/database/repositories/InspectionValueRepository";
 import { Photo } from "@/src/models/Photo";
 import { generateFileName } from "@/src/components/inspection/photoUtils";
 import { useGpsTracker } from "@/src/components/camera/useGpsTracker";
@@ -51,7 +52,7 @@ export default function CaptureScreen() {
 
   const cameraRef = useRef<React.ElementRef<typeof CameraView>>(null);
   const gps = useGpsTracker();
-  const addressLines = useAddressLookup(gps.coords);
+  const { lines: addressLines, fullAddress } = useAddressLookup(gps.coords);
 
   const [cameraSize, setCameraSize] = useState({ width: 0, height: 0 });
   const [values, setValues] = useState<{ pole_id: string; block: string }>({
@@ -312,6 +313,29 @@ export default function CaptureScreen() {
       const photoId = await PhotoRepository.create(photo);
       perfLog("capture", `photo=${photoId} sqliteCreate`, tDbInsert);
       perfLog("capture", "shutterToDbInsert", tShutter);
+
+      // Save full formatted address to InspectionValues (field key: "location")
+      if (fullAddress) {
+        try {
+          const fieldRows = await InspectionRepository.getInspectionValues(inspectionId);
+          // The field key "location" corresponds to the "Location Address" field
+          // We need to find the FieldID for "location" field key
+          // Since it's a seeded field, we can query by FieldKey
+          const db = await (await import("@/src/database/db")).getDatabase();
+          const locationField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = ? AND IsActive = 1`,
+            ["location"]
+          );
+          if (locationField) {
+            await InspectionValueRepository.saveValue(inspectionId, locationField.FieldID, fullAddress);
+            logger.debug(`[Capture] Saved full address to InspectionValues: ${fullAddress}`);
+          } else {
+            logger.warn("[Capture] Location field not found in InspectionFields");
+          }
+        } catch (e) {
+          logger.warn("[Capture] Failed to save full address:", e);
+        }
+      }
 
       const lines = composeWatermarkLines({
         siteId: poleId,
