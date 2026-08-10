@@ -60,6 +60,7 @@ export default function CaptureScreen() {
   });
   const [now, setNow] = useState(() => new Date());
   const [shutterBusy, setShutterBusy] = useState(false);
+  const [capturedPhotoSize, setCapturedPhotoSize] = useState<{ width: number; height: number } | null>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -280,6 +281,11 @@ export default function CaptureScreen() {
       }
     }
 
+    // Store photo dimensions for WYSIWYG preview
+    if (result.width && result.height) {
+      setCapturedPhotoSize({ width: result.width, height: result.height });
+    }
+
     try {
       const timestamp = new Date().toISOString();
       const poleId = values.pole_id || "NA";
@@ -340,6 +346,7 @@ export default function CaptureScreen() {
   const handleDiscard = async () => {
     await cleanupPending();
     flow.discard();
+    setCapturedPhotoSize(null);
   };
 
   const handleRetry = () => {
@@ -347,6 +354,7 @@ export default function CaptureScreen() {
     if (!pending) return;
     retryWatermark(pending.photoId);
     flow.retry();
+    setCapturedPhotoSize(null);
   };
 
   const handleClose = () => {
@@ -429,6 +437,8 @@ export default function CaptureScreen() {
               height={cameraSize.height}
               lines={previewLines}
               settings={settings}
+              photoWidth={capturedPhotoSize?.width}
+              photoHeight={capturedPhotoSize?.height}
             />
           )}
 

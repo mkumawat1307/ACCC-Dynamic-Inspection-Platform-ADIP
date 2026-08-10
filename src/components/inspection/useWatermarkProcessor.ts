@@ -57,6 +57,7 @@ interface WatermarkJob {
   previewWidth?: number;
   previewHeight?: number;
   layout?: WatermarkOverlayLayout;
+  _firstRenderStartMs?: number;
 }
 
 interface SaveStageTimings {
@@ -148,6 +149,9 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const loadCountRef = useRef(0);
   const readyCountRef = useRef(0);
   const readyInstanceRef = useRef<string | null>(null);
+  const warmupDoneRef = useRef(false);
+  const warmupStartRef = useRef(0);
+  const firstJobLoggedRef = useRef(false);
 
   useEffect(() => {
     setWatermarkState(prev => {
@@ -506,6 +510,52 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
             readyWaitStartRef.current = 0;
           }
           setTimeout(() => processNext(), 0);
+
+          // WebView warmup: run a no-op measure+render to warm up V8/Canvas
+          // Skip warmup in test environment (Jest) to avoid interfering with fake timers
+          const isTestEnv = typeof process !== 'undefined' && !!process.env.JEST_WORKER_ID;
+          if (!warmupDoneRef.current && !isTestEnv) {
+            warmupDoneRef.current = true;
+            warmupStartRef.current = perfNow();
+            if (__DEV__) {
+              logger.debug(`[Watermark:warmup] start`);
+            }
+            try {
+              // Inject a measure script with dummy data, then a tiny render
+              const wv = webViewRef.current;
+              if (wv) {
+                // Use a dummy photoId that won't match any real job
+                const warmupId = -1;
+                // Measure phase
+                wv.injectJavaScript(
+                  `window.renderWatermarkFromJson(${JSON.stringify({
+                    photoId: warmupId,
+                    measure: true,
+                    fontSize: 24,
+                    lines: ["Warmup"],
+                  })}); true;`
+                );
+                // After a brief delay, inject a renderOverlay with minimal layout
+                setTimeout(() => {
+                  if (wv) {
+                    wv.injectJavaScript(
+                      `window.renderWatermarkFromJson(${JSON.stringify({
+                        photoId: warmupId,
+                        layout: { metrics: { fSize: 24, lh: 28, padY: 8, rPad: 10, gapX: 16, gapY: 20, corner: 4 }, boxX: 10, boxY: 10, boxW: 100, boxH: 50, overX: 0, overY: 0, overW: 124, overH: 74, textLeft: 20, textBase: 30 }, lines: ["Warmup"], style: { fontScale: 0.8, position: "bottomLeft", bgOpacity: 0.5, textColor: "#76FF03" },
+                      })}); true;`
+                    );
+                    if (__DEV__) {
+                      logger.debug(`[Watermark:warmup] ready in ${(perfNow() - warmupStartRef.current).toFixed(1)}ms`);
+                    }
+                  }
+                }, 50);
+              }
+            } catch (e) {
+              if (__DEV__) {
+                logger.debug(`[Watermark:warmup] skipped reason=${e instanceof Error ? e.message : String(e)}`);
+              }
+            }
+          }
         }
         return;
       }
@@ -536,6 +586,12 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
             `[Watermark:layout] photo=${photoId} x=${job.layout.overX} y=${job.layout.overY} ` +
               `w=${job.layout.overW} h=${job.layout.overH}`
           );
+          // First-capture logging
+          if (!firstJobLoggedRef.current) {
+            firstJobLoggedRef.current = true;
+            logger.debug(`[Watermark:first] renderStart`);
+            job._firstRenderStartMs = perfNow();
+          }
         }
         try {
           injectJourneyScript(job, buildRenderOverlayScript(job.photoId, job.layout, job.lines, job.style));
@@ -558,6 +614,10 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
             `[Watermark:overlay] photo=${photoId} pngB64Len=${(data.diag?.overlayPngB64Len ?? data.overlay.length)} ` +
               `x=${data.overlayX} y=${data.overlayY} size=${data.overlayWidth}x${data.overlayHeight}`
           );
+          // First-capture render ready logging
+          if (job._firstRenderStartMs) {
+            logger.debug(`[Watermark:first] renderReady in ${(perfNow() - job._firstRenderStartMs).toFixed(1)}ms`);
+          }
         }
         const wrapped = { ...data, overlay: data.overlay } as typeof data & { overlay: string };
         (async () => {
