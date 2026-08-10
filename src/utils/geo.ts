@@ -27,7 +27,6 @@ export function isLocationFresh(
 export type GeocodedAddress = Location.LocationGeocodedAddress;
 
 export const MAX_ADDRESS_LINE_LENGTH = 44;
-export const MAX_ADDRESS_LINES = 3;
 
 export function truncateAddressLine(line: string): string {
   const trimmed = line.trim();
@@ -42,40 +41,71 @@ function stripPlusCode(text: string): string {
     .trim();
 }
 
+export const RAJASTHAN_DIVISIONS: Record<string, string> = {
+  Ajmer: "Ajmer Division",
+  Beawar: "Ajmer Division",
+  Bhilwara: "Ajmer Division",
+  "Didwana-Kuchaman": "Ajmer Division",
+  Nagaur: "Ajmer Division",
+  Tonk: "Ajmer Division",
+  Bharatpur: "Bharatpur Division",
+  Deeg: "Bharatpur Division",
+  Dholpur: "Bharatpur Division",
+  Karauli: "Bharatpur Division",
+  "Sawai Madhopur": "Bharatpur Division",
+  Bikaner: "Bikaner Division",
+  Churu: "Bikaner Division",
+  Hanumangarh: "Bikaner Division",
+  "Sri Ganganagar": "Bikaner Division",
+  Alwar: "Jaipur Division",
+  Dausa: "Jaipur Division",
+  Jaipur: "Jaipur Division",
+  Jhunjhunu: "Jaipur Division",
+  "Khairthal-Tijara": "Jaipur Division",
+  "Kotputli-Behror": "Jaipur Division",
+  Sikar: "Jaipur Division",
+  Balotra: "Jodhpur Division",
+  Barmer: "Jodhpur Division",
+  Jaisalmer: "Jodhpur Division",
+  Jalore: "Jodhpur Division",
+  Jodhpur: "Jodhpur Division",
+  Pali: "Jodhpur Division",
+  Phalodi: "Jodhpur Division",
+  Sirohi: "Jodhpur Division",
+  Baran: "Kota Division",
+  Bundi: "Kota Division",
+  Jhalawar: "Kota Division",
+  Kota: "Kota Division",
+  Banswara: "Udaipur Division",
+  Chittorgarh: "Udaipur Division",
+  Dungarpur: "Udaipur Division",
+  Pratapgarh: "Udaipur Division",
+  Rajsamand: "Udaipur Division",
+  Salumber: "Udaipur Division",
+  Udaipur: "Udaipur Division",
+};
+
 export function formatAddressLines(address: GeocodedAddress | null): string[] {
   if (!address) return [];
 
-  const parts: string[] = [];
+  const locality =
+    address.district?.trim() || address.name?.trim() || address.city?.trim() || "";
+  const district = address.subregion?.trim() || address.city?.trim() || "";
+  const division = district ? RAJASTHAN_DIVISIONS[district] ?? "" : "";
+  const state = address.region?.trim() || "";
+
   const seen = new Set<string>();
-
-  const add = (raw: string): void => {
-    const cleaned = stripPlusCode(raw);
-    const t = truncateAddressLine(cleaned);
-    if (!t) return;
-    const key = t.toLowerCase();
-    if (seen.has(key)) return;
+  const parts: string[] = [];
+  for (const raw of [locality, district, division, state].map(stripPlusCode)) {
+    const part = raw.trim();
+    if (!part) continue;
+    const key = part.toLowerCase();
+    if (seen.has(key)) continue;
     seen.add(key);
-    parts.push(t);
-  };
+    parts.push(part);
+  }
 
-  const streetNumber = address.streetNumber?.trim() ?? "";
-  const street = address.street?.trim() ?? "";
-  const road = (streetNumber && street ? `${streetNumber} ${street}` : street) || "";
-  const name = address.name?.trim() ?? "";
-  const nameOrRoad = stripPlusCode(name) || road;
-  add(nameOrRoad);
-
-  const district = address.district?.trim() ?? "";
-  const subregion = address.subregion?.trim() ?? "";
-  const city = address.city?.trim() ?? "";
-  const region = address.region?.trim() ?? "";
-
-  add(district);
-  add(city);
-  if (subregion && !/division$/i.test(subregion)) add(subregion);
-  if (!city) add(region);
-
-  return parts.slice(0, MAX_ADDRESS_LINES);
+  return parts.length > 0 ? [parts.join(" ")] : [];
 }
 
 export async function reverseGeocode(
