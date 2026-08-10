@@ -2,7 +2,7 @@
 
 > Offline-First | Configuration-Driven | Android Inspection Platform
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Android-success)
 ![Offline](https://img.shields.io/badge/offline-yes-green)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)
@@ -50,6 +50,7 @@ watermarked JPEG saved via SAF → DCIM/ACCC Inspection/<Project>/
 - **WebView overlay rendering** — a background WebView lays out and rasterizes watermark text (dynamic font size, alignment, background) using layout metrics computed from the final image size.
 - **Native `WatermarkEncoderModule`** — a Kotlin Android module decodes the original JPEG, composites the overlay PNG at the computed position, and replies with the watermarked result.
 - **Final saved to storage** — the composited image is written to the project folder under DCIM via SAF.
+- **Preview WYSIWYG with visual correction** — the live preview watermark now matches the saved photo via a cover-fit transform with a 10% visual correction (`visualCorrection = 1.10`). DEV log: `[Watermark:preview] visualCorrection=1.10`.
 
 > **⚠ Note:** Expo Go does not support the native watermark module and uses a different (browser-style) encoder path. It is **not representative of production behavior** — use a development or release build on Android to validate watermarking.
 
