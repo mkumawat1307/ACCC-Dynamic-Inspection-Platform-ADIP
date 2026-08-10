@@ -96,9 +96,16 @@ export function formatAddressLines(address: GeocodedAddress | null): string[] {
 
   const locality =
     address.district?.trim() || address.name?.trim() || address.city?.trim() || "";
+  // District: prefer subAdminArea (subregion), fall back to city/locality
   const district = address.subregion?.trim() || address.city?.trim() || "";
   const division = district ? RAJASTHAN_DIVISIONS[district] ?? "" : "";
   const state = address.region?.trim() || "";
+
+  if (__DEV__) {
+    logger.debug(
+      `[Geo:format] raw district=${address.district} subregion=${address.subregion} city=${address.city} region=${address.region} => locality="${locality}" district="${district}" division="${division}" state="${state}"`
+    );
+  }
 
   // Apply stripPlusCode and dedupe while preserving original position
   const clean = (s: string) => stripPlusCode(s).trim();
@@ -135,6 +142,10 @@ export function formatAddressLines(address: GeocodedAddress | null): string[] {
   } else if (hasState) {
     // Only state
     add(state, true);
+  }
+
+  if (__DEV__) {
+    logger.debug(`[Geo:format] output lines=${JSON.stringify(lines)}`);
   }
 
   return lines;
