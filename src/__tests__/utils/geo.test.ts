@@ -88,13 +88,14 @@ describe("formatAddressLines", () => {
     expect(formatAddressLines(null)).toEqual([]);
   });
 
-  it("groups village, district+division, state into 3 lines", () => {
+  it("groups area, city into line 1 and state postalCode into line 2", () => {
     const out = formatAddressLines({
       district: "Doliyoh Ka Bass",
       subregion: "Sikar",
       region: "Rajasthan",
+      postalCode: "332001",
     });
-    expect(out).toEqual(["Doliyoh Ka Bass", "Sikar Jaipur Division", "Rajasthan"]);
+    expect(out).toEqual(["Doliyoh Ka Bass, Sikar", "Rajasthan 332001"]);
   });
 
   it("prefers the sub-locality (village) over the landmark name", () => {
@@ -104,7 +105,7 @@ describe("formatAddressLines", () => {
       city: "Alwar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Alwar", "Alwar Jaipur Division", "Rajasthan"]);
+    expect(out).toEqual(["Alwar", "Rajasthan"]);
   });
 
   it("falls back to the landmark name when no sub-locality exists", () => {
@@ -113,24 +114,24 @@ describe("formatAddressLines", () => {
       subregion: "Alwar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Near Collector Office", "Alwar Jaipur Division", "Rajasthan"]);
+    expect(out).toEqual(["Near Collector Office, Alwar", "Rajasthan"]);
   });
 
-  it("appends the Rajasthan division for a known district", () => {
+  it("uses the district alone when no area/city exists", () => {
     const out = formatAddressLines({
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Sikar Jaipur Division", "Rajasthan"]);
+    expect(out).toEqual(["Sikar", "Rajasthan"]);
   });
 
-  it("omits the division for a non-Rajasthan district", () => {
+  it("omits any division for a non-Rajasthan district", () => {
     const out = formatAddressLines({
       name: "Park View",
       subregion: "Hooghly",
       region: "West Bengal",
     });
-    expect(out).toEqual(["Park View", "Hooghly", "West Bengal"]);
+    expect(out).toEqual(["Park View, Hooghly", "West Bengal"]);
   });
 
   it("shows the state only when no other parts exist", () => {
@@ -145,7 +146,7 @@ describe("formatAddressLines", () => {
     expect(formatAddressLines({ region: "Rajasthan" })).toEqual(["Rajasthan"]);
   });
 
-  it("does not include country or postal code", () => {
+  it("includes postal code in the address but not the country", () => {
     const out = formatAddressLines({
       city: "Jaipur",
       region: "Rajasthan",
@@ -153,7 +154,7 @@ describe("formatAddressLines", () => {
       country: "India",
     });
     expect(out.join(" ")).not.toContain("India");
-    expect(out.join(" ")).not.toContain("302001");
+    expect(out.join(" ")).toContain("302001");
   });
 
   it("dedupes a city that repeats the district or division", () => {
@@ -163,7 +164,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Main Bazaar", "Sikar Jaipur Division", "Rajasthan"]);
+    expect(out).toEqual(["Main Bazaar, Sikar", "Rajasthan"]);
   });
 
   it("drops a bare Plus Code used as the locality", () => {
@@ -172,7 +173,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Sikar Jaipur Division", "Rajasthan"]);
+    expect(out).toEqual(["Sikar", "Rajasthan"]);
   });
 
   it("strips a Plus Code token embedded in the locality", () => {
@@ -181,7 +182,17 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["police lines", "Sikar Jaipur Division", "Rajasthan"]);
+    expect(out).toEqual(["police lines, Sikar", "Rajasthan"]);
+  });
+
+  it("removes administrative division tokens from the area/city line", () => {
+    const out = formatAddressLines({
+      name: "Police Lines",
+      subregion: "Sikar",
+      city: "Sikar",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Police Lines, Sikar", "Rajasthan"]);
   });
 
   it("returns [] when no usable parts exist", () => {

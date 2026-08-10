@@ -62,13 +62,19 @@ export default function WatermarkOverlay({
     const contentOffsetX = (photoWidth - contentWidth) / 2;
     const contentOffsetY = (photoHeight - contentHeight) / 2;
 
-    // Watermark position in photo space (from layout)
+    // Watermark position in photo space (from layout).
+    // boxX is a left offset; boxY is a TOP-origin Y (0 = top of image).
     const photoBoxX = photoLayout.boxX;
     const photoBoxY = photoLayout.boxY;
 
-    // Transform to preview space: apply corrected coverScale and content offset
+    // Transform to preview space: apply corrected coverScale and content offset.
+    // Left edge stays a left offset:
     boxX = Math.round((photoBoxX - contentOffsetX) * correctedScale);
-    boxY = Math.round((photoBoxY - contentOffsetY) * correctedScale);
+    // Top-origin Y => bottom offset (distance from the bottom edge of the
+    // visible content rect), matching the style's `bottom` property:
+    const photoBoxBottom = photoBoxY + photoLayout.boxH;
+    const contentBottom = contentOffsetY + contentHeight;
+    boxY = Math.round((contentBottom - photoBoxBottom) * correctedScale);
 
     // Scale all metrics uniformly by correctedScale
     m = {
@@ -83,13 +89,13 @@ export default function WatermarkOverlay({
 
 if (__DEV__) {
       logger.debug(
-        `[Watermark:preview] fitScale=${Math.min(width / photoWidth, height / photoHeight).toFixed(3)} coverScale=${coverScale.toFixed(3)} visualCorrection=${visualCorrection.toFixed(2)} photo=${photoWidth}x${photoHeight} preview=${width}x${height}`
+        `[Watermark:preview] position=${config.position} fitScale=${Math.min(width / photoWidth, height / photoHeight).toFixed(3)} coverScale=${coverScale.toFixed(3)} visualCorrection=${visualCorrection.toFixed(2)} photo=${photoWidth}x${photoHeight} preview=${width}x${height}`
       );
       logger.debug(
         `[Watermark:preview] contentRect=photo(${contentOffsetX.toFixed(0)},${contentOffsetY.toFixed(0)}) ${contentWidth.toFixed(0)}x${contentHeight.toFixed(0)}`
       );
       logger.debug(
-        `[Watermark:preview] finalVisualScale=${correctedScale.toFixed(3)} boxX=${boxX} boxY=${boxY} fs=${m.fSize} lh=${m.lh} padY=${m.padY} rPad=${m.rPad} gapX=${m.gapX} gapY=${m.gapY} corner=${m.corner}`
+        `[Watermark:preview] finalVisualScale=${correctedScale.toFixed(3)} boxX=${boxX} boxY=${boxY} width=${Math.round(photoLayout.boxW * correctedScale)} height=${Math.round(photoLayout.boxH * correctedScale)} fs=${m.fSize} lh=${m.lh} padY=${m.padY} rPad=${m.rPad} gapX=${m.gapX} gapY=${m.gapY} corner=${m.corner}`
       );
     }
   } else {

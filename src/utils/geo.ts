@@ -91,63 +91,46 @@ export const RAJASTHAN_DIVISIONS: Record<string, string> = {
   Udaipur: "Udaipur Division",
 };
 
-export function formatAddressLines(address: GeocodedAddress | null): string[] {
-  if (!address) return [];
+function isAdminDivisionPart(part: string): boolean {
+  return /(^|\s)(division|subdivision|tehsil)$/i.test(part.trim());
+}
 
-  const locality =
-    address.district?.trim() || address.name?.trim() || address.city?.trim() || "";
-  // District: prefer subAdminArea (subregion), fall back to city/locality
-  const district = address.subregion?.trim() || address.city?.trim() || "";
-  const division = district ? RAJASTHAN_DIVISIONS[district] ?? "" : "";
-  const state = address.region?.trim() || "";
+function buildCompactAddressLines(address: GeocodedAddress): string[] {
+  const clean = (s?: string | null) => (s ? stripPlusCode(s).trim() : "");
 
-  if (__DEV__) {
-    logger.debug(
-      `[Geo:format] raw district=${address.district} subregion=${address.subregion} city=${address.city} region=${address.region} => locality="${locality}" district="${district}" division="${division}" state="${state}"`
-    );
-  }
+  const streetNumber = clean(address.streetNumber);
+  const street = clean(address.street);
+  const streetLine = streetNumber && street ? `${streetNumber} ${street}` : street;
 
-  // Apply stripPlusCode and dedupe while preserving original position
-  const clean = (s: string) => stripPlusCode(s).trim();
-  const hasLocality = Boolean(locality);
-  const hasDistrict = Boolean(district);
-  const hasState = Boolean(state);
+  const area = clean(address.district) || clean(address.name) || streetLine || "";
+  const subregion = clean(address.subregion);
+  const city = clean(address.city);
+  const state = clean(address.region);
+  const postal = clean(address.postalCode);
+
+  const parts = [area, subregion, city].filter(Boolean);
+  const meaningful = parts.filter((p) => !isAdminDivisionPart(p));
+  const kept = meaningful.length > 0 ? meaningful : parts;
+  const deduped = kept.filter(
+    (p, i) => kept.findIndex((q) => q.toLowerCase() === p.toLowerCase()) === i
+  );
 
   const lines: string[] = [];
-  const seen = new Set<string>();
+  const line1 = deduped.slice(0, 2).join(", ");
+  if (line1) lines.push(line1);
+  const line2 = [state, postal].filter(Boolean).join(" ");
+  if (line2) lines.push(line2);
+  return lines;
+}
 
-  const add = (raw: string, condition: boolean) => {
-    if (!condition) return;
-    const part = clean(raw);
-    if (!part) return;
-    const key = part.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    lines.push(part);
-  };
-
-  if (hasLocality) {
-    // Line 1: locality
-    add(locality, true);
-    // Line 2: district + division
-    const mid = [district, division].filter(Boolean).join(" ");
-    add(mid, true);
-    // Line 3: state
-    add(state, true);
-  } else if (hasDistrict) {
-    // No locality: line 1 = district + division, line 2 = state
-    const mid = [district, division].filter(Boolean).join(" ");
-    add(mid, true);
-    add(state, true);
-  } else if (hasState) {
-    // Only state
-    add(state, true);
-  }
-
+export function formatAddressLines(address: GeocodedAddress | null): string[] {
+  if (!address) return [];
+  const lines = buildCompactAddressLines(address);
   if (__DEV__) {
-    logger.debug(`[Geo:format] output lines=${JSON.stringify(lines)}`);
+    logger.debug(
+      `[Geo:format] raw district=${address.district} subregion=${address.subregion} city=${address.city} region=${address.region} => lines=${JSON.stringify(lines)}`
+    );
   }
-
   return lines;
 }
 
@@ -171,41 +154,9 @@ export async function reverseGeocode(
 }
 
 function buildFullFormattedAddress(address: GeocodedAddress): string {
-  const parts: string[] = [];
-
-  // street / road
-  const streetNumber = address.streetNumber?.trim() ?? "";
-  const street = address.street?.trim() ?? "";
-  if (streetNumber && street) parts.push(`${streetNumber} ${street}`);
-  else if (street) parts.push(street);
-
-  // area / sub-locality (subregion = subAdminArea on Android)
-  if (address.subregion?.trim()) parts.push(address.subregion.trim());
-
-  // city / locality
-  if (address.city?.trim()) parts.push(address.city.trim());
-
-  // state / region
-  if (address.region?.trim()) parts.push(address.region.trim());
-
-  // postal code
-  if (address.postalCode?.trim()) parts.push(address.postalCode.trim());
-
-  // country
-  if (address.country?.trim()) parts.push(address.country.trim());
-
-  // Filter out Plus Codes and administrative divisions
-  const filtered = parts
-    .map((p) => stripPlusCode(p))
-    .filter((p) => p && !/^(Jaipur|Jodhpur|Bikaner|Udaipur|Ajmer|Bharatpur|Kota|Revenue|Sub|Tehsil)\s+(Division|Subdivision|Tehsil)$/i.test(p))
-    .filter((p) => !/^[A-Z0-9]+\+[A-Z0-9]+$/.test(p)); // bare plus code
-
-  // If everything was filtered out (e.g. only plus code existed), fall back to original
-  const result = filtered.length > 0 ? filtered.join(", ") : parts.join(", ");
-
+  const result = buildCompactAddressLines(address).join("\n");
   if (__DEV__) {
     logger.debug(`[Geo:reverse] cleaned=${result}`);
   }
-
-  return result;
+return result;
 }
