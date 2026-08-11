@@ -4,6 +4,7 @@ import {
   computeWatermarkMetrics,
   toWatermarkStyleConfig,
   computeWatermarkOverlayLayout,
+  WATERMARK_PREVIEW_VISUAL_CORRECTION,
 } from "@/src/utils/watermarkStyle";
 import { WatermarkSettings } from "@/src/utils/watermarkSettings";
 import { logger } from "@/src/utils/logger";
@@ -35,7 +36,7 @@ export default function WatermarkOverlay({
 
   if (photoWidth && photoHeight && photoWidth > 0 && photoHeight > 0) {
     // Apply visual correction (~10%) so preview matches saved photo visually
-    const visualCorrection = 1.10;
+    const visualCorrection = WATERMARK_PREVIEW_VISUAL_CORRECTION;
 
     // Compute metrics at photo resolution (source of truth for saved photo)
     const photoMetrics = computeWatermarkMetrics(photoWidth, photoHeight, config);

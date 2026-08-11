@@ -64,6 +64,13 @@ export function computeWatermarkMetrics(
 /** Extra transparency kept around the box so the box/text shadow survives a tight overlay crop. */
 export const WATERMARK_OVERLAY_SHADOW_MARGIN = 12;
 
+/**
+ * Fudge factor applied when rendering the live preview watermark so it matches
+ * the saved photo visually (the preview shows a centered crop of the photo, so
+ * the overlay box is drawn slightly larger than the raw photo-space geometry).
+ */
+export const WATERMARK_PREVIEW_VISUAL_CORRECTION = 1.10;
+
 export interface WatermarkOverlayLayout {
   metrics: WatermarkMetrics;
   boxX: number;

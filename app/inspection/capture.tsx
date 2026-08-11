@@ -24,7 +24,8 @@ import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { useAddressLookup } from "@/src/components/camera/useAddressLookup";
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
-import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
+import { toWatermarkStyleConfig, WATERMARK_PREVIEW_VISUAL_CORRECTION } from "@/src/utils/watermarkStyle";
+import { pickExpectedPhotoSize } from "@/src/components/camera/expectedPhotoSize";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import {
   FLASH_ICONS,
@@ -62,6 +63,8 @@ export default function CaptureScreen() {
   const [now, setNow] = useState(() => new Date());
   const [shutterBusy, setShutterBusy] = useState(false);
   const [capturedPhotoSize, setCapturedPhotoSize] = useState<{ width: number; height: number } | null>(null);
+  const [expectedPhotoSize, setExpectedPhotoSize] = useState<{ width: number; height: number } | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -144,6 +147,45 @@ export default function CaptureScreen() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Seed the expected photo size once the camera is ready so the watermark
+  // renders at final-photo size from the first frame (no oversized flash
+  // before the first capture).
+  useEffect(() => {
+    if (!cameraReady || cameraSize.width <= 0 || cameraSize.height <= 0) return;
+    let cancelled = false;
+    cameraRef.current
+      ?.getAvailablePictureSizesAsync()
+      .then((sizes) => {
+        if (cancelled) return;
+        const expected = pickExpectedPhotoSize(sizes, {
+          previewWidth: cameraSize.width,
+          previewHeight: cameraSize.height,
+          ratio,
+        });
+        setExpectedPhotoSize(expected);
+        if (typeof __DEV__ !== "undefined" && __DEV__) {
+          const coverScale = expected
+            ? Math.max(cameraSize.width / expected.width, cameraSize.height / expected.height)
+            : 0;
+          const correctedScale = coverScale * WATERMARK_PREVIEW_VISUAL_CORRECTION;
+          logger.debug(
+            `[Watermark:init] ratio=${ratio} preview=${cameraSize.width}x${cameraSize.height} ` +
+              `expectedPhoto=${expected ? `${expected.width}x${expected.height}` : "none"} ` +
+              `scale=${correctedScale.toFixed(3)}`
+          );
+        }
+      })
+      .catch((e) => {
+        if (typeof __DEV__ !== "undefined" && __DEV__) {
+          logger.debug(`[Watermark:init] getAvailablePictureSizesAsync failed: ${String(e)}`);
+        }
+        if (!cancelled) setExpectedPhotoSize(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cameraReady, cameraSize.width, cameraSize.height, ratio, facing]);
 
   useEffect(() => {
     if (flow.phase !== "merging" || flow.pending == null) return;
@@ -448,6 +490,7 @@ export default function CaptureScreen() {
               flash={flash}
               zoom={zoom}
               style={styles.fill}
+              onCameraReady={() => setCameraReady(true)}
             />
           ) : (
             <View style={[styles.fill, styles.center]}>
@@ -455,14 +498,14 @@ export default function CaptureScreen() {
             </View>
           )}
 
-          {cameraSize.width > 0 && (
+          {cameraSize.width > 0 && (capturedPhotoSize ?? expectedPhotoSize) && (
             <WatermarkOverlay
               width={cameraSize.width}
               height={cameraSize.height}
               lines={previewLines}
               settings={settings}
-              photoWidth={capturedPhotoSize?.width}
-              photoHeight={capturedPhotoSize?.height}
+              photoWidth={capturedPhotoSize?.width ?? expectedPhotoSize?.width}
+              photoHeight={capturedPhotoSize?.height ?? expectedPhotoSize?.height}
             />
           )}
 
