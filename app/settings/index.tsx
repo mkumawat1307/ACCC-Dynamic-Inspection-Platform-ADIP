@@ -6,12 +6,15 @@ import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
 import { useRouter } from "expo-router";
 import { useTemplateFlow } from "@/src/components/template/useTemplateFlow";
 import { getDatabase } from "@/src/database/db";
+import { backupNow, restoreBackup } from "@/src/database/helpers/BackupManager";
+import { buildBackupDisplayPath } from "@/src/utils/backupZip";
 import TemplateExportDialogs from "@/src/components/app/settings/components/TemplateExportDialogs";
 import TemplateImportDialogs from "@/src/components/app/settings/components/TemplateImportDialogs";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const [resetting, setResetting] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
   const flow = useTemplateFlow();
 
   const handleResetToDefault = () => {
@@ -151,6 +154,46 @@ export default function SettingsScreen() {
     void flow.beginImport();
   };
 
+  const handleBackupNow = async () => {
+    setBackupBusy(true);
+    try {
+      const result = await backupNow();
+      if (result.ok) {
+        Alert.alert("Backup Created", `Backup saved to:\n${buildBackupDisplayPath()}`);
+      } else {
+        Alert.alert("Backup Failed", result.message);
+      }
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleRestoreBackup = () => {
+    Alert.alert(
+      "Restore Backup?",
+      `Replace all current data with the backup at:\n${buildBackupDisplayPath()}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Restore",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              setBackupBusy(true);
+              try {
+                const result = await restoreBackup(async () => true);
+                Alert.alert(result.ok ? "Restore Completed" : "Restore Failed", result.message);
+                if (result.ok) router.replace("/");
+              } finally {
+                setBackupBusy(false);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
@@ -203,6 +246,30 @@ export default function SettingsScreen() {
             left={(props) => <List.Icon {...props} icon="watermark" />}
             right={(props) => <List.Icon {...props} icon="chevron-right" />}
             onPress={() => router.push("/settings/watermark")}
+          />
+        </List.Section>
+
+        <List.Section>
+          <List.Subheader>Backup & Restore</List.Subheader>
+
+          <List.Item
+            title="Backup Now"
+            description={`Export all data to ${buildBackupDisplayPath()}`}
+            left={(props) => <List.Icon {...props} icon="database-export" />}
+            right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
+            onPress={handleBackupNow}
+            disabled={backupBusy}
+          />
+
+          <Divider />
+
+          <List.Item
+            title="Restore Backup"
+            description="Replace current data with the saved backup"
+            left={(props) => <List.Icon {...props} icon="database-import" />}
+            right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
+            onPress={handleRestoreBackup}
+            disabled={backupBusy}
           />
         </List.Section>
 

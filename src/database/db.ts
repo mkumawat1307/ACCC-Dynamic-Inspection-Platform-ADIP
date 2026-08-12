@@ -4,7 +4,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { logger } from "@/src/utils/logger";
 export type SqlValue = string | number | null | boolean;
 
-const GLOBAL_DATABASE_NAME = "accc_global.db";
+export const GLOBAL_DATABASE_NAME = "accc_global.db";
 
 let database: SQLite.SQLiteDatabase | null = null;
 let activeProjectPath: string | null = null;
@@ -108,6 +108,10 @@ export async function setActiveProject(dbPath: string): Promise<void> {
 export async function clearActiveProject(): Promise<void> {
   activeProjectPath = null;
   await ensureGlobalDb();
+}
+
+export async function closeAllDatabases(): Promise<void> {
+  await closeCurrentDb();
 }
 
 export function getActiveProjectPath(): string | null {
