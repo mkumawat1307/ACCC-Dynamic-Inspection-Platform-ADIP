@@ -42,7 +42,7 @@ import {
 } from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { logger } from "@/src/utils/logger";
-import { perfNow, perfLog } from "@/src/utils/perf";
+import { perfNow, perfLog, uiPerfReset, uiPerfStage } from "@/src/utils/perf";
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -109,6 +109,8 @@ export default function CaptureScreen() {
   const flow = useCaptureFlow();
   const savedTimeoutRef = useRef(flow.savedTimeout);
   savedTimeoutRef.current = flow.savedTimeout;
+  const cameraUiRef = useRef({ shutterBusy, gpsStatus: gps.status });
+  cameraUiRef.current = { shutterBusy, gpsStatus: gps.status };
   const {
     webViewRef,
     handleWebViewMessage,
@@ -196,7 +198,11 @@ export default function CaptureScreen() {
 
   useEffect(() => {
     if (flow.phase !== "saved") return;
-    const t = setTimeout(() => savedTimeoutRef.current(), 400);
+    const t = setTimeout(() => {
+      const { shutterBusy: busyNow, gpsStatus: gpsNow } = cameraUiRef.current;
+      uiPerfStage("uiReady", `phase=${flow.phase} shutterDisabled=${busyNow || gpsNow !== "fixed" || flow.phase !== "preview"}`);
+      savedTimeoutRef.current();
+    }, 400);
     return () => clearTimeout(t);
   }, [flow.phase]);
 
@@ -278,6 +284,8 @@ export default function CaptureScreen() {
   const handleShutter = async () => {
     if (shutterBusy) return;
     setShutterBusy(true);
+    uiPerfReset();
+    uiPerfStage("shutterTap", `phase=${flow.phase} gps=${gps.status} previewFrozen=false`);
 
     const tShutter = perfNow();
     let coords = gps.coords;
@@ -309,6 +317,7 @@ export default function CaptureScreen() {
     }
     perfLog("capture", "takePictureAndWrite", tCapture);
     perfLog("capture", "shutterToCamera", tShutter);
+    uiPerfStage("photoCaptured", `size=${result.width}x${result.height}`);
 
     if (typeof __DEV__ !== "undefined" && __DEV__) {
       captureTimesRef.current.push(perfNow() - tCapture);

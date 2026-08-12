@@ -42,3 +42,35 @@ export function perfLog(context: string, stage: string, start: number): number {
   logger.debug(`[Perf] ${context} ${stage}: ${ms.toFixed(1)}ms`);
   return ms;
 }
+
+let uiPerfSessionStart = 0;
+let uiPerfPrevMs = 0;
+let uiPerfPrevLabel = "(start)";
+
+const UI_PERF_STALE_MS = 15000;
+
+export function uiPerfReset(): void {
+  uiPerfSessionStart = perfNow();
+  uiPerfPrevMs = uiPerfSessionStart;
+  uiPerfPrevLabel = "(start)";
+}
+
+export function uiPerfStage(label: string, extra?: string): void {
+  const now = perfNow();
+  let stale = false;
+  if (uiPerfSessionStart <= 0) stale = true;
+  else if (now - uiPerfPrevMs > UI_PERF_STALE_MS) stale = true;
+  if (stale) {
+    uiPerfSessionStart = now;
+    uiPerfPrevMs = now;
+    uiPerfPrevLabel = "(start)";
+  }
+  const total = now - uiPerfSessionStart;
+  const sincePrev = now - uiPerfPrevMs;
+  logger.debug(
+    `${stale ? "[Perf:UI:stale]" : "[Perf:UI]"} ${label} +${sincePrev.toFixed(1)}ms since=${uiPerfPrevLabel} ` +
+      `total=${total.toFixed(1)}ms${extra ? ` ${extra}` : ""}`
+  );
+  uiPerfPrevMs = now;
+  uiPerfPrevLabel = label;
+}

@@ -26,7 +26,7 @@ import {
   WatermarkOverlayTimings,
 } from "@/src/native/WatermarkEncoder";
 import { useInspection } from "@/src/context/InspectionContext";
-import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator } from "@/src/utils/perf";
+import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator, uiPerfStage } from "@/src/utils/perf";
 
 type WatermarkStage = "overlay" | "rgba" | "toblob";
 
@@ -257,6 +257,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     }
 
     setWatermarkState(prev => ({ ...prev, [photoId]: "completed" }));
+    uiPerfStage("stateUpdated", `photo=${photoId}`);
     processingRef.current = false;
     setTimeout(() => processNext(), 50);
   }
@@ -410,6 +411,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
 
     const job = queueRef.current[0];
     setWatermarkState(prev => ({ ...prev, [job.photoId]: "processing" }));
+    uiPerfStage("overlayStart", `photo=${job.photoId} stage=${job.stage}`);
 
     const perf = perfStart(job.photoId);
     perfRef.current = perf;
@@ -437,11 +439,14 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
     return (async () => {
       clearWatchdog();
       const label = project ? canonicalProjectLabel(project) : "";
+      uiPerfStage("overlayDone", `photo=${job.photoId}`);
 
       const tSave = perfNow();
       const treeUri = await ensureTreeUri();
       const projectDir = await getProjectDir(treeUri, label);
+      uiPerfStage("safWriteStart", `photo=${job.photoId}`);
       const contentUri = await writePhoto(projectDir, job.fileName, base64);
+      uiPerfStage("safWriteDone", `photo=${job.photoId}`);
       if (__DEV__) {
         logger.debug(`[Watermark:save] photo=${job.photoId} writing=${contentUri}`);
         logger.debug(`[Watermark:save] photo=${job.photoId} original=${job.inputPath}`);
