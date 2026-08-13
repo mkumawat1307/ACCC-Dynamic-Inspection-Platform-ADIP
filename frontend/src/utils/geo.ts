@@ -47,50 +47,6 @@ function stripPlusCode(text: string): string {
     .trim();
 }
 
-export const RAJASTHAN_DIVISIONS: Record<string, string> = {
-  Ajmer: "Ajmer Division",
-  Beawar: "Ajmer Division",
-  Bhilwara: "Ajmer Division",
-  "Didwana-Kuchaman": "Ajmer Division",
-  Nagaur: "Ajmer Division",
-  Tonk: "Ajmer Division",
-  Bharatpur: "Bharatpur Division",
-  Deeg: "Bharatpur Division",
-  Dholpur: "Bharatpur Division",
-  Karauli: "Bharatpur Division",
-  "Sawai Madhopur": "Bharatpur Division",
-  Bikaner: "Bikaner Division",
-  Churu: "Bikaner Division",
-  Hanumangarh: "Bikaner Division",
-  "Sri Ganganagar": "Bikaner Division",
-  Alwar: "Jaipur Division",
-  Dausa: "Jaipur Division",
-  Jaipur: "Jaipur Division",
-  Jhunjhunu: "Jaipur Division",
-  "Khairthal-Tijara": "Jaipur Division",
-  "Kotputli-Behror": "Jaipur Division",
-  Sikar: "Jaipur Division",
-  Balotra: "Jodhpur Division",
-  Barmer: "Jodhpur Division",
-  Jaisalmer: "Jodhpur Division",
-  Jalore: "Jodhpur Division",
-  Jodhpur: "Jodhpur Division",
-  Pali: "Jodhpur Division",
-  Phalodi: "Jodhpur Division",
-  Sirohi: "Jodhpur Division",
-  Baran: "Kota Division",
-  Bundi: "Kota Division",
-  Jhalawar: "Kota Division",
-  Kota: "Kota Division",
-  Banswara: "Udaipur Division",
-  Chittorgarh: "Udaipur Division",
-  Dungarpur: "Udaipur Division",
-  Pratapgarh: "Udaipur Division",
-  Rajsamand: "Udaipur Division",
-  Salumber: "Udaipur Division",
-  Udaipur: "Udaipur Division",
-};
-
 function isAdminDivisionPart(part: string): boolean {
   return /(^|\s)(division|subdivision|tehsil)$/i.test(part.trim());
 }
