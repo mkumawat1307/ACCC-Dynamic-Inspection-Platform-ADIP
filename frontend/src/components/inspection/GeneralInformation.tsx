@@ -176,7 +176,7 @@ async function fetchCurrentLocation() {
   let address = "";
   try {
     const result = await reverseGeocode(location.latitude, location.longitude);
-    address = result?.formatted ?? "";
+    address = (result?.formatted ?? "").replace(/\n/g, ", ");
   } finally {
     setLocationResolving(false);
   }
