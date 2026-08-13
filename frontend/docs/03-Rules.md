@@ -153,7 +153,7 @@ Schema additions must include a migration (`migrateProjectSchema()` pattern wire
 
 New project-scoped features must ship with an isolation regression test (mirror `src/__tests__/database/isolation.test.ts`): create data in Project A, open Project B, and assert it does not appear there.
 
-The Jest suite runs via jest-expo (41 suites / 507 tests) against in-memory, path-aware mocks (`__mocks__/expo-sqlite.ts`, `__mocks__/expo-file-system.ts`) with per-directory coverage thresholds; test fixtures must use distinct DB paths/names to preserve isolation.
+The Jest suite runs via jest-expo (70 suites / 827 tests) against in-memory, path-aware mocks (`__mocks__/expo-sqlite.ts`, `__mocks__/expo-file-system.ts`) with per-directory coverage thresholds; test fixtures must use distinct DB paths/names to preserve isolation.
 
 ---
 

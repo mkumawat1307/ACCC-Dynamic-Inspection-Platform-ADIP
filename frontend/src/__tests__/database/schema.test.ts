@@ -85,7 +85,7 @@ jest.mock("@/src/database/db", () => ({
   }),
 }));
 
-describe("schema.ts createSchema", () => {
+describe("schema.ts schema functions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
