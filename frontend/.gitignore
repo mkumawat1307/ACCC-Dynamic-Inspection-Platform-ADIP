@@ -23,6 +23,8 @@ android/app/build/
 android/.gradle/
 android/.kotlin/
 android/app/.cxx/
+modules/*/android/build/
+modules/*/android/.gradle/
 ios/build/
 ios/Pods/
 

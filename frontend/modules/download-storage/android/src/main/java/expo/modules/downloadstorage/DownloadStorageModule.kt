@@ -46,8 +46,8 @@ class DownloadStorageModule : Module() {
     }
   }
 
-  private val appContext: Context
-    get() = context
+  private val context: Context
+    get() = requireNotNull(appContext.reactContext)
 
   private fun downloadRoot(): String = "Download/${ROOT_DIR_NAME}"
 
@@ -64,7 +64,7 @@ class DownloadStorageModule : Module() {
       val projection = arrayOf(MediaStore.Downloads._ID)
       val selection = "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?"
       val selectionArgs = arrayOf("$prefix%")
-      return appContext.contentResolver
+      return context.contentResolver
         .query(collection, projection, selection, selectionArgs, null)
         ?.use { cursor -> cursor.moveToFirst() } ?: false
     }
@@ -88,7 +88,7 @@ class DownloadStorageModule : Module() {
   }
 
   private fun writeBytesModern(relativePath: String, fileName: String, mimeType: String, bytes: ByteArray): String {
-    val resolver = appContext.contentResolver
+    val resolver = context.contentResolver
     val relative = downloadRelativePath(relativePath)
     val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
@@ -151,7 +151,7 @@ class DownloadStorageModule : Module() {
   private fun readBase64(uri: String): String {
     val parsed = Uri.parse(uri)
     val bytes = when (parsed.scheme) {
-      "content" -> appContext.contentResolver
+      "content" -> context.contentResolver
         .openInputStream(parsed)
         ?.use { stream -> stream.readBytes() }
         ?: throw IllegalStateException("Cannot read $uri")
@@ -163,7 +163,7 @@ class DownloadStorageModule : Module() {
   private fun deleteFile(uri: String): Boolean {
     val parsed = Uri.parse(uri)
     return when (parsed.scheme) {
-      "content" -> appContext.contentResolver.delete(parsed, null, null) > 0
+      "content" -> context.contentResolver.delete(parsed, null, null) > 0
       else -> {
         val file = File(parsed.path ?: return false)
         file.exists() && file.delete()
@@ -174,7 +174,7 @@ class DownloadStorageModule : Module() {
   private fun findFile(relativePath: String, fileName: String): String? {
     val relative = downloadRelativePath(relativePath)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      return findMediaRow(relative, fileName, appContext.contentResolver)?.toString()
+      return findMediaRow(relative, fileName, context.contentResolver)?.toString()
     }
     val file = File(legacyDir(relativePath), fileName)
     return if (file.exists()) Uri.fromFile(file).toString() else null
