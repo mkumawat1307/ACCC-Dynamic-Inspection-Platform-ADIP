@@ -12,6 +12,7 @@ import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import { InspectionField } from "@/src/database/repositories/InspectionTypes";
 import { getCurrentLocation } from "@/src/utils/location";
+import { reverseGeocode } from "@/src/utils/geo";
 
 const GeneralInformation = forwardRef((_props, ref) => {
 const {
@@ -27,6 +28,7 @@ const router = useRouter();
 const [values, setValues] = useState<Record<string, string>>({});
 const [formUnlocked, setFormUnlocked] = useState(false);
 const [checkingPoleId, setCheckingPoleId] = useState(false);
+const [locationResolving, setLocationResolving] = useState(false);
 const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -166,9 +168,25 @@ async function fetchCurrentLocation() {
   const longitude = location.longitude.toFixed(6);
   const gpsValue = `${latitude}, ${longitude}`;
 
+  logger.info(`[GPS] lat=${latitude}`);
+  logger.info(`[GPS] lng=${longitude}`);
+  logger.info("[GPS] reverseGeocodeReuse=true");
+
+  setLocationResolving(true);
+  let address = "";
+  try {
+    const result = await reverseGeocode(location.latitude, location.longitude);
+    address = result?.formatted ?? "";
+  } finally {
+    setLocationResolving(false);
+  }
+
+  logger.info(`[GPS] addressFilled=${address.length > 0}`);
+
   setValues((prev) => ({
     ...prev,
     gps: gpsValue,
+    ...(address ? { location: address } : {}),
   }));
 
   try {
@@ -179,6 +197,16 @@ async function fetchCurrentLocation() {
         gpsField.FieldID,
         gpsValue
       );
+    }
+    if (address) {
+      const locationField = fields.find(f => f.FieldKey === "location");
+      if (locationField) {
+        await InspectionRepository.saveFieldValue(
+          inspectionId,
+          locationField.FieldID,
+          address
+        );
+      }
     }
   } catch (error) {
     logger.error("GPS Save Error:", error);
@@ -334,14 +362,31 @@ return (
           </View>
         )}
         {field.FieldKey === "gps" && (
-          <Button
-            mode="contained"
-            icon="crosshairs-gps"
-            onPress={fetchCurrentLocation}
-            style={{ marginBottom: 16 }}
-          >
-            Get Current Location
-          </Button>
+          <View>
+            <Button
+              mode="contained"
+              icon="crosshairs-gps"
+              onPress={fetchCurrentLocation}
+              style={{ marginBottom: locationResolving ? 4 : 16 }}
+            >
+              Get Current Location
+            </Button>
+            {locationResolving && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginBottom: 16,
+                  paddingLeft: 8,
+                }}
+              >
+                <ActivityIndicator size="small" />
+                <Text style={{ marginLeft: 8, fontSize: 13 }}>
+                  Resolving Address...
+                </Text>
+              </View>
+            )}
+          </View>
         )}
       </React.Fragment>
     ))}
