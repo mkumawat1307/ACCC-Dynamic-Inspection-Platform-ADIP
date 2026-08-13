@@ -24,6 +24,18 @@ Patch → Bug fixes
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **PhotoStatesContext split (perf)** — Inspection render-amplification fix: photo watermark states moved out of `InspectionContext` into a dedicated `PhotoStatesProvider` (`src/context/PhotoStatesContext.tsx`). Inspection forms no longer re-render on every photo-state transition; only the camera/photo capture flow subscribes to watermark state. Capture actions in `useWatermarkProcessor` are memoized, and the merge WebView is `React.memo`-wrapped. Regressed by a new `PhotoStatesContext` suite (initial/get/set/derived booleans/render isolation).
+- **Dead-code cleanup** — removed unused modules, exports, and test duplication:
+  - Deleted `CameraSection` cluster (`CameraSection.tsx`, `CameraSection.styles.ts`, `CameraRepository.ts`, `models/Camera.ts`), `database/constants/database.ts`, and `models/Switch.ts`.
+  - Removed dead exports: `createSchema` (schema.ts), `getActiveProjectPath` (db.ts), `getProjectFolderPath` / `deleteProjectFolder` (ProjectDBManager.ts), `exportInspection` (exportData.ts), `exportDefaultTemplate` / `importTemplate` (templateData.ts), `SectionRepository.ts`, `RAJASTHAN_DIVISIONS` (geo.ts).
+  - Consolidated duplicate test suites into their canonical files: `useWatermarkProcessor` (hooks), `InspectionRepository`, `InspectionListRepository`.
+  - Dropped unused `expo-image` dependency and the `reset-project` boilerplate script.
+
+---
+
 ## [1.0.0] — ACCC Inspection Camera
 
 ### Summary
