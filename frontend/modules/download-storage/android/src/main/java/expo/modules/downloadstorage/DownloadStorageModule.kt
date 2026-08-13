@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
+import android.util.Log
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -49,9 +50,11 @@ class DownloadStorageModule : Module() {
   private val context: Context
     get() = requireNotNull(appContext.reactContext)
 
-  private fun downloadRoot(): String = "Download/${ROOT_DIR_NAME}"
+  // MediaStore.Downloads.RELATIVE_PATH is relative to the Downloads directory —
+  // it must NOT include the "Download/" prefix or MediaStore rejects it.
+  private fun downloadRoot(): String = ROOT_DIR_NAME
 
-  /** Returns e.g. "Download/ACCC Dynamic Inspection/" or "Download/ACCC Dynamic Inspection/<rel>/". */
+  /** Returns e.g. "ACCC Dynamic Inspection/" or "ACCC Dynamic Inspection/<rel>/". */
   private fun downloadRelativePath(relativePath: String): String {
     val base = "${downloadRoot()}/"
     return if (relativePath.isEmpty()) base else "$base$relativePath/"
@@ -90,6 +93,7 @@ class DownloadStorageModule : Module() {
   private fun writeBytesModern(relativePath: String, fileName: String, mimeType: String, bytes: ByteArray): String {
     val resolver = context.contentResolver
     val relative = downloadRelativePath(relativePath)
+    Log.d("DownloadStorage", "RELATIVE_PATH used for export $fileName: $relative")
     val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
     val values = ContentValues().apply {
