@@ -7,7 +7,7 @@ import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { useTemplateFlow } from "@/src/components/template/useTemplateFlow";
 import { getDatabase } from "@/src/database/db";
-import { backupNow, restoreBackup, restoreBackupFromUri } from "@/src/database/helpers/BackupManager";
+import { backupNow, findBackupFile, restoreBackup, restoreBackupFromUri } from "@/src/database/helpers/BackupManager";
 import { buildBackupDisplayPath } from "@/src/utils/backupZip";
 import TemplateExportDialogs from "@/src/components/app/settings/components/TemplateExportDialogs";
 import TemplateImportDialogs from "@/src/components/app/settings/components/TemplateImportDialogs";
@@ -169,30 +169,67 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleRestoreBackup = () => {
-    Alert.alert(
-      "Restore Backup?",
-      `Replace all current data with the backup at:\n${buildBackupDisplayPath()}`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Restore",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              setBackupBusy(true);
-              try {
-                const result = await restoreBackup(async () => true);
-                Alert.alert(result.ok ? "Restore Completed" : "Restore Failed", result.message);
-                if (result.ok) router.replace("/");
-              } finally {
-                setBackupBusy(false);
-              }
-            })();
+  const handleRestoreLatest = async () => {
+    setBackupBusy(true);
+    try {
+      const fileUri = await findBackupFile();
+      if (!fileUri) {
+        logger.info("[Import] restoreLatestMissing");
+        Alert.alert(
+          "No Backup Found",
+          `No backup was found at:\n${buildBackupDisplayPath()}\n\nChoose a backup file to restore instead.`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Choose File",
+              onPress: () => {
+                void handleRestoreFromFile();
+              },
+            },
+          ]
+        );
+        return;
+      }
+      logger.info("[Import] restoreLatestFound=" + fileUri);
+      Alert.alert(
+        "Restore Latest Backup?",
+        `Replace all current data with the latest backup at:\n${buildBackupDisplayPath()}`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Restore",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                setBackupBusy(true);
+                try {
+                  logger.info("[Import] restoreLatestStart");
+                  const result = await restoreBackup(async () => true);
+                  if (result.ok) {
+                    logger.info("[Import] restoreLatestSuccess");
+                    Alert.alert("Restore Completed", result.message);
+                    router.replace("/");
+                  } else {
+                    logger.info("[Import] restoreLatestFailed=" + result.message);
+                    Alert.alert("Restore Failed", result.message);
+                  }
+                } catch (e) {
+                  logger.info("[Import] restoreLatestFailed=" + String(e));
+                  Alert.alert("Restore Failed", String(e));
+                } finally {
+                  setBackupBusy(false);
+                }
+              })();
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    } catch (e) {
+      logger.info("[Import] restoreLatestFailed=" + String(e));
+      Alert.alert("Restore Failed", String(e));
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
   const handleRestoreFromFile = async () => {
@@ -302,22 +339,22 @@ export default function SettingsScreen() {
           <Divider />
 
           <List.Item
-            title="Restore Backup"
-            description="Replace current data with the saved backup"
+            title="Restore Latest Backup"
+            description="Restore from the latest saved backup"
             left={(props) => <List.Icon {...props} icon="database-import" />}
             right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={handleRestoreBackup}
+            onPress={() => { void handleRestoreLatest(); }}
             disabled={backupBusy}
           />
 
           <Divider />
 
           <List.Item
-            title="Restore from File..."
+            title="Choose Backup File…"
             description="Pick a backup file (.zip) and restore from it"
             left={(props) => <List.Icon {...props} icon="file-restore" />}
             right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={handleRestoreFromFile}
+            onPress={() => { void handleRestoreFromFile(); }}
             disabled={backupBusy}
           />
         </List.Section>
