@@ -176,11 +176,12 @@ async function fetchCurrentLocation() {
   let address = "";
   try {
     const result = await reverseGeocode(location.latitude, location.longitude);
-    address = (result?.formatted ?? "").replace(/\n/g, ", ");
+    address = result?.formatted ?? "";
   } finally {
     setLocationResolving(false);
   }
 
+  logger.info("[GPS] addressFormat=fullWatermarkAddress");
   logger.info(`[GPS] addressFilled=${address.length > 0}`);
 
   setValues((prev) => ({
