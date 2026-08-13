@@ -10,7 +10,7 @@ ACCC Dynamic Inspection Platform (ADIP) — offline-first React Native (Expo) mo
 cd frontend
 yarn start              # Expo dev server
 yarn lint               # eslint via expo lint
-yarn test               # Jest (827 tests across 70 suites)
+yarn test               # Jest (808 tests across 69 suites)
 npx tsc --noEmit        # Typecheck
 ```
 
@@ -63,7 +63,7 @@ Yarn 1.22 (`yarn`). The `packageManager` field is pinned in `package.json`. `.np
 | `src/database/repositories/` | All 18 repositories (+ helpers) |
 | `src/context/InspectionContext.tsx` | Shared inspection state |
 | `src/utils/logger.ts` | Production-safe logger (console.log wrapper gated on `__DEV__`) |
-| `src/__tests__/` | Jest test suites (70 suites, 827 tests, coverage thresholds per directory) |
+| `src/__tests__/` | Jest test suites (69 suites, 808 tests, coverage thresholds per directory) |
 | `__mocks__/expo-sqlite.ts` | In-memory SQLite mock for testing |
 | `__mocks__/expo-file-system.ts` | Expo FileSystem mock |
 | `jest.config.js` | Jest config (jest-expo preset, `@/` alias, per-glob coverage thresholds) |

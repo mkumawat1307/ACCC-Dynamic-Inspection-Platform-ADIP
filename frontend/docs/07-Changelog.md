@@ -27,6 +27,7 @@ Patch → Bug fixes
 ## [Unreleased]
 
 ### Changed
+- **Automatic Download-folder storage** — replaced the SAF folder-picker flow with a local Android module (`expo-download-storage`, `modules/download-storage`) that writes via `MediaStore.Downloads` (API ≥ 29) with a legacy `Environment.DIRECTORY_DOWNLOADS` fallback. Storage permission is requested once (legacy API < 29 only); photos save to `Download/ACCC Dynamic Inspection/<District>_<Project>/` and Excel/CSV/backup (`accc_backup.zip`) to the root folder, with overwrite semantics so duplicate `(1)`/`(2)` files never appear. Deleted `folderManager.ts` and the SAF picker/persisted-tree-URI/migration surface. Requires a native rebuild (`npx expo run:android`) to take effect.
 - **PhotoStatesContext split (perf)** — Inspection render-amplification fix: photo watermark states moved out of `InspectionContext` into a dedicated `PhotoStatesProvider` (`src/context/PhotoStatesContext.tsx`). Inspection forms no longer re-render on every photo-state transition; only the camera/photo capture flow subscribes to watermark state. Capture actions in `useWatermarkProcessor` are memoized, and the merge WebView is `React.memo`-wrapped. Regressed by a new `PhotoStatesContext` suite (initial/get/set/derived booleans/render isolation).
 - **Dead-code cleanup** — removed unused modules, exports, and test duplication:
   - Deleted `CameraSection` cluster (`CameraSection.tsx`, `CameraSection.styles.ts`, `CameraRepository.ts`, `models/Camera.ts`), `database/constants/database.ts`, and `models/Switch.ts`.

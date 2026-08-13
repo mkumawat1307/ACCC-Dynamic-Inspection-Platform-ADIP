@@ -1560,3 +1560,55 @@ Negative:
 
 ---
 
+# ADR-027
+
+## Title
+
+Automatic Download-Folder Storage Replaces SAF Folder Picker
+
+## Status
+
+Accepted
+
+## Date
+
+13 August 2026
+
+## Context
+
+All external writes (inspection photos, Excel/CSV exports, and `accc_backup.zip`) previously went through the Android Storage Access Framework: the user had to grant a folder via the system picker, the chosen tree URI was persisted, and it was validated on startup (ADR-024). That flow had real UX problems — a picker appears at runtime, the user can pick the wrong folder, and the URI breaks on reinstall (forcing re-selection). Photos landed in DCIM-style locations (e.g. `DCIM/...`) rather than a predictable download location.
+
+The storage permission itself is trivial to obtain: Android exposes `WRITE_EXTERNAL_STORAGE` (legacy, API < 29) or permissionless `MediaStore` writes (API ≥ 29). The folder-picker indirection added no security that a plain Download-folder write wouldn't provide.
+
+## Decision
+
+Replace the SAF folder-picker flow with automatic writes to a fixed location under the public `Download` folder, backed by a small local Expo module:
+
+- New native module **`expo-download-storage`** (`modules/download-storage/`, Kotlin, registered via Expo autolinking — no manual `PackageList` entry):
+  - **API ≥ 29:** `MediaStore.Downloads` insert with `RELATIVE_PATH = Download/ACCC Dynamic Inspection/...` — no permission needed.
+  - **API < 29:** `Environment.getExternalStoragePublicDirectory(DIRECTORY_DOWNLOADS)/ACCC Dynamic Inspection/...` via direct `File` writes, gated on a single one-time `WRITE_EXTERNAL_STORAGE` request (`ensureLegacyWritePermission()`). `requestLegacyExternalStorage="true"` is already set in the manifest.
+  - **Overwrite semantics:** a pre-insert `findMediaRow` lookup reuses the existing row (MediaStore) or overwrites the file (legacy), so duplicate `(1)`/`(2)` files never appear.
+- **New save layout:**
+  - Photos → `Download/ACCC Dynamic Inspection/<District>_<Project>/`.
+  - Excel/CSV exports and `accc_backup.zip` → `Download/ACCC Dynamic Inspection/`.
+- `storageManager.ts` exposes `ROOT_DIR_NAME`, `ensureDownloadRoot()`, `getProjectDir(label)`, `writePhoto`, `deletePhoto`; SAF-specific exports (`ensureTreeUri`, `resolveInspectionRootDir`, `getSafCacheState`, `migrateProjectPhotoFolder`) are deleted and `folderManager.ts` is removed.
+- Deleted the picker/persisted-tree-URI/startup-validation surface (`requestDirectoryPermissionsAsync`, `content://tree` writes) and its mock surface.
+- **The `SAFPath` column in `Projects` is retained as dead data** — no schema migration is needed for existing installs; the backup/restore and photo read paths still resolve old `content://` URIs via the content resolver, so previously-captured photos remain readable.
+- Required logs added (`[Storage] permissionGranted`, `downloadExists`, `rootExists`/`rootCreated`, `projectExists`/`projectCreated`, `fileSaved`) for offline diagnosis. `downloadCreated` is intentionally absent: the system `Download` folder always exists and is never created by the app.
+- The module is a **local Expo module**, so it only works in a native build (`npx expo run:android`), not Expo Go; Jest tests mock `downloadStorage`/`expo-file-system`.
+
+## Consequences
+
+Positive:
+- Storage behaves like camera/GPS permissions: asked once, never a runtime folder picker.
+- Photos/exports land in a predictable, discoverable `Download/ACCC Dynamic Inspection/` location users can browse or copy off-device.
+- Existing photos stay readable (content-URI reads retained); no DB migration.
+- Simpler mock surface; `folderManager.test.ts` removed (net 827 → 808 tests).
+
+Negative:
+- Requires a native rebuild to take effect (module is compiled in).
+- Photos saved under the old SAF location are not moved into the new layout (left as-is; only new writes use Download).
+- The manifest permission set (`WRITE_EXTERNAL_STORAGE` + `requestLegacyExternalStorage`) is now only meaningful on API < 29.
+
+---
+
