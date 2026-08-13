@@ -1,105 +1,78 @@
 import {
   EncodingType,
-  StorageAccessFramework,
   __resetFsState,
-  __setPermissionGranted,
+  documentDirectory,
+  cacheDirectory,
+  writeAsStringAsync,
+  readAsStringAsync,
+  getInfoAsync,
+  deleteAsync,
+  getContentUriAsync,
 } from "expo-file-system/legacy";
 
 jest.mock("expo-file-system/legacy", () =>
   jest.requireActual("../../../__mocks__/expo-file-system")
 );
 
-async function requestTreeUri(): Promise<string> {
-  const permission =
-    await StorageAccessFramework.requestDirectoryPermissionsAsync();
-  if (!permission.granted) {
-    throw new Error("SAF permission not granted");
-  }
-  return permission.directoryUri;
-}
-
 describe("expo-file-system/legacy manual mock", () => {
   beforeEach(() => {
     __resetFsState();
   });
 
-  it("builds a SAF tree and reads back names and content", async () => {
-    const treeUri = await requestTreeUri();
-
-    const acccDir = await StorageAccessFramework.makeDirectoryAsync(
-      treeUri,
-      "ACCC Inspection"
-    );
-    expect(acccDir).toBe(`${treeUri.replace(/\/$/, "")}/ACCC Inspection`);
-
-    const blockDir = await StorageAccessFramework.makeDirectoryAsync(
-      acccDir,
-      "New Delhi_Block A"
-    );
-    expect(blockDir).toBe(`${acccDir}/New Delhi_Block A`);
-
-    const fileUri = await StorageAccessFramework.createFileAsync(
-      blockDir,
-      "photo_a.jpg",
-      "image/jpeg"
-    );
-    expect(fileUri).toBe(`${blockDir}/photo_a.jpg`);
-
-    await StorageAccessFramework.writeAsStringAsync(
-      fileUri,
-      "aGVsbG8=",
-      { encoding: EncodingType.Base64 }
-    );
-
-    await expect(
-      StorageAccessFramework.readDirectoryAsync(treeUri)
-    ).resolves.toEqual(["ACCC Inspection"]);
-    await expect(
-      StorageAccessFramework.readDirectoryAsync(blockDir)
-    ).resolves.toEqual(["photo_a.jpg"]);
-    await expect(
-      StorageAccessFramework.readAsStringAsync(fileUri)
-    ).resolves.toBe("aGVsbG8=");
+  it("exposes document and cache directories", () => {
+    expect(documentDirectory).toBe("file:///mock/documents/");
+    expect(cacheDirectory).toBe("file:///mock/cache/");
   });
 
-  it("deletes a project directory recursively", async () => {
-    const treeUri = await requestTreeUri();
-    const acccDir = await StorageAccessFramework.makeDirectoryAsync(
-      treeUri,
-      "ACCC Inspection"
-    );
-    const blockDir = await StorageAccessFramework.makeDirectoryAsync(
-      acccDir,
-      "New Delhi_Block A"
-    );
-    const fileUri = await StorageAccessFramework.createFileAsync(
-      blockDir,
-      "photo_a.jpg",
-      "image/jpeg"
-    );
+  it("writes and reads a file, and reports info", async () => {
+    const fileUri = `${documentDirectory}SQLite/accc_global.db`;
 
-    await StorageAccessFramework.deleteAsync(acccDir);
+    await writeAsStringAsync(fileUri, "QUJD", { encoding: EncodingType.Base64 });
 
     await expect(
-      StorageAccessFramework.readDirectoryAsync(treeUri)
-    ).resolves.toEqual([]);
-    await expect(
-      StorageAccessFramework.readAsStringAsync(fileUri)
-    ).rejects.toThrow("File not found");
+      readAsStringAsync(fileUri, { encoding: EncodingType.Base64 })
+    ).resolves.toBe("QUJD");
+    await expect(getInfoAsync(fileUri)).resolves.toEqual({
+      exists: true,
+      isDirectory: false,
+      size: 4,
+    });
   });
 
-  it("honors the granted flag", async () => {
-    __setPermissionGranted(false);
+  it("overwrites an existing file with writeAsStringAsync", async () => {
+    const fileUri = `${documentDirectory}report.csv`;
 
-    const permission =
-      await StorageAccessFramework.requestDirectoryPermissionsAsync();
+    await writeAsStringAsync(fileUri, "OLD", { encoding: EncodingType.UTF8 });
+    await writeAsStringAsync(fileUri, "NEW", { encoding: EncodingType.UTF8 });
 
-    expect(permission.granted).toBe(false);
+    await expect(readAsStringAsync(fileUri)).resolves.toBe("NEW");
   });
 
-  it("rejects readDirectoryAsync on a missing directory", async () => {
-    await expect(
-      StorageAccessFramework.readDirectoryAsync("content://mock/missing/")
-    ).rejects.toThrow("Directory not found");
+  it("rejects reads for missing files and reports missing info", async () => {
+    const missing = `${documentDirectory}missing.db`;
+
+    await expect(readAsStringAsync(missing)).rejects.toThrow("File not found");
+    await expect(getInfoAsync(missing)).resolves.toEqual({
+      exists: false,
+      isDirectory: false,
+    });
+  });
+
+  it("deletes files nested under a directory prefix", async () => {
+    const dirUri = `${documentDirectory}Projects/Alpha`;
+    const fileUri = `${dirUri}/inspection.db`;
+
+    await writeAsStringAsync(fileUri, "DATA", { encoding: EncodingType.UTF8 });
+    await expect(getInfoAsync(fileUri)).resolves.toMatchObject({ exists: true });
+
+    await deleteAsync(dirUri);
+
+    await expect(getInfoAsync(fileUri)).resolves.toMatchObject({ exists: false });
+  });
+
+  it("converts file URIs to content URIs via getContentUriAsync", async () => {
+    await expect(getContentUriAsync("file:///mock/report.xlsx")).resolves.toBe(
+      "content://mock//mock/report.xlsx"
+    );
   });
 });

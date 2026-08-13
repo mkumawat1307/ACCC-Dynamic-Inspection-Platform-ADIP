@@ -1,256 +1,137 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system/legacy";
-import { __resetFsState } from "expo-file-system/legacy";
+import { Platform } from "react-native";
+import { downloadStorage } from "@/src/utils/downloadStorage";
 import {
-  ensureTreeUri,
-  resolveInspectionRootDir,
+  ROOT_DIR_NAME,
+  ensureDownloadRoot,
   getProjectDir,
-  getSafCacheState,
-  resetStorageCaches,
+  writePhoto,
+  deletePhoto,
 } from "@/src/utils/storageManager";
 
-jest.mock("expo-file-system/legacy", () =>
-  jest.requireActual("../../../__mocks__/expo-file-system")
-);
-jest.mock("@react-native-async-storage/async-storage", () =>
-  jest.requireMock("@react-native-async-storage/async-storage/jest/async-storage-mock")
-);
+jest.mock("@/src/utils/downloadStorage", () => ({
+  downloadStorage: {
+    androidApiLevel: 35,
+    hasFiles: jest.fn(),
+    writeBase64: jest.fn(),
+    writeUtf8: jest.fn(),
+    readBase64: jest.fn(),
+    deleteFile: jest.fn(),
+    findFile: jest.fn(),
+  },
+}));
 
-const SAF = FileSystem.StorageAccessFramework;
-
-function spyMakeDirectory() {
-  const spy = jest.fn(SAF.makeDirectoryAsync);
-  SAF.makeDirectoryAsync = spy as typeof SAF.makeDirectoryAsync;
-  return spy;
+function installLogSpy(): jest.SpyInstance {
+  return jest.spyOn(console, "log").mockImplementation(() => {});
 }
 
-async function readChildren(dirUri: string): Promise<string[]> {
-  try {
-    return await SAF.readDirectoryAsync(dirUri);
-  } catch {
-    return [];
-  }
+function logLines(spy: jest.SpyInstance): string[] {
+  return spy.mock.calls.map((args) => args.join(" "));
 }
 
-async function dirExists(dirUri: string): Promise<boolean> {
-  return (await readChildren(dirUri)).length >= 0;
+function expectLogLine(lines: string[], fragment: string): void {
+  expect(lines.some((l) => l.includes(fragment))).toBe(true);
 }
 
-async function treeContains(dirUri: string, name: string): Promise<boolean> {
-  return (await readChildren(dirUri)).includes(name);
-}
-
-beforeEach(async () => {
-  __resetFsState();
-  await AsyncStorage.clear();
-  resetStorageCaches();
+beforeEach(() => {
+  jest.clearAllMocks();
+  (downloadStorage.hasFiles as jest.Mock).mockResolvedValue(false);
+  (downloadStorage.writeBase64 as jest.Mock).mockResolvedValue("content://media/photo.jpg");
+  (downloadStorage.deleteFile as jest.Mock).mockResolvedValue(true);
 });
 
-describe("ensureTreeUri", () => {
-  it("reuses the persisted tree URI without requesting permission again", async () => {
-    await AsyncStorage.setItem("accc_saf_tree_uri", "content://mock/tree/");
-    const first = await ensureTreeUri();
-    expect(first).toBe("content://mock/tree/");
+describe("ensureDownloadRoot", () => {
+  it("logs permissionGranted, downloadExists and rootCreated when the root folder is new", async () => {
+    const logSpy = installLogSpy();
+
+    await ensureDownloadRoot();
+
+    const lines = logLines(logSpy);
+    expectLogLine(lines, "[Storage] permissionGranted=");
+    expectLogLine(lines, "[Storage] downloadExists path=Download");
+    expectLogLine(lines, `[Storage] rootCreated path=Download/${ROOT_DIR_NAME}`);
+    expect(downloadStorage.hasFiles).toHaveBeenCalledWith("");
   });
 
-  it("reuses the in-session cached tree URI without re-reading storage or re-requesting permission", async () => {
-    await AsyncStorage.setItem("accc_saf_tree_uri", "content://mock/tree/");
-    const first = await ensureTreeUri();
-    await AsyncStorage.clear();
-    const second = await ensureTreeUri();
-    expect(first).toBe("content://mock/tree/");
-    expect(second).toBe(first);
+  it("logs rootExists when the root folder already contains files", async () => {
+    (downloadStorage.hasFiles as jest.Mock).mockResolvedValue(true);
+    const logSpy = installLogSpy();
+
+    await ensureDownloadRoot();
+
+    const lines = logLines(logSpy);
+    expectLogLine(lines, `[Storage] rootExists path=Download/${ROOT_DIR_NAME}`);
+    expect(lines.some((l) => l.includes("[Storage] rootCreated"))).toBe(false);
   });
 
-  it("requests a fresh permission and persists it when nothing is stored", async () => {
-    const tree = await ensureTreeUri();
-    expect(tree).toBe("content://mock/tree/");
-    expect(await AsyncStorage.getItem("accc_saf_tree_uri")).toBe(tree);
-  });
-});
-
-describe("resolveInspectionRootDir", () => {
-  it("creates the ACCC Dynamic Inspection root once and caches it within a session", async () => {
-    const tree = await ensureTreeUri();
-    const first = await resolveInspectionRootDir(tree);
-    expect(first).toContain("ACCC Dynamic Inspection");
-    expect(await treeContains(tree, "ACCC Dynamic Inspection")).toBe(true);
-
-    const second = await resolveInspectionRootDir(tree);
-    expect(second).toBe(first);
-  });
-
-  it("recreates the ACCC Dynamic Inspection root when it is deleted mid-session instead of trusting a stale cached URI", async () => {
-    const tree = await ensureTreeUri();
-    const first = await resolveInspectionRootDir(tree);
-    await SAF.deleteAsync(first);
-
-    const makeSpy = spyMakeDirectory();
-
-    await resolveInspectionRootDir(tree);
-    expect(makeSpy).toHaveBeenCalled();
-    expect(await treeContains(tree, "ACCC Dynamic Inspection")).toBe(true);
-  });
-
-  it("reuses an existing ACCC Dynamic Inspection folder when the cache is lost", async () => {
-    const tree = await ensureTreeUri();
-    const created = await resolveInspectionRootDir(tree);
-    expect(created).toContain("ACCC Dynamic Inspection");
-
-    await AsyncStorage.clear();
-    resetStorageCaches();
-
-    const makeSpy = spyMakeDirectory();
-
-    const resolved = await resolveInspectionRootDir(tree);
-    expect(resolved).toBe(created);
-    expect(makeSpy).not.toHaveBeenCalled();
-  });
-
-  it("recreates the project folder and reuses it after it is deleted", async () => {
-    const tree = await ensureTreeUri();
-    const projectDir = await getProjectDir(tree, "New Delhi_Project Alpha");
-
-    await SAF.deleteAsync(projectDir);
-
-    const makeSpy = spyMakeDirectory();
-
-    const resolved = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(makeSpy).toHaveBeenCalled();
-    expect(resolved).toBe(projectDir);
-  });
-
-  it("recreates the inspection root and project folder when the root is deleted", async () => {
-    const tree = await ensureTreeUri();
-    const projectDir = await getProjectDir(tree, "New Delhi_Project Alpha");
-    const acccRoot = projectDir.slice(0, projectDir.lastIndexOf("/"));
-
-    await SAF.deleteAsync(acccRoot);
-
-    const makeSpy = spyMakeDirectory();
-
-    const resolved = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(makeSpy).toHaveBeenCalled();
-    expect(resolved).toBe(projectDir);
-    expect(await treeContains(tree, "ACCC Dynamic Inspection")).toBe(true);
+  it("skips the permission dialog on API >= 29", async () => {
+    const platformSpy = jest.replaceProperty(Platform, "OS", "android");
+    const logSpy = installLogSpy();
+    try {
+      await ensureDownloadRoot();
+      const lines = logLines(logSpy);
+      expectLogLine(lines, "[Storage] permissionGranted=true (MediaStore, no permission required)");
+    } finally {
+      platformSpy.restore();
+    }
   });
 });
 
 describe("getProjectDir", () => {
-  it("creates and returns separate dirs for different project labels", async () => {
-    const tree = await ensureTreeUri();
-    const a = await getProjectDir(tree, "New Delhi_Project Alpha");
-    const b = await getProjectDir(tree, "Mumbai_Project Beta");
-    expect(a).toContain("ACCC Dynamic Inspection");
-    expect(a.endsWith("New Delhi_Project Alpha")).toBe(true);
-    expect(b.endsWith("Mumbai_Project Beta")).toBe(true);
-    expect(a).not.toBe(b);
+  it("returns the relative project label and logs projectCreated when the folder is new", async () => {
+    const logSpy = installLogSpy();
+
+    const dir = await getProjectDir("New Delhi_Project Alpha");
+
+    const lines = logLines(logSpy);
+    expect(dir).toBe("New Delhi_Project Alpha");
+    expectLogLine(lines, `[Storage] projectCreated path=Download/${ROOT_DIR_NAME}/New Delhi_Project Alpha`);
+    expect(downloadStorage.hasFiles).toHaveBeenCalledWith("New Delhi_Project Alpha");
   });
 
-  it("recreates a deleted project folder instead of returning a stale cached URI", async () => {
-    const tree = await ensureTreeUri();
-    const first = await getProjectDir(tree, "New Delhi_Project Alpha");
+  it("logs projectExists when the project folder already has files", async () => {
+    (downloadStorage.hasFiles as jest.Mock).mockResolvedValue(true);
+    const logSpy = installLogSpy();
 
-    await SAF.deleteAsync(first);
+    await getProjectDir("Mumbai_Project Beta");
 
-    const makeSpy = spyMakeDirectory();
-
-    const second = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(makeSpy).toHaveBeenCalled();
-    expect(await dirExists(second)).toBe(true);
-    expect(getSafCacheState().projectDirHit).toBe(false);
+    const lines = logLines(logSpy);
+    expectLogLine(lines, `[Storage] projectExists path=Download/${ROOT_DIR_NAME}/Mumbai_Project Beta`);
+    expect(lines.some((l) => l.includes("[Storage] projectCreated"))).toBe(false);
   });
 
-  it("recreates both the ACCC root and the project folder when the ACCC root is gone", async () => {
-    const tree = await ensureTreeUri();
-    const first = await getProjectDir(tree, "New Delhi_Project Alpha");
-    const acccRoot = first.slice(0, first.lastIndexOf("/"));
+  it("ensures the download root before checking the project folder", async () => {
+    await getProjectDir("New Delhi_Project Alpha");
 
-    await SAF.deleteAsync(acccRoot);
-
-    const makeSpy = spyMakeDirectory();
-
-    const second = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(makeSpy).toHaveBeenCalledTimes(2);
-    expect(second).toBe(first);
-    expect(await dirExists(second)).toBe(true);
-  });
-
-  it("reuses an existing project dir when its cache is lost", async () => {
-    const tree = await ensureTreeUri();
-    const created = await getProjectDir(tree, "New Delhi_Project Alpha");
-
-    await AsyncStorage.clear();
-    resetStorageCaches();
-
-    const makeSpy = spyMakeDirectory();
-
-    const resolved = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(resolved).toBe(created);
-    expect(makeSpy).not.toHaveBeenCalled();
-  });
-
-  it("does not create duplicate folders on reinstall when the existing ones are still present", async () => {
-    const tree = await ensureTreeUri();
-    const first = await getProjectDir(tree, "New Delhi_Project Alpha");
-
-    await AsyncStorage.clear();
-    resetStorageCaches();
-
-    const makeSpy = spyMakeDirectory();
-
-    const second = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(second).toBe(first);
-    expect(await treeContains(tree, "ACCC Dynamic Inspection")).toBe(true);
-    expect(makeSpy).not.toHaveBeenCalled();
+    const hasFilesCalls = (downloadStorage.hasFiles as jest.Mock).mock.calls;
+    expect(hasFilesCalls[0]).toEqual([""]);
+    expect(hasFilesCalls[1]).toEqual(["New Delhi_Project Alpha"]);
   });
 });
 
-describe("getSafCacheState", () => {
-  it("reports MISS on first resolution and HIT on subsequent calls", async () => {
-    const tree = await ensureTreeUri();
-    await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(getSafCacheState()).toEqual({ treeUriHit: false, projectDirHit: false });
+describe("writePhoto", () => {
+  it("writes the photo as base64 image/jpeg into the project label folder", async () => {
+    const uri = await writePhoto("New Delhi_Project Alpha", "photo.jpg", "BASE64");
 
-    await ensureTreeUri();
-    await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(getSafCacheState()).toEqual({ treeUriHit: true, projectDirHit: true });
-  });
-
-  it("reports a project dir MISS for a label not yet resolved", async () => {
-    const tree = await ensureTreeUri();
-    await getProjectDir(tree, "New Delhi_Project Alpha");
-
-    await ensureTreeUri();
-    await getProjectDir(tree, "Mumbai_Project Beta");
-    expect(getSafCacheState()).toEqual({ treeUriHit: true, projectDirHit: false });
-  });
-
-  it("reports a project dir MISS after the folder is deleted, even with a valid cache", async () => {
-    const tree = await ensureTreeUri();
-    const first = await getProjectDir(tree, "New Delhi_Project Alpha");
-
-    await ensureTreeUri();
-    const hit1 = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(hit1).toBe(first);
-    expect(getSafCacheState().projectDirHit).toBe(true);
-
-    await SAF.deleteAsync(first);
-
-    const second = await getProjectDir(tree, "New Delhi_Project Alpha");
-    expect(second).toBe(first);
-    expect(getSafCacheState().projectDirHit).toBe(false);
+    expect(uri).toBe("content://media/photo.jpg");
+    expect(downloadStorage.writeBase64).toHaveBeenCalledWith(
+      "New Delhi_Project Alpha",
+      "photo.jpg",
+      "image/jpeg",
+      "BASE64"
+    );
   });
 });
 
-describe("resetStorageCaches", () => {
-  it("clears the in-session caches so the next call re-resolves", async () => {
-    await AsyncStorage.setItem("accc_saf_tree_uri", "content://mock/tree/");
-    expect(await ensureTreeUri()).toBe("content://mock/tree/");
+describe("deletePhoto", () => {
+  it("deletes the photo by URI", async () => {
+    await deletePhoto("content://media/photo.jpg");
 
-    resetStorageCaches();
-    await AsyncStorage.clear();
+    expect(downloadStorage.deleteFile).toHaveBeenCalledWith("content://media/photo.jpg");
+  });
 
-    expect(await ensureTreeUri()).toBe("content://mock/tree/");
+  it("swallows delete errors", async () => {
+    (downloadStorage.deleteFile as jest.Mock).mockRejectedValueOnce(new Error("gone"));
+
+    await expect(deletePhoto("content://media/photo.jpg")).resolves.toBeUndefined();
   });
 });

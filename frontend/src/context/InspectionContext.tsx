@@ -9,8 +9,6 @@ import React, {
 import { Project } from "@/src/models/Project";
 import { openProjectDb, deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
 import { clearActiveProject } from "@/src/database/db";
-import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
-import { logger } from "@/src/utils/logger";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
 import { usePhotoStates } from "@/src/context/PhotoStatesContext";
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
@@ -56,9 +54,6 @@ const openProject = useCallback(async (p: Project) => {
     await openProjectDb(p.DBPath, p.ProjectID);
   }
   setProject(p);
-  migrateProjectPhotoFolder(p).catch((err) => {
-    logger.warn(`[FolderManager] Migration failed for project ${p.ProjectName}:`, err);
-  });
 }, []);
 
 const closeProject = useCallback(async () => {

@@ -6,7 +6,8 @@ import { Platform } from "react-native";
 import { getDatabase, getGlobalDatabase } from "../database/db";
 import { INSPECTION_FINAL_STATUSES } from "../database/repositories/InspectionRepository";
 import { getCurrentInspectionDate } from "./date";
-import { ensureTreeUri, resolveInspectionRootDir } from "./storageManager";
+import { ensureDownloadRoot } from "./storageManager";
+import { downloadStorage } from "./downloadStorage";
 import { logger } from "./logger";
 
 export type ExportFormat = "csv" | "excel";
@@ -425,19 +426,19 @@ export async function createExportFile(
 
   const ext = format === "csv" ? "csv" : "xlsx";
   const fileName = buildFileName(division, projectName, inspector, ext);
-  const treeUri = await ensureTreeUri();
-  const rootDir = await resolveInspectionRootDir(treeUri);
-  logger.debug("[Storage:check] path=" + rootDir);
-  const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
-    rootDir,
-    fileName,
-    format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  );
+  await ensureDownloadRoot();
+  logger.debug(`[Storage:check] path=Download/${fileName}`);
+  let fileUri: string;
   if (format === "csv") {
-    await FileSystem.StorageAccessFramework.writeAsStringAsync(fileUri, buildCsv(table), { encoding: FileSystem.EncodingType.UTF8 });
+    fileUri = await downloadStorage.writeUtf8("", fileName, "text/csv", buildCsv(table));
     logger.info("[Storage:csv] path=" + fileUri);
   } else {
-    await FileSystem.StorageAccessFramework.writeAsStringAsync(fileUri, buildExcelBase64(table), { encoding: FileSystem.EncodingType.Base64 });
+    fileUri = await downloadStorage.writeBase64(
+      "",
+      fileName,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buildExcelBase64(table)
+    );
     logger.info("[Storage:excel] path=" + fileUri);
   }
 

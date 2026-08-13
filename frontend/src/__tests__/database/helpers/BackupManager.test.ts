@@ -9,111 +9,97 @@ jest.mock("@/src/database/helpers/ProjectDBManager", () => ({
   listProjectFolders: jest.fn().mockResolvedValue(["Alpha", "Beta"]),
 }));
 
-jest.mock("@react-native-async-storage/async-storage", () => ({
-  getItem: jest.fn(),
-  setItem: jest.fn().mockResolvedValue(undefined),
-  removeItem: jest.fn().mockResolvedValue(undefined),
-}));
-
 const mockFsEntries = new Map<string, { type: "file" | "dir"; content: string }>();
 
-jest.mock("expo-file-system/legacy", () => {
-  const StorageAccessFramework = {
-    requestDirectoryPermissionsAsync: jest.fn(async () => {
-      if (!mockFsEntries.has("content://mock/tree")) {
-        mockFsEntries.set("content://mock/tree", { type: "dir", content: "" });
-      }
-      return { granted: true, directoryUri: "content://mock/tree" };
-    }),
-    readDirectoryAsync: jest.fn(async (dirUri: string) => {
-      const entry = mockFsEntries.get(dirUri);
-      if (entry === undefined || entry.type !== "dir") {
-        throw new Error(`Directory not found: ${dirUri}`);
-      }
-      const names: string[] = [];
-      for (const key of mockFsEntries.keys()) {
-        if (key.startsWith(dirUri + "/")) {
-          const name = key.slice(dirUri.length + 1).split("/")[0];
-          if (name.length > 0 && !names.includes(name)) names.push(name);
-        }
-      }
-      return names;
-    }),
-    makeDirectoryAsync: jest.fn(async (parentUri: string, dirName: string) => {
-      const parent = mockFsEntries.get(parentUri);
-      if (parent === undefined || parent.type !== "dir") {
-        throw new Error(`Directory not found: ${parentUri}`);
-      }
-      const uri = `${parentUri}/${dirName}`;
-      mockFsEntries.set(uri, { type: "dir", content: "" });
-      return uri;
-    }),
-    createFileAsync: jest.fn(async (parentUri: string, fileName: string) => {
-      const parent = mockFsEntries.get(parentUri);
-      if (parent === undefined || parent.type !== "dir") {
-        throw new Error(`Directory not found: ${parentUri}`);
-      }
-      const uri = `${parentUri}/${fileName}`;
-      if (mockFsEntries.has(uri)) {
-        throw new Error(`File already exists: ${uri}`);
-      }
-      mockFsEntries.set(uri, { type: "file", content: "" });
-      return uri;
-    }),
-    writeAsStringAsync: jest.fn(async (fileUri: string, contents: string) => {
-      const existing = mockFsEntries.get(fileUri);
-      mockFsEntries.set(fileUri, {
-        type: existing ? existing.type : "file",
-        content: contents,
-      });
-    }),
-    readAsStringAsync: jest.fn(async (fileUri: string) => {
-      const entry = mockFsEntries.get(fileUri);
-      if (entry === undefined) throw new Error(`File not found: ${fileUri}`);
-      return entry.content;
-    }),
-    deleteAsync: jest.fn(async (fileUri: string) => {
-      mockFsEntries.delete(fileUri);
-      for (const key of Array.from(mockFsEntries.keys())) {
-        if (key.startsWith(fileUri) && key !== fileUri) mockFsEntries.delete(key);
-      }
-    }),
-    getInfoAsync: jest.fn(async (fileUri: string) => {
-      const entry = mockFsEntries.get(fileUri);
-      if (entry === undefined) return { exists: false, isDirectory: false };
-      return {
-        exists: true,
-        isDirectory: entry.type === "dir",
-        size: entry.content.length,
-      };
-    }),
-  };
+jest.mock("expo-file-system/legacy", () => ({
+  documentDirectory: "file:///mock/documents/",
+  cacheDirectory: "file:///mock/cache/",
+  EncodingType: { UTF8: "utf8", Base64: "base64" },
+  writeAsStringAsync: jest.fn(async (fileUri: string, contents: string) => {
+    const existing = mockFsEntries.get(fileUri);
+    mockFsEntries.set(fileUri, {
+      type: existing ? existing.type : "file",
+      content: contents,
+    });
+  }),
+  readAsStringAsync: jest.fn(async (fileUri: string) => {
+    const entry = mockFsEntries.get(fileUri);
+    if (entry === undefined) throw new Error(`File not found: ${fileUri}`);
+    return entry.content;
+  }),
+  getInfoAsync: jest.fn(async (fileUri: string) => {
+    const entry = mockFsEntries.get(fileUri);
+    if (entry === undefined) return { exists: false, isDirectory: false };
+    return {
+      exists: true,
+      isDirectory: entry.type === "dir",
+      size: entry.content.length,
+    };
+  }),
+  makeDirectoryAsync: jest.fn(async (dirUri: string) => {
+    if (!mockFsEntries.has(dirUri)) mockFsEntries.set(dirUri, { type: "dir", content: "" });
+  }),
+  deleteAsync: jest.fn(async (fileUri: string) => {
+    mockFsEntries.delete(fileUri);
+    for (const key of Array.from(mockFsEntries.keys())) {
+      if (key.startsWith(fileUri) && key !== fileUri) mockFsEntries.delete(key);
+    }
+  }),
+  readDirectoryAsync: jest.fn(async () => []),
+  __resetFsState: () => mockFsEntries.clear(),
+}));
 
-  return {
-    documentDirectory: "file:///mock/documents/",
-    cacheDirectory: "file:///mock/cache/",
-    EncodingType: { UTF8: "utf8", Base64: "base64" },
-    writeAsStringAsync: StorageAccessFramework.writeAsStringAsync,
-    readAsStringAsync: StorageAccessFramework.readAsStringAsync,
-    getInfoAsync: StorageAccessFramework.getInfoAsync,
-    makeDirectoryAsync: jest.fn(async (dirUri: string) => {
-      if (!mockFsEntries.has(dirUri)) mockFsEntries.set(dirUri, { type: "dir", content: "" });
+const mockDownloadStore = new Map<string, string>();
+
+jest.mock("@/src/utils/downloadStorage", () => ({
+  downloadStorage: {
+    androidApiLevel: 35,
+    hasFiles: jest.fn(async (relativePath: string) => {
+      const prefix = `Download/ACCC Dynamic Inspection/${relativePath ? relativePath + "/" : ""}`;
+      for (const key of mockDownloadStore.keys()) {
+        if (key.startsWith(prefix)) return true;
+      }
+      return false;
     }),
-    deleteAsync: StorageAccessFramework.deleteAsync,
-    readDirectoryAsync: jest.fn(async () => []),
-    StorageAccessFramework,
-    __resetFsState: () => mockFsEntries.clear(),
-  };
-});
+    writeBase64: jest.fn(
+      async (relativePath: string, fileName: string, _mimeType: string, base64: string) => {
+        const key = `Download/ACCC Dynamic Inspection/${relativePath ? relativePath + "/" : ""}${fileName}`;
+        mockDownloadStore.set(key, base64);
+        return `content://media/${key}`;
+      }
+    ),
+    writeUtf8: jest.fn(
+      async (relativePath: string, fileName: string, _mimeType: string, text: string) => {
+        const key = `Download/ACCC Dynamic Inspection/${relativePath ? relativePath + "/" : ""}${fileName}`;
+        mockDownloadStore.set(key, btoa(text));
+        return `content://media/${key}`;
+      }
+    ),
+    readBase64: jest.fn(async (uri: string) => {
+      const key = uri.replace(/^content:\/\/media\//, "");
+      const value = mockDownloadStore.get(key);
+      if (value === undefined) throw new Error(`File not found: ${uri}`);
+      return value;
+    }),
+    deleteFile: jest.fn(async (uri: string) =>
+      mockDownloadStore.delete(uri.replace(/^content:\/\/media\//, ""))
+    ),
+    findFile: jest.fn(async (relativePath: string, fileName: string) => {
+      const key = `Download/ACCC Dynamic Inspection/${relativePath ? relativePath + "/" : ""}${fileName}`;
+      return mockDownloadStore.has(key) ? `content://media/${key}` : null;
+    }),
+  },
+}));
 
 import { closeAllDatabases } from "@/src/database/db";
 import { listProjectFolders } from "@/src/database/helpers/ProjectDBManager";
 import * as FileSystem from "expo-file-system/legacy";
 import { unzipBase64, isZipBytes } from "@/src/utils/backupZip";
-import { resetStorageCaches } from "@/src/utils/storageManager";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { downloadStorage } from "@/src/utils/downloadStorage";
 
 const DOC = "file:///mock/documents/";
+const BACKUP_STORE_KEY = "Download/ACCC Dynamic Inspection/accc_backup.zip";
+const BACKUP_URI = "content://media/Download/ACCC Dynamic Inspection/accc_backup.zip";
 
 function toB64(bytes: number[]): string {
   return btoa(String.fromCharCode(...bytes));
@@ -133,22 +119,19 @@ function seedSidecar(rel: string, content: string): void {
   });
 }
 
+function storedBackupB64(): string {
+  const value = mockDownloadStore.get(BACKUP_STORE_KEY);
+  if (value === undefined) throw new Error("No backup stored");
+  return value;
+}
+
 describe("BackupManager backupNow", () => {
   let BackupManager: typeof import("@/src/database/helpers/BackupManager");
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockFsEntries.clear();
-    resetStorageCaches();
-    (AsyncStorage.getItem as jest.Mock).mockClear();
-    (AsyncStorage.setItem as jest.Mock).mockClear();
-    (AsyncStorage.removeItem as jest.Mock).mockClear();
-    (FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync as jest.Mock).mockImplementation(async () => {
-      if (!mockFsEntries.has("content://mock/tree")) {
-        mockFsEntries.set("content://mock/tree", { type: "dir", content: "" });
-      }
-      return { granted: true, directoryUri: "content://mock/tree" };
-    });
+    mockDownloadStore.clear();
     (listProjectFolders as jest.Mock).mockResolvedValue(["Alpha", "Beta"]);
     BackupManager = require("@/src/database/helpers/BackupManager");
   });
@@ -165,9 +148,7 @@ describe("BackupManager backupNow", () => {
     expect(result.message).toContain("Backup created");
     expect(closeAllDatabases).not.toHaveBeenCalled();
 
-    const zipUri = "content://mock/tree/ACCC Dynamic Inspection/accc_backup.zip";
-    const written = await FileSystem.StorageAccessFramework.readAsStringAsync(zipUri);
-    const entries = await unzipBase64(written);
+    const entries = await unzipBase64(storedBackupB64());
 
     expect(entries["SQLite/accc_global.db"]).toBeDefined();
     expect(Array.from(entries["SQLite/accc_global.db"])).toEqual(
@@ -185,6 +166,22 @@ describe("BackupManager backupNow", () => {
     expect(entries["Projects/Beta/inspection.db-wal"]).toBeUndefined();
   });
 
+  it("writes the backup zip straight to Download/ACCC Dynamic Inspection without a folder picker", async () => {
+    seedGlobalDb("GLOBAL");
+    seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(true);
+    expect(downloadStorage.writeBase64).toHaveBeenCalledWith(
+      "",
+      "accc_backup.zip",
+      "application/zip",
+      expect.any(String)
+    );
+    expect(downloadStorage.hasFiles).toHaveBeenCalledWith("");
+  });
+
   it("includes global DB sidecars when present", async () => {
     seedGlobalDb("GLOBAL");
     seedSidecar("SQLite/accc_global.db-wal", "GLOBAL-WAL");
@@ -194,9 +191,7 @@ describe("BackupManager backupNow", () => {
     const result = await BackupManager.backupNow();
     expect(result.ok).toBe(true);
 
-    const zipUri = "content://mock/tree/ACCC Dynamic Inspection/accc_backup.zip";
-    const written = await FileSystem.StorageAccessFramework.readAsStringAsync(zipUri);
-    const entries = await unzipBase64(written);
+    const entries = await unzipBase64(storedBackupB64());
 
     expect(Array.from(entries["SQLite/accc_global.db-wal"])).toEqual(
       Array.from("GLOBAL-WAL", (c) => c.charCodeAt(0))
@@ -218,11 +213,12 @@ describe("BackupManager backupNow", () => {
     expect(dbModule.setActiveProject).not.toHaveBeenCalled();
   });
 
-  it("returns an error message when SAF permission is denied", async () => {
-    (FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync as jest.Mock).mockResolvedValue({
-      granted: false,
-      directoryUri: "",
-    });
+  it("returns an error message when the storage layer is unavailable", async () => {
+    seedGlobalDb("GLOBAL");
+    seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
+    (downloadStorage.writeBase64 as jest.Mock).mockRejectedValueOnce(
+      new Error("Storage permission denied")
+    );
 
     const result = await BackupManager.backupNow();
 
@@ -236,9 +232,7 @@ describe("BackupManager backupNow", () => {
     const result = await BackupManager.backupNow();
 
     expect(result.ok).toBe(true);
-    const zipUri = "content://mock/tree/ACCC Dynamic Inspection/accc_backup.zip";
-    const written = await FileSystem.StorageAccessFramework.readAsStringAsync(zipUri);
-    const entries = await unzipBase64(written);
+    const entries = await unzipBase64(storedBackupB64());
     expect(entries["SQLite/accc_global.db"]).toBeUndefined();
     expect(entries["Projects/Alpha/inspection.db"]).toBeDefined();
   });
@@ -249,104 +243,24 @@ describe("BackupManager backupNow", () => {
 
     await BackupManager.backupNow();
 
-    const zipUri = "content://mock/tree/ACCC Dynamic Inspection/accc_backup.zip";
-    const written = await FileSystem.StorageAccessFramework.readAsStringAsync(zipUri);
-    const bytes = Uint8Array.from(atob(written), (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(storedBackupB64()), (c) => c.charCodeAt(0));
     expect(isZipBytes(bytes)).toBe(true);
   });
 
   it("overwrites an existing backup file", async () => {
     seedGlobalDb("GLOBAL");
     seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
-    const backupDirUri = "content://mock/tree/ACCC Dynamic Inspection";
-    mockFsEntries.set(backupDirUri, { type: "dir", content: "" });
-    const existingUri = `${backupDirUri}/accc_backup.zip`;
-    mockFsEntries.set(existingUri, { type: "file", content: "OLD" });
+    mockDownloadStore.set(BACKUP_STORE_KEY, "OLD");
 
     const result = await BackupManager.backupNow();
 
     expect(result.ok).toBe(true);
-    const written = await FileSystem.StorageAccessFramework.readAsStringAsync(existingUri);
-    expect(written).not.toBe("OLD");
-  });
-
-  it("creates the ACCC root under a granted SAF directory and writes the backup there", async () => {
-    seedGlobalDb("GLOBAL");
-    seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
-    const grantedUri = "content://mock/tree/ACCC Dynamic Inspection";
-    mockFsEntries.set("content://mock/tree", { type: "dir", content: "" });
-    mockFsEntries.set(grantedUri, { type: "dir", content: "" });
-    (FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync as jest.Mock).mockResolvedValue({
-      granted: true,
-      directoryUri: grantedUri,
-    });
-
-    const result = await BackupManager.backupNow();
-
-    expect(result.ok).toBe(true);
-    expect(FileSystem.StorageAccessFramework.makeDirectoryAsync).toHaveBeenCalledWith(
-      grantedUri,
-      "ACCC Dynamic Inspection"
-    );
-    const zipUri = `${grantedUri}/ACCC Dynamic Inspection/accc_backup.zip`;
-    const written = await FileSystem.StorageAccessFramework.readAsStringAsync(zipUri);
-    const entries = await unzipBase64(written);
-    expect(entries["SQLite/accc_global.db"]).toBeDefined();
-  });
-
-  it("reuses a valid persisted backup tree uri without requesting the picker", async () => {
-    seedGlobalDb("GLOBAL");
-    seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
-    const backupDirUri = "content://mock/tree/ACCC Dynamic Inspection";
-    mockFsEntries.set("content://mock/tree", { type: "dir", content: "" });
-    mockFsEntries.set(backupDirUri, { type: "dir", content: "" });
-    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce("content://mock/tree");
-
-    const result = await BackupManager.backupNow();
-
-    expect(result.ok).toBe(true);
-    expect(FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync).not.toHaveBeenCalled();
-    const zipUri = `${backupDirUri}/accc_backup.zip`;
-    const written = await FileSystem.StorageAccessFramework.readAsStringAsync(zipUri);
-    expect(written).toBeTruthy();
-  });
-
-  it("requests the picker again when the persisted uri is invalid", async () => {
-    seedGlobalDb("GLOBAL");
-    seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
-    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce("content://stale/tree");
-
-    const result = await BackupManager.backupNow();
-
-    expect(result.ok).toBe(true);
-    expect(FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync).toHaveBeenCalled();
-    expect(AsyncStorage.removeItem).toHaveBeenCalledWith("accc_saf_tree_uri");
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      "accc_saf_tree_uri",
-      expect.stringContaining("content://mock/tree")
-    );
-  });
-
-  it("requests the picker when no uri is persisted", async () => {
-    seedGlobalDb("GLOBAL");
-    seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
-    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(null);
-
-    const result = await BackupManager.backupNow();
-
-    expect(result.ok).toBe(true);
-    expect(FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync).toHaveBeenCalled();
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      "accc_saf_tree_uri",
-      expect.stringContaining("content://mock/tree")
-    );
+    expect(storedBackupB64()).not.toBe("OLD");
   });
 });
 
 describe("BackupManager restore", () => {
   let BackupManager: typeof import("@/src/database/helpers/BackupManager");
-  const BACKUP_URI = "content://mock/tree/ACCC Dynamic Inspection/accc_backup.zip";
-  const BACKUP_DIR_URI = "content://mock/tree/ACCC Dynamic Inspection";
 
   async function seedBackupZip(entries: Record<string, number[]>): Promise<void> {
     const files: Record<string, Uint8Array> = {};
@@ -354,24 +268,13 @@ describe("BackupManager restore", () => {
       files[name] = Uint8Array.from(nums);
     }
     const { zipBase64 } = require("@/src/utils/backupZip");
-    mockFsEntries.set("content://mock/tree", { type: "dir", content: "" });
-    mockFsEntries.set(BACKUP_DIR_URI, { type: "dir", content: "" });
-    mockFsEntries.set(BACKUP_URI, { type: "file", content: await zipBase64(files) });
+    mockDownloadStore.set(BACKUP_STORE_KEY, await zipBase64(files));
   }
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockFsEntries.clear();
-    resetStorageCaches();
-    (AsyncStorage.getItem as jest.Mock).mockClear();
-    (AsyncStorage.setItem as jest.Mock).mockClear();
-    (AsyncStorage.removeItem as jest.Mock).mockClear();
-    (FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync as jest.Mock).mockImplementation(async () => {
-      if (!mockFsEntries.has("content://mock/tree")) {
-        mockFsEntries.set("content://mock/tree", { type: "dir", content: "" });
-      }
-      return { granted: true, directoryUri: "content://mock/tree" };
-    });
+    mockDownloadStore.clear();
     (listProjectFolders as jest.Mock).mockResolvedValue(["Alpha", "Beta"]);
     BackupManager = require("@/src/database/helpers/BackupManager");
   });
@@ -388,9 +291,7 @@ describe("BackupManager restore", () => {
   });
 
   it("validateBackupFile rejects a garbage file", async () => {
-    mockFsEntries.set("content://mock/tree", { type: "dir", content: "" });
-    mockFsEntries.set(BACKUP_DIR_URI, { type: "dir", content: "" });
-    mockFsEntries.set(BACKUP_URI, { type: "file", content: "not-a-zip" });
+    mockDownloadStore.set(BACKUP_STORE_KEY, "not-a-zip");
 
     const result = await BackupManager.validateBackupFile(BACKUP_URI);
     expect(result.ok).toBe(false);

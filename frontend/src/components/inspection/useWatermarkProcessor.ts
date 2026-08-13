@@ -5,7 +5,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import { writePhoto, ensureTreeUri, getProjectDir, getSafCacheState } from "@/src/utils/storageManager";
+import { writePhoto, getProjectDir } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import {
   buildRenderWatermarkScript,
@@ -449,8 +449,7 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
       uiPerfStage("overlayDone", `photo=${job.photoId}`);
 
       const tSave = perfNow();
-      const treeUri = await ensureTreeUri();
-      const projectDir = await getProjectDir(treeUri, label);
+      const projectDir = await getProjectDir(label);
       uiPerfStage("safWriteStart", `photo=${job.photoId}`);
       const contentUri = await writePhoto(projectDir, job.fileName, base64);
       uiPerfStage("safWriteDone", `photo=${job.photoId}`);
@@ -460,10 +459,7 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
       }
       if (perfRef.current) perfStage(perfRef.current, "safWrite");
       const safWriteMs = perfNow() - tSave;
-      const saf = getSafCacheState();
-      logger.debug(`[SAF] ProjectDirCache: ${saf.projectDirHit ? "HIT" : "MISS"}`);
-      logger.debug(`[SAF] TreeUriCache: ${saf.treeUriHit ? "HIT" : "MISS"}`);
-      logger.debug(`[SAF] WriteTime: ${safWriteMs.toFixed(1)} ms`);
+      logger.debug(`[Storage] WriteTime: ${safWriteMs.toFixed(1)} ms`);
 
       const tDb = perfNow();
       await PhotoRepository.updateFilePath(job.photoId, contentUri);

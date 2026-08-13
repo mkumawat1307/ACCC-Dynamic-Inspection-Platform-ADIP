@@ -33,5 +33,4 @@ declare module "expo-document-picker" {
 
 declare module "expo-file-system/legacy" {
   export function __resetFsState(): void;
-  export function __setPermissionGranted(value: boolean): void;
 }

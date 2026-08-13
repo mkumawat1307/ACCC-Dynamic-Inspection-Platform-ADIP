@@ -9,16 +9,14 @@ import {
   isZipBytes,
 } from "@/src/utils/backupZip";
 import { logger } from "@/src/utils/logger";
-import { ensureTreeUri, resolveInspectionRootDir } from "@/src/utils/storageManager";
+import { ensureDownloadRoot } from "@/src/utils/storageManager";
+import { downloadStorage } from "@/src/utils/downloadStorage";
 
 export interface BackupResult {
   ok: boolean;
   message: string;
   path?: string;
 }
-
-export const DOWNLOAD_TREE_URI =
-  "content://com.android.externalstorage.documents/tree/primary%3ADownload";
 
 export async function getGlobalDbFilePath(): Promise<string> {
   return `${FileSystem.documentDirectory}SQLite/${GLOBAL_DATABASE_NAME}`;
@@ -63,25 +61,10 @@ async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
 
 export async function backupNow(): Promise<BackupResult> {
   try {
-    const treeUri = await ensureTreeUri();
-    const dirUri = await resolveInspectionRootDir(treeUri);
-    const existingUri = `${dirUri}/${BACKUP_FILE_NAME}`;
-    const existing = await FileSystem.getInfoAsync(existingUri);
-    if (existing.exists) {
-      await FileSystem.StorageAccessFramework.deleteAsync(existingUri);
-    }
+    await ensureDownloadRoot();
     const files = await collectDbFiles();
     const zip = await zipBase64(files);
-    const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
-      dirUri,
-      BACKUP_FILE_NAME,
-      "application/zip"
-    );
-    await FileSystem.StorageAccessFramework.writeAsStringAsync(
-      fileUri,
-      zip,
-      { encoding: FileSystem.EncodingType.Base64 }
-    );
+    const fileUri = await downloadStorage.writeBase64("", BACKUP_FILE_NAME, "application/zip", zip);
     logger.info("[Storage:backup] path=" + fileUri);
     logger.info(`[BackupManager] Backup created at ${buildBackupDisplayPath()}`);
     return { ok: true, message: "Backup created", path: buildBackupDisplayPath() };
@@ -93,11 +76,8 @@ export async function backupNow(): Promise<BackupResult> {
 
 export async function findBackupFile(): Promise<string | null> {
   try {
-    const treeUri = await ensureTreeUri();
-    const dirUri = await resolveInspectionRootDir(treeUri);
-    const names = await FileSystem.StorageAccessFramework.readDirectoryAsync(dirUri);
-    if (!names.includes(BACKUP_FILE_NAME)) return null;
-    return `${dirUri}/${BACKUP_FILE_NAME}`;
+    await ensureDownloadRoot();
+    return await downloadStorage.findFile("", BACKUP_FILE_NAME);
   } catch {
     return null;
   }
@@ -107,9 +87,7 @@ export async function validateBackupFile(
   fileUri: string
 ): Promise<{ ok: boolean; message: string }> {
   try {
-    const b64 = await FileSystem.StorageAccessFramework.readAsStringAsync(fileUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    const b64 = await downloadStorage.readBase64(fileUri);
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     if (!isZipBytes(bytes)) {
       return { ok: false, message: "Not a valid ACCC backup file" };
@@ -134,9 +112,7 @@ export async function restoreBackup(
     const confirmed = await onConfirm();
     if (!confirmed) return { ok: false, message: "Restore cancelled" };
 
-    const b64 = await FileSystem.StorageAccessFramework.readAsStringAsync(fileUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    const b64 = await downloadStorage.readBase64(fileUri);
     const entries = await unzipBase64(b64);
 
     await closeAllDatabases();

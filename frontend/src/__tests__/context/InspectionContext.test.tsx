@@ -1,11 +1,5 @@
 jest.mock("@/src/database/helpers/ProjectDBManager");
 jest.mock("@/src/database/db");
-jest.mock("@/src/utils/folderManager", () => ({
-  migrateProjectPhotoFolder: jest.fn(),
-}));
-jest.mock("@/src/utils/logger", () => ({
-  logger: { warn: jest.fn() },
-}));
 
 import React from "react";
 import TestRenderer from "react-test-renderer";
@@ -16,8 +10,6 @@ import {
 import { PhotoStatesProvider } from "@/src/context/PhotoStatesContext";
 import { openProjectDb, deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
 import { clearActiveProject } from "@/src/database/db";
-import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
-import { logger } from "@/src/utils/logger";
 
 const mockProject = {
   ProjectID: 1,
@@ -59,7 +51,6 @@ describe("InspectionProvider", () => {
     (openProjectDb as jest.Mock).mockResolvedValue(undefined);
     (clearActiveProject as jest.Mock).mockResolvedValue(undefined);
     (deleteProjectDb as jest.Mock).mockResolvedValue(undefined);
-    (migrateProjectPhotoFolder as jest.Mock).mockResolvedValue(undefined);
   });
 
   it("initializes with null project and empty fields", () => {
@@ -87,29 +78,6 @@ describe("InspectionProvider", () => {
     });
     expect(openProjectDb).not.toHaveBeenCalled();
     expect(result.current.project).toBeTruthy();
-  });
-
-  it("fires the photo folder migration on project open", async () => {
-    const result = renderHookInProvider(() => useInspection());
-    await TestRenderer.act(async () => {
-      await result.current.openProject(mockProject);
-    });
-    expect(migrateProjectPhotoFolder).toHaveBeenCalledWith(mockProject);
-  });
-
-  it("resolves openProject even when photo folder migration rejects", async () => {
-    (migrateProjectPhotoFolder as jest.Mock).mockRejectedValueOnce(
-      new Error("migration boom")
-    );
-    const result = renderHookInProvider(() => useInspection());
-    await TestRenderer.act(async () => {
-      await result.current.openProject(mockProject);
-    });
-    expect(result.current.project?.ProjectName).toBe("Test Project");
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining("Migration failed for project Test Project"),
-      expect.any(Error)
-    );
   });
 
   it("closes the project and resets state", async () => {

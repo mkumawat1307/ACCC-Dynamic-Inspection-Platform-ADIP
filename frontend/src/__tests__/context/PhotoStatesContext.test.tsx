@@ -1,11 +1,5 @@
 jest.mock("@/src/database/helpers/ProjectDBManager");
 jest.mock("@/src/database/db");
-jest.mock("@/src/utils/folderManager", () => ({
-  migrateProjectPhotoFolder: jest.fn(),
-}));
-jest.mock("@/src/utils/logger", () => ({
-  logger: { warn: jest.fn() },
-}));
 
 import React from "react";
 import TestRenderer from "react-test-renderer";
@@ -20,7 +14,6 @@ import {
 } from "@/src/context/PhotoStatesContext";
 import { openProjectDb, deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
 import { clearActiveProject } from "@/src/database/db";
-import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
 
 type SetStates = React.Dispatch<React.SetStateAction<Record<number, WatermarkState>>>;
@@ -49,7 +42,6 @@ describe("PhotoStatesContext", () => {
     (openProjectDb as jest.Mock).mockResolvedValue(undefined);
     (clearActiveProject as jest.Mock).mockResolvedValue(undefined);
     (deleteProjectDb as jest.Mock).mockResolvedValue(undefined);
-    (migrateProjectPhotoFolder as jest.Mock).mockResolvedValue(undefined);
   });
 
   it("initializes photoStates as empty", () => {

@@ -3,8 +3,19 @@ import { getDatabase, getGlobalDatabase } from "@/src/database/db";
 jest.mock("@/src/database/db");
 
 jest.mock("@/src/utils/storageManager", () => ({
-  ensureTreeUri: jest.fn().mockResolvedValue("content://mock/tree/"),
-  resolveInspectionRootDir: jest.fn().mockResolvedValue("content://mock/tree/ACCC Dynamic Inspection"),
+  ensureDownloadRoot: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("@/src/utils/downloadStorage", () => ({
+  downloadStorage: {
+    androidApiLevel: 35,
+    hasFiles: jest.fn().mockResolvedValue(true),
+    writeBase64: jest.fn().mockResolvedValue("content://mock/exported/file.xlsx"),
+    writeUtf8: jest.fn().mockResolvedValue("content://mock/exported/file.csv"),
+    readBase64: jest.fn().mockResolvedValue("QUJD"),
+    deleteFile: jest.fn().mockResolvedValue(true),
+    findFile: jest.fn().mockResolvedValue(null),
+  },
 }));
 
 jest.mock("expo-file-system/legacy", () => ({
@@ -18,15 +29,6 @@ jest.mock("expo-file-system/legacy", () => ({
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   copyAsync: jest.fn().mockResolvedValue(undefined),
   getContentUriAsync: jest.fn().mockResolvedValue("content://mock/exported"),
-  StorageAccessFramework: {
-    createFileAsync: jest.fn().mockResolvedValue("content://mock/exported/file.xlsx"),
-    writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
-    readAsStringAsync: jest.fn().mockResolvedValue("QUJD"),
-    deleteAsync: jest.fn().mockResolvedValue(undefined),
-    readDirectoryAsync: jest.fn().mockResolvedValue([]),
-    makeDirectoryAsync: jest.fn().mockResolvedValue("content://mock/tree/ACCC Dynamic Inspection"),
-    requestDirectoryPermissionsAsync: jest.fn().mockResolvedValue({ granted: true, directoryUri: "content://mock/tree/" }),
-  },
 }));
 
 jest.mock("expo-sharing", () => {
@@ -45,6 +47,7 @@ import * as XLSX from "xlsx";
 
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { downloadStorage } from "@/src/utils/downloadStorage";
 
 function createMockDb(overrides: Record<string, unknown> = {}) {
   return {
@@ -646,10 +649,10 @@ describe("exportInspections", () => {
     const result = await exportInspections(1, "TestProject", "csv");
 
     expect(result).toBe(true);
-    const writeCall = (FileSystem.StorageAccessFramework.writeAsStringAsync as jest.Mock).mock.calls[0];
-    expect(writeCall[1]).toContain("Pole ID");
-    expect(writeCall[1]).not.toContain("General Information");
-    expect(writeCall[1]).toContain("P001");
+    const writeCall = (downloadStorage.writeUtf8 as jest.Mock).mock.calls[0];
+    expect(writeCall[3]).toContain("Pole ID");
+    expect(writeCall[3]).not.toContain("General Information");
+    expect(writeCall[3]).toContain("P001");
     expect(Sharing.shareAsync).toHaveBeenCalled();
   });
 
@@ -666,7 +669,7 @@ describe("exportInspections", () => {
     const result = await exportInspections(999, "EmptyProject", "csv");
 
     expect(result).toBe(false);
-    expect(FileSystem.StorageAccessFramework.writeAsStringAsync).not.toHaveBeenCalled();
+    expect(downloadStorage.writeUtf8).not.toHaveBeenCalled();
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 
@@ -683,9 +686,8 @@ describe("exportInspections", () => {
     const result = await exportInspections(1, "TestProject", "excel");
 
     expect(result).toBe(true);
-    const writeCall = (FileSystem.StorageAccessFramework.writeAsStringAsync as jest.Mock).mock.calls[0];
-    expect(writeCall[2].encoding).toBe(FileSystem.EncodingType.Base64);
-    expect(writeCall[1]).toMatch(/^UEsDB/);
+    const writeCall = (downloadStorage.writeBase64 as jest.Mock).mock.calls[0];
+    expect(writeCall[3]).toMatch(/^UEsDB/);
     expect(Sharing.shareAsync).toHaveBeenCalled();
   });
 
@@ -744,7 +746,7 @@ describe("createExportFile", () => {
     expect(result!.inspectionCount).toBe(2);
     expect(result!.rowCount).toBe(2);
     expect(typeof result!.durationMs).toBe("number");
-    expect(FileSystem.StorageAccessFramework.writeAsStringAsync).toHaveBeenCalled();
+    expect(downloadStorage.writeUtf8).toHaveBeenCalled();
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 
@@ -765,8 +767,9 @@ describe("createExportFile", () => {
     expect(result).not.toBeNull();
     expect(result!.fileName).toMatch(/\.xlsx$/);
     expect(result!.format).toBe("excel");
-    const writeCall = (FileSystem.StorageAccessFramework.writeAsStringAsync as jest.Mock).mock.calls[0];
-    expect(writeCall[2].encoding).toBe(FileSystem.EncodingType.Base64);
+    const writeCall = (downloadStorage.writeBase64 as jest.Mock).mock.calls[0];
+    expect(writeCall[0]).toBe("");
+    expect(writeCall[1]).toMatch(/\.xlsx$/);
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 
@@ -783,7 +786,7 @@ describe("createExportFile", () => {
     const result = await createExportFile(1, "TestProject", [1, 2], "csv");
 
     expect(result).toBeNull();
-    expect(FileSystem.StorageAccessFramework.writeAsStringAsync).not.toHaveBeenCalled();
+    expect(downloadStorage.writeUtf8).not.toHaveBeenCalled();
   });
 });
 

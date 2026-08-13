@@ -3,8 +3,6 @@ const entries = new Map<string, { type: "file" | "dir"; content: string }>();
 type EncodingType = "utf8" | "base64";
 type WritingOptions = { encoding?: EncodingType };
 
-let permissionGranted = true;
-
 export const documentDirectory = "file:///mock/documents/";
 export const cacheDirectory = "file:///mock/cache/";
 
@@ -71,87 +69,6 @@ export async function getContentUriAsync(fileUri: string): Promise<string> {
   return "content://mock/" + fileUri.replace(/^file:\/\//, "");
 }
 
-export const StorageAccessFramework = {
-  requestDirectoryPermissionsAsync: async (
-    _initialUri?: string | null
-  ): Promise<{ granted: boolean; directoryUri: string }> => {
-    if (!permissionGranted) {
-      return { granted: false, directoryUri: "" };
-    }
-    const treeUri = "content://mock/tree/";
-    if (!entries.has(treeUri)) {
-      entries.set(treeUri, { type: "dir", content: "" });
-    }
-    return { granted: true, directoryUri: treeUri };
-  },
-
-  readDirectoryAsync: async (dirUri: string): Promise<string[]> => {
-    // Normalize the directory URI for consistent lookup
-    const normDirUri = dirUri.endsWith("/") ? dirUri : dirUri + "/";
-    const entry = entries.get(normDirUri);
-    if (entry === undefined || entry.type !== "dir") {
-      throw new Error(`Directory not found: ${dirUri}`);
-    }
-    const names: string[] = [];
-    for (const key of entries.keys()) {
-      if (key.startsWith(normDirUri)) {
-        const name = key.slice(normDirUri.length).split("/")[0];
-        if (name.length > 0 && !names.includes(name)) {
-          names.push(name);
-        }
-      }
-    }
-    return names;
-  },
-
-  makeDirectoryAsync: async (
-    parentUri: string,
-    dirName: string
-  ): Promise<string> => {
-    // Normalize parentUri for lookup (stored with trailing slash)
-    const lookupParent = parentUri.endsWith("/") ? parentUri : parentUri + "/";
-    const parent = entries.get(lookupParent);
-    if (parent === undefined || parent.type !== "dir") {
-      throw new Error(`Directory not found: ${parentUri}`);
-    }
-    const normParent = parentUri.endsWith("/") ? parentUri.slice(0, -1) : parentUri;
-    const normChild = dirName.startsWith("/") ? dirName.slice(1) : dirName;
-    const uri = normParent + "/" + normChild + "/";
-    entries.set(uri, { type: "dir", content: "" });
-    return uri.slice(0, -1); // Return without trailing slash for API compatibility
-  },
-
-  createFileAsync: async (
-    parentUri: string,
-    fileName: string,
-    _mimeType: string
-  ): Promise<string> => {
-    const lookupParent = parentUri.endsWith("/") ? parentUri : parentUri + "/";
-    const parent = entries.get(lookupParent);
-    if (parent === undefined || parent.type !== "dir") {
-      throw new Error(`Directory not found: ${parentUri}`);
-    }
-    const normParent = parentUri.endsWith("/") ? parentUri.slice(0, -1) : parentUri;
-    const normChild = fileName.startsWith("/") ? fileName.slice(1) : fileName;
-    const uri = normParent + "/" + normChild;
-    if (entries.has(uri)) {
-      throw new Error(`File already exists: ${uri}`);
-    }
-    entries.set(uri, { type: "file", content: "" });
-    return uri;
-  },
-
-  writeAsStringAsync,
-  readAsStringAsync,
-  deleteAsync,
-  getInfoAsync,
-};
-
-export function __setPermissionGranted(value: boolean): void {
-  permissionGranted = value;
-}
-
 export function __resetFsState() {
   entries.clear();
-  permissionGranted = true;
 }
