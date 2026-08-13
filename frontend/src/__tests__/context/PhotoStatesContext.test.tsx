@@ -202,7 +202,7 @@ describe("photoStates render isolation", () => {
 
     function MapProbe() {
       mapRenders++;
-      const { photoStates } = usePhotoStates();
+      usePhotoStates();
       return null;
     }
 

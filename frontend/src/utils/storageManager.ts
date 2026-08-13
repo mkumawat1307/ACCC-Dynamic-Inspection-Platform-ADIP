@@ -36,12 +36,6 @@ async function testWritable(uri: string): Promise<boolean> {
   }
 }
 
-function childName(uri: string): string {
-  const raw = uri.slice(uri.lastIndexOf("/") + 1);
-  const decoded = decodeURIComponent(raw);
-  return decoded.slice(decoded.lastIndexOf("/") + 1);
-}
-
 export function joinSafUri(parentUri: string, childName: string): string {
   // Remove trailing slash from parent
   const parent = parentUri.endsWith("/") ? parentUri.slice(0, -1) : parentUri;
@@ -128,27 +122,6 @@ export async function ensureTreeUri(): Promise<string> {
   logger.info("[Storage:create] path=" + rootFolder);
 
   return permission.directoryUri;
-}
-
-async function ensureInspectionRootDir(treeUri: string): Promise<string> {
-  // Check if root folder exists
-  logger.debug("[Storage:check] path=" + treeUri + "/" + ROOT_DIR_NAME);
-  const existing = await findChildDir(treeUri, ROOT_DIR_NAME);
-  if (existing) {
-    logger.debug("[Storage:saf] root folder exists");
-    logger.info("[Storage:check] path=" + existing);
-    await persistCache(ACCC_DIR_KEY, existing);
-    cachedAcccDir = existing;
-    return existing;
-  }
-
-  // Create root folder if it doesn't exist
-  logger.debug("[Storage:saf] creating root folder");
-  const created = await FileSystem.StorageAccessFramework.makeDirectoryAsync(treeUri, ROOT_DIR_NAME);
-  await persistCache(ACCC_DIR_KEY, created);
-  cachedAcccDir = created;
-  logger.info("[Storage:create] path=" + created);
-  return created;
 }
 
 export async function resolveInspectionRootDir(treeUri: string): Promise<string> {

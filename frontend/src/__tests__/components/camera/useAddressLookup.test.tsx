@@ -14,13 +14,11 @@ import {
 jest.mock("expo-location");
 
 let lastLines: string[] | null = null;
-let lastFullAddress: string = "";
 let setDriverCoords: ((c: { latitude: number; longitude: number } | null) => void) | null = null;
 
 function Driver({ coords }: { coords: { latitude: number; longitude: number } | null }) {
-  const { lines, fullAddress } = useAddressLookup(coords);
+  const { lines } = useAddressLookup(coords);
   lastLines = lines;
-  lastFullAddress = fullAddress;
   return <Text>{lastLines.join("|")}</Text>;
 }
 
@@ -40,7 +38,6 @@ describe("useAddressLookup", () => {
   beforeEach(() => {
     __resetLocationState();
     lastLines = null;
-    lastFullAddress = "";
     setDriverCoords = null;
   });
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { formatAddressLines, haversineMeters, reverseGeocode, type FullAddress } from "@/src/utils/geo";
+import { formatAddressLines, haversineMeters, reverseGeocode } from "@/src/utils/geo";
 
 export const ADDRESS_CACHE_RADIUS_M = 10;
 export const RESOLVING_ADDRESS = "Resolving Address...";

@@ -402,7 +402,6 @@ export default function CaptureScreen() {
       if (fullAddress) {
         (async () => {
           try {
-            const fieldRows = await InspectionRepository.getInspectionValues(inspectionId);
             const db = await (await import("@/src/database/db")).getDatabase();
             const locationField = await db.getFirstAsync<{ FieldID: number }>(
               `SELECT FieldID FROM InspectionFields WHERE FieldKey = ? AND IsActive = 1`,

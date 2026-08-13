@@ -38,40 +38,6 @@ declare module "expo-sharing" {
   export function __setSharingAvailable(v: boolean): void;
 }
 
-function makeValidTemplate() {
-  return {
-    version: "1.0",
-    exportedAt: "2024-01-01T00:00:00.000Z",
-    template: { TemplateName: "Test Template", Description: "A test" },
-    sections: [
-      {
-        SectionName: "General",
-        SectionKey: "general",
-        Description: null,
-        Icon: null,
-        DisplayOrder: 1,
-        IsRepeatable: 0,
-        fields: [
-          {
-            FieldName: "Voltage",
-            FieldKey: "voltage",
-            FieldType: "text",
-            Placeholder: null,
-            DefaultValue: null,
-            HelpText: null,
-            ValidationRule: null,
-            DisplayOrder: 1,
-            IsRequired: 1,
-            IsVisible: 1,
-            IsReadOnly: 0,
-            options: [],
-          },
-        ],
-      },
-    ],
-  };
-}
-
 describe("exportTemplates", () => {
   let mockDb: any;
 

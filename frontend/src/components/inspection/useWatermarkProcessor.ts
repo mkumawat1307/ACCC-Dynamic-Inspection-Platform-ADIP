@@ -801,7 +801,6 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
 
       clearWatchdog();
       saveAndComplete(job, data.base64);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     } catch {
       const job = queueRef.current[0];
       if (job) handleJobFailure(job);
