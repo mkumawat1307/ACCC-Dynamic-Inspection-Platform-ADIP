@@ -99,6 +99,30 @@ export async function validateBackupFile(
   }
 }
 
+async function restoreEntries(entries: Record<string, Uint8Array>): Promise<void> {
+  await closeAllDatabases();
+
+  const restoredFolders = new Set<string>();
+  for (const [relPath, bytes] of Object.entries(entries)) {
+    const target = `${FileSystem.documentDirectory}${relPath}`;
+    const parent = target.slice(0, target.lastIndexOf("/"));
+    await FileSystem.makeDirectoryAsync(parent, { intermediates: true });
+    const outB64 = btoa(String.fromCharCode(...bytes));
+    await FileSystem.writeAsStringAsync(target, outB64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const m = relPath.match(/^Projects\/([^/]+)\//);
+    if (m) restoredFolders.add(m[1]);
+  }
+
+  const onDisk = await listProjectFolders();
+  for (const folder of onDisk) {
+    if (!restoredFolders.has(folder)) {
+      await FileSystem.deleteAsync(`${FileSystem.documentDirectory}Projects/${folder}/`);
+    }
+  }
+}
+
 export async function restoreBackup(
   onConfirm: () => Promise<boolean>
 ): Promise<BackupResult> {
@@ -115,32 +139,69 @@ export async function restoreBackup(
     const b64 = await downloadStorage.readBase64(fileUri);
     const entries = await unzipBase64(b64);
 
-    await closeAllDatabases();
-
-    const restoredFolders = new Set<string>();
-    for (const [relPath, bytes] of Object.entries(entries)) {
-      const target = `${FileSystem.documentDirectory}${relPath}`;
-      const parent = target.slice(0, target.lastIndexOf("/"));
-      await FileSystem.makeDirectoryAsync(parent, { intermediates: true });
-      const outB64 = btoa(String.fromCharCode(...bytes));
-      await FileSystem.writeAsStringAsync(target, outB64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const m = relPath.match(/^Projects\/([^/]+)\//);
-      if (m) restoredFolders.add(m[1]);
-    }
-
-    const onDisk = await listProjectFolders();
-    for (const folder of onDisk) {
-      if (!restoredFolders.has(folder)) {
-        await FileSystem.deleteAsync(`${FileSystem.documentDirectory}Projects/${folder}/`);
-      }
-    }
+    await restoreEntries(entries);
 
     logger.info("[BackupManager] Restore completed.");
     return { ok: true, message: "Restore completed. Reloading data." };
   } catch (e) {
     logger.error("[BackupManager] restoreBackup failed:", e);
+    return { ok: false, message: String(e) };
+  }
+}
+
+export async function restoreBackupFromUri(
+  selectedUri: string,
+  onConfirm: () => Promise<boolean>
+): Promise<BackupResult> {
+  try {
+    logger.info("[Import] selectedUri=" + selectedUri);
+
+    const selectedInfo = await FileSystem.getInfoAsync(selectedUri);
+    if (!selectedInfo.exists) {
+      const message = "Selected file does not exist";
+      logger.info("[Import] restoreFailed=" + message);
+      return { ok: false, message };
+    }
+
+    let sourceUri = selectedUri;
+    if (selectedUri.startsWith("content://")) {
+      sourceUri = `${FileSystem.cacheDirectory}${BACKUP_FILE_NAME}`;
+      await FileSystem.copyAsync({ from: selectedUri, to: sourceUri });
+      logger.info("[Import] copiedToCache=" + sourceUri);
+      const cacheInfo = await FileSystem.getInfoAsync(sourceUri);
+      logger.info("[Import] cacheExists=" + String(cacheInfo.exists));
+      if (!cacheInfo.exists) {
+        const message = "Failed to copy selected file to cache";
+        logger.info("[Import] restoreFailed=" + message);
+        return { ok: false, message };
+      }
+    }
+
+    const b64 = await FileSystem.readAsStringAsync(sourceUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    if (!isZipBytes(bytes)) {
+      const message = "Not a valid ACCC backup file";
+      logger.info("[Import] restoreFailed=" + message);
+      return { ok: false, message };
+    }
+
+    const confirmed = await onConfirm();
+    if (!confirmed) {
+      const message = "Restore cancelled";
+      logger.info("[Import] restoreFailed=" + message);
+      return { ok: false, message };
+    }
+
+    logger.info("[Import] restoreStart");
+    const entries = await unzipBase64(b64);
+    await restoreEntries(entries);
+
+    logger.info("[Import] restoreSuccess");
+    return { ok: true, message: "Restore completed. Reloading data." };
+  } catch (e) {
+    logger.info("[Import] restoreFailed=" + String(e));
     return { ok: false, message: String(e) };
   }
 }

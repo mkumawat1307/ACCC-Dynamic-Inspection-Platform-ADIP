@@ -4,9 +4,10 @@ import { ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
 import { useRouter } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
 import { useTemplateFlow } from "@/src/components/template/useTemplateFlow";
 import { getDatabase } from "@/src/database/db";
-import { backupNow, restoreBackup } from "@/src/database/helpers/BackupManager";
+import { backupNow, restoreBackup, restoreBackupFromUri } from "@/src/database/helpers/BackupManager";
 import { buildBackupDisplayPath } from "@/src/utils/backupZip";
 import TemplateExportDialogs from "@/src/components/app/settings/components/TemplateExportDialogs";
 import TemplateImportDialogs from "@/src/components/app/settings/components/TemplateImportDialogs";
@@ -194,6 +195,43 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleRestoreFromFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/zip", "application/octet-stream"],
+        copyToCacheDirectory: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const selectedUri = result.assets[0].uri;
+      const fileName = result.assets[0].name;
+      Alert.alert(
+        "Restore Backup?",
+        `Replace all current data with the selected file "${fileName}"?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Restore",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                setBackupBusy(true);
+                try {
+                  const restoreResult = await restoreBackupFromUri(selectedUri, async () => true);
+                  Alert.alert(restoreResult.ok ? "Restore Completed" : "Restore Failed", restoreResult.message);
+                  if (restoreResult.ok) router.replace("/");
+                } finally {
+                  setBackupBusy(false);
+                }
+              })();
+            },
+          },
+        ]
+      );
+    } catch (e) {
+      Alert.alert("Restore Failed", String(e));
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
@@ -269,6 +307,17 @@ export default function SettingsScreen() {
             left={(props) => <List.Icon {...props} icon="database-import" />}
             right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
             onPress={handleRestoreBackup}
+            disabled={backupBusy}
+          />
+
+          <Divider />
+
+          <List.Item
+            title="Restore from File..."
+            description="Pick a backup file (.zip) and restore from it"
+            left={(props) => <List.Icon {...props} icon="file-restore" />}
+            right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
+            onPress={handleRestoreFromFile}
             disabled={backupBusy}
           />
         </List.Section>
