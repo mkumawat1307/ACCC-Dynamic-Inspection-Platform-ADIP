@@ -114,10 +114,6 @@ export async function closeAllDatabases(): Promise<void> {
   await closeCurrentDb();
 }
 
-export function getActiveProjectPath(): string | null {
-  return activeProjectPath;
-}
-
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (activeProjectPath) {
     return ensureProjectDb(activeProjectPath);

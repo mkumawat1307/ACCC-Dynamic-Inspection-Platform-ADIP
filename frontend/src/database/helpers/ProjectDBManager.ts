@@ -65,11 +65,6 @@ export function getProjectDbPath(projectName: string): string {
   return `${getProjectsBasePath()}${safeName}/inspection.db`;
 }
 
-export function getProjectFolderPath(projectName: string): string {
-  const safeName = projectName.replace(/[<>:"/\\|?*]/g, "_");
-  return `${getProjectsBasePath()}${safeName}/`;
-}
-
 export async function createProjectDb(
   projectName: string,
   projectDbPath: string,
@@ -279,13 +274,6 @@ export async function deleteProjectDb(dbPath: string): Promise<void> {
     await FileSystem.deleteAsync(folderPath);
   }
   logger.debug("[ProjectDBManager] deleteProjectDb — END");
-}
-
-export async function deleteProjectFolder(projectName: string): Promise<void> {
-  logger.debug("[ProjectDBManager] deleteProjectFolder — START");
-  const folderPath = getProjectFolderPath(projectName);
-  await FileSystem.deleteAsync(folderPath);
-  logger.debug("[ProjectDBManager] deleteProjectFolder — END");
 }
 
 export async function listProjectFolders(): Promise<string[]> {

@@ -87,14 +87,6 @@ describe("db.ts DatabaseManager", () => {
     expect(mockOpenDatabaseAsync).toHaveBeenLastCalledWith("accc_global.db");
   });
 
-  it("getActiveProjectPath returns the current project path", async () => {
-    const dbModule = require("@/src/database/db");
-    expect(dbModule.getActiveProjectPath()).toBeNull();
-
-    await dbModule.setActiveProject("/my/project.db");
-    expect(dbModule.getActiveProjectPath()).toBe("/my/project.db");
-  });
-
   it("closeAllDatabases closes the active handle without reopening", async () => {
     const mockDb = createMockDb();
     mockOpenDatabaseAsync.mockResolvedValue(mockDb);

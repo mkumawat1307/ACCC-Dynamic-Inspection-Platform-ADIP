@@ -113,28 +113,6 @@ describe("schema.ts createSchema", () => {
     expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
   });
 
-  it("createSchema detects global DB and calls createGlobalSchema", async () => {
-    mockGetAllAsync.mockResolvedValueOnce([{ name: "Divisions" }]);
-
-    const { createSchema } = require("@/src/database/schema");
-    await createSchema();
-
-    expect(mockGetAllAsync).toHaveBeenCalledWith(
-      "SELECT name FROM sqlite_master WHERE type='table'"
-    );
-  });
-
-  it("createSchema detects project DB and calls createProjectSchema", async () => {
-    mockGetAllAsync.mockResolvedValueOnce([]);
-
-    const { createSchema } = require("@/src/database/schema");
-    await createSchema();
-
-    expect(mockGetAllAsync).toHaveBeenCalledWith(
-      "SELECT name FROM sqlite_master WHERE type='table'"
-    );
-  });
-
   it("migrateProjectSchema creates DashboardCards table even when remarks section already exists", async () => {
     mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
 

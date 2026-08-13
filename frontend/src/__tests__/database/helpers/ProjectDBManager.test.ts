@@ -62,14 +62,6 @@ describe("ProjectDBManager", () => {
     });
   });
 
-  describe("getProjectFolderPath", () => {
-    it("returns the correct folder path", () => {
-      const { getProjectFolderPath } = require("@/src/database/helpers/ProjectDBManager");
-      const path = getProjectFolderPath("Test");
-      expect(path).toMatch(/\/Projects\/Test\/$/);
-    });
-  });
-
   describe("createProjectDb", () => {
     it("creates project directory and seeds database", async () => {
       const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
@@ -112,14 +104,6 @@ describe("ProjectDBManager", () => {
       const { deleteProjectDb } = require("@/src/database/helpers/ProjectDBManager");
       await deleteProjectDb("");
       expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("deleteProjectFolder", () => {
-    it("deletes folder by project name", async () => {
-      const { deleteProjectFolder } = require("@/src/database/helpers/ProjectDBManager");
-      await deleteProjectFolder("TestProject");
-      expect(FileSystem.deleteAsync).toHaveBeenCalled();
     });
   });
 

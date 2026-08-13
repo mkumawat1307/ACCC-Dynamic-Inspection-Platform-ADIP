@@ -481,14 +481,3 @@ export async function exportInspections(projectId: number, projectName: string, 
   if (!result) return false;
   return shareExportFile(result);
 }
-
-export async function exportInspection(
-  projectId: number,
-  projectName: string,
-  inspectionId: number,
-  format: ExportFormat
-): Promise<boolean> {
-  const result = await createExportFile(projectId, projectName, [inspectionId], format);
-  if (!result) return false;
-  return shareExportFile(result);
-}

@@ -371,25 +371,3 @@ export async function migrateProjectSchema(projectId: number) {
 
     logger.debug("✅ [schema] migrateProjectSchema() — END");
 }
-
-export async function createSchema() {
-    logger.debug("[schema] createSchema() — START");
-
-    const db = await getDatabase();
-
-    const tables = await db.getAllAsync<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    );
-    const tableNames = tables.map(t => t.name);
-    logger.debug("[schema] createSchema — existing tables:", JSON.stringify(tableNames));
-
-    if (tableNames.includes("Divisions")) {
-        logger.debug("[schema] createSchema — detected global DB (has Divisions)");
-        await createGlobalSchema();
-    } else {
-        logger.debug("[schema] createSchema — detected project DB (no Divisions)");
-        await createProjectSchema();
-    }
-
-    logger.debug("[schema] createSchema() — END");
-}

@@ -707,50 +707,6 @@ describe("exportInspections", () => {
   });
 });
 
-describe("exportInspection", () => {
-  let mockDb: ReturnType<typeof createMockDb>;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockDb = createMockDb();
-    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
-    (getGlobalDatabase as jest.Mock).mockResolvedValue(mockDb);
-    setSharingAvailable(true);
-  });
-
-  it("exports a single inspection as CSV (filtered table) and shares it", async () => {
-    mockDb.getAllAsync
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
-      .mockResolvedValueOnce([{ InspectionID: 1, FieldID: 1, FieldValue: "P001" }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-
-    const { exportInspection } = require("@/src/utils/exportData");
-    const result = await exportInspection(1, "TestProject", 1, "csv");
-
-    expect(result).toBe(true);
-    expect(FileSystem.StorageAccessFramework.writeAsStringAsync).toHaveBeenCalled();
-    expect(Sharing.shareAsync).toHaveBeenCalled();
-  });
-
-  it("returns false when the inspection has no rows", async () => {
-    mockDb.getAllAsync
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-
-    const { exportInspection } = require("@/src/utils/exportData");
-    const result = await exportInspection(1, "TestProject", 999, "csv");
-
-    expect(result).toBe(false);
-  });
-});
-
 describe("createExportFile", () => {
   let mockDb: ReturnType<typeof createMockDb>;
 

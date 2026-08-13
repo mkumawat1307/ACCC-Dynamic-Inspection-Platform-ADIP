@@ -98,12 +98,6 @@ export interface ParsedTemplateFile {
   summary: TemplateImportSummary;
 }
 
-export async function exportDefaultTemplate(): Promise<boolean> {
-  const result = await exportTemplates();
-  if (!result) return false;
-  return shareTemplateFile(result);
-}
-
 export async function exportTemplates(): Promise<TemplateExportResult | null> {
   const db = await getDatabase();
 
@@ -576,12 +570,5 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
     logger.error("Import error:", error);
     return { success: false, message: "Failed to import template. " + (error as Error).message };
   }
-}
-
-export async function importTemplate(): Promise<{ success: boolean; message: string }> {
-  const picked = await pickAndParseTemplate();
-  if (picked.status === "canceled") return { success: false, message: "No file selected." };
-  if (picked.status === "error") return { success: false, message: picked.message };
-  return applyTemplateImport(picked.parsed.data);
 }
 

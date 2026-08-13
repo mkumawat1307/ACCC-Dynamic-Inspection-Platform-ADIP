@@ -72,187 +72,6 @@ function makeValidTemplate() {
   };
 }
 
-describe("exportDefaultTemplate", () => {
-  let mockDb: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockDb = {
-      getFirstAsync: jest.fn(),
-      getAllAsync: jest.fn(),
-      runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 42, changes: 1 }),
-      withTransactionAsync: jest.fn(),
-    };
-    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
-    __setSharingAvailable(true);
-  });
-
-  it("returns false when no default template exists", async () => {
-    mockDb.getAllAsync.mockResolvedValue([]);
-    const { exportDefaultTemplate } = require("@/src/utils/templateData");
-    const result = await exportDefaultTemplate();
-    expect(result).toBe(false);
-  });
-
-  it("exports template and shares it", async () => {
-    mockDb.getAllAsync
-      .mockResolvedValueOnce([
-        { TemplateID: 1, TemplateName: "Default", Description: "d", IsDefault: 1, IsActive: 1 },
-      ])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-
-    const { exportDefaultTemplate } = require("@/src/utils/templateData");
-    const result = await exportDefaultTemplate();
-
-    expect(result).toBe(true);
-    expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
-    const { shareAsync } = require("expo-sharing");
-    expect(shareAsync).toHaveBeenCalled();
-  });
-});
-
-describe("importTemplate", () => {
-  let mockDb: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockDb = {
-      getFirstAsync: jest.fn(),
-      getAllAsync: jest.fn(),
-      runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 42, changes: 1 }),
-      withTransactionAsync: jest.fn(),
-    };
-    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
-    __resetPickerState();
-  });
-
-  it("returns cancelled when no file selected", async () => {
-    __setMockResult({ canceled: true });
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result).toEqual({ success: false, message: "No file selected." });
-  });
-
-  it("returns invalid JSON when file is not valid JSON", async () => {
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce("not json");
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result).toEqual({ success: false, message: "Invalid JSON file." });
-  });
-
-  it("returns invalid format when template structure is missing", async () => {
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify({}));
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("Invalid template format");
-  });
-
-  it("returns error when TemplateName is missing", async () => {
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify({ template: {}, sections: [] }));
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("TemplateName");
-  });
-
-  it("validates field types", async () => {
-    const data = makeValidTemplate();
-    data.sections[0].fields[0].FieldType = "invalid_type";
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(data));
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("invalid FieldType");
-  });
-
-  it("accepts uppercased field types like DATE_AUTO from exported seed templates", async () => {
-    const data = makeValidTemplate();
-    data.sections[0].fields[0].FieldType = "DATE_AUTO";
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(data));
-    mockDb.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(true);
-    expect(mockDb.runAsync).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO InspectionFields"),
-      expect.arrayContaining(["date_auto"])
-    );
-  });
-
-  it("validates section fields array exists", async () => {
-    const data = makeValidTemplate();
-    delete (data.sections[0] as any).fields;
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(data));
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("missing fields array");
-  });
-
-  it("validates field options have required properties", async () => {
-    const data = makeValidTemplate();
-    (data.sections[0].fields[0].options as Array<Record<string, unknown>>) = [{ OptionLabel: "", OptionValue: "", DisplayOrder: 1, IsDefault: 0 }];
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(data));
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("OptionLabel");
-  });
-
-  it("imports a valid template successfully", async () => {
-    const data = makeValidTemplate();
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(data));
-    mockDb.withTransactionAsync.mockImplementationOnce(async (fn: () => Promise<void>) => fn());
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(true);
-    expect(result.message).toContain("imported");
-  });
-
-  it("returns error when DB transaction fails", async () => {
-    const data = makeValidTemplate();
-    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
-    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(data));
-    mockDb.withTransactionAsync.mockRejectedValueOnce(new Error("DB failure"));
-
-    const { importTemplate } = require("@/src/utils/templateData");
-    const result = await importTemplate();
-
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("Failed to import");
-  });
-});
-
 describe("exportTemplates", () => {
   let mockDb: any;
 
@@ -471,6 +290,53 @@ describe("pickAndParseTemplate", () => {
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify({}));
     expect(await pickAndParseTemplate()).toEqual({ status: "error", message: "Invalid template format." });
   });
+
+  it("rejects a legacy file missing TemplateName", async () => {
+    const legacy = {
+      version: "1.0",
+      template: { TemplateName: null, Description: null },
+      sections: [],
+    };
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(legacy));
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    expect(await pickAndParseTemplate()).toEqual({ status: "error", message: "Template missing valid TemplateName." });
+  });
+
+  it("rejects a v2 file whose section has no fields array", async () => {
+    const v2 = makeValidV2();
+    delete v2.templates[0].sections[0].fields;
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(v2));
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    const result = await pickAndParseTemplate();
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toContain("missing fields array");
+  });
+
+  it("rejects a field with an invalid FieldType", async () => {
+    const v2 = makeValidV2();
+    v2.templates[0].sections[0].fields[0].FieldType = "invalid_type";
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(v2));
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    const result = await pickAndParseTemplate();
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toContain("invalid FieldType");
+  });
+
+  it("rejects a field option missing OptionLabel", async () => {
+    const v2 = makeValidV2();
+    v2.templates[0].sections[0].fields[0].options = [
+      { OptionLabel: "", OptionValue: "", DisplayOrder: 1, IsDefault: 0 },
+    ];
+    __setMockResult({ canceled: false, assets: [{ uri: "test.json" }] });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce(JSON.stringify(v2));
+    const { pickAndParseTemplate } = require("@/src/utils/templateData");
+    const result = await pickAndParseTemplate();
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.message).toContain("OptionLabel");
+  });
 });
 
 describe("applyTemplateImport", () => {
@@ -554,5 +420,26 @@ describe("applyTemplateImport", () => {
     const calls = (mockDb.runAsync as jest.Mock).mock.calls.map((c: unknown[]) => String(c[0]));
     expect(calls.some((sql) => sql.includes("ProjectDeviceTypes"))).toBe(true);
     expect(calls.some((sql) => sql.includes("ProjectID"))).toBe(false);
+  });
+
+  it("normalizes uppercased field types like DATE_AUTO to lowercase", async () => {
+    const v2 = makeValidV2();
+    v2.templates[0].sections[0].fields[0].FieldType = "DATE_AUTO";
+    const { applyTemplateImport } = require("@/src/utils/templateData");
+    await applyTemplateImport(v2);
+
+    expect(mockDb.runAsync).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO InspectionFields"),
+      expect.arrayContaining(["date_auto"])
+    );
+  });
+
+  it("returns an error message when the DB transaction fails", async () => {
+    mockDb.withTransactionAsync.mockRejectedValueOnce(new Error("DB failure"));
+    const { applyTemplateImport } = require("@/src/utils/templateData");
+    const result = await applyTemplateImport(makeValidV2());
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("Failed to import");
   });
 });
