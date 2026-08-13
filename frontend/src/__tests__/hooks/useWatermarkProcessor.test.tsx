@@ -40,8 +40,9 @@ import React from "react";
 import TestRenderer from "react-test-renderer";
 import { Image } from "react-native";
 import { InspectionProvider } from "@/src/context/InspectionContext";
-import { PhotoStatesProvider } from "@/src/context/PhotoStatesContext";
+import { PhotoStatesProvider, usePhotoStates } from "@/src/context/PhotoStatesContext";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
+import { WatermarkState } from "@/src/components/inspection/photoUtils";
 import { Project } from "@/src/models/Project";
 import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageManager";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
@@ -74,6 +75,39 @@ function renderHook<T>(hookFn: () => T) {
     tree = TestRenderer.create(
       <PhotoStatesProvider>
         <InspectionProvider>
+          <Probe />
+        </InspectionProvider>
+      </PhotoStatesProvider>
+    );
+  });
+  return {
+    result,
+    unmount: () => TestRenderer.act(() => tree.unmount()),
+  };
+}
+
+function renderHookWithStates<T>(
+  hookFn: () => T,
+  states: Record<number, WatermarkState>
+) {
+  const result: { current: T } = { current: undefined as unknown as T };
+  let tree!: ReturnType<typeof TestRenderer.create>;
+  function Seed() {
+    const { setPhotoStates } = usePhotoStates();
+    React.useEffect(() => {
+      setPhotoStates(states);
+    }, [states, setPhotoStates]);
+    return null;
+  }
+  function Probe() {
+    result.current = hookFn();
+    return null;
+  }
+  TestRenderer.act(() => {
+    tree = TestRenderer.create(
+      <PhotoStatesProvider>
+        <InspectionProvider>
+          <Seed />
           <Probe />
         </InspectionProvider>
       </PhotoStatesProvider>
@@ -1083,6 +1117,67 @@ describe("useWatermarkProcessor renderer lifecycle diagnostics", () => {
     expect(goneLine).toBeDefined();
     expect(goneLine).toContain("didCrash=true reason=crashed");
     logSpy.mockRestore();
+    unmount();
+  });
+});
+
+describe("useWatermarkProcessor remount safety", () => {
+  it("reconciles orphaned pending/processing states to failed on mount", () => {
+    const { result, unmount } = renderHookWithStates(
+      () => useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() }),
+      { 1: "processing", 2: "pending", 3: "completed" }
+    );
+
+    expect(result.current.watermarkState).toEqual({
+      1: "failed",
+      2: "failed",
+      3: "completed",
+    });
+    unmount();
+  });
+
+  it("leaves an empty state map untouched", () => {
+    const { result, unmount } = renderHook(
+      () => useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+
+    expect(result.current.watermarkState).toEqual({});
+    unmount();
+  });
+});
+
+describe("useWatermarkProcessor style flow", () => {
+  it("passes the style config into the injected render script", async () => {
+    jest.useFakeTimers();
+    (hasNativeWatermarkEncoder as jest.Mock).mockReturnValue(false);
+    (hasNativeOverlayEncoder as jest.Mock).mockReturnValue(false);
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("b64data");
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      } as never);
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(9, "file:///tmp/a.jpg", "a.jpg", ["L1"], {
+        fontScale: 1.25,
+        position: "bottomRight",
+        bgOpacity: 0.8,
+        textColor: "#FFEB3B",
+      });
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(injectJavaScript).toHaveBeenCalledWith(
+      expect.stringContaining('"style":{"fontScale":1.25')
+    );
+    jest.useRealTimers();
     unmount();
   });
 });
