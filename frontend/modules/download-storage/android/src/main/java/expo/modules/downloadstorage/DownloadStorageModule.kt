@@ -56,8 +56,35 @@ class DownloadStorageModule : Module() {
 
   /** Returns e.g. "ACCC Dynamic Inspection/" or "ACCC Dynamic Inspection/<rel>/". */
   private fun downloadRelativePath(relativePath: String): String {
+    val normalized = normalizeRelativePath(relativePath)
     val base = "${downloadRoot()}/"
-    return if (relativePath.isEmpty()) base else "$base$relativePath/"
+    return if (normalized.isEmpty()) base else "$base$normalized/"
+  }
+
+  // MediaStore.Downloads.RELATIVE_PATH must be relative to the Downloads root:
+  // the final path NEVER contains a leading "/" or a "Download/" segment prefix.
+  private fun normalizeRelativePath(raw: String): String {
+    var p = raw.trim()
+    while (p.startsWith("/") || p.startsWith("../")) {
+      p = if (p.startsWith("/")) p.substring(1) else p.substring(3)
+    }
+    if (p.equals("Download", ignoreCase = true)) {
+      p = ""
+    } else if (p.startsWith("Download/", ignoreCase = true)) {
+      p = p.substring("Download/".length)
+    }
+    while (p.startsWith("/")) {
+      p = p.substring(1)
+    }
+    p = p.split('/').filter { it.isNotEmpty() }.joinToString("/")
+    if (p != raw) {
+      nativeLog("normalizedRelativePath='$p'")
+    }
+    return p
+  }
+
+  private fun nativeLog(message: String) {
+    Log.d("DownloadStorage", "[Storage:native] $message")
   }
 
   private fun hasFiles(relativePath: String): Boolean {
@@ -93,8 +120,14 @@ class DownloadStorageModule : Module() {
   private fun writeBytesModern(relativePath: String, fileName: String, mimeType: String, bytes: ByteArray): String {
     val resolver = context.contentResolver
     val relative = downloadRelativePath(relativePath)
-    Log.d("DownloadStorage", "RELATIVE_PATH used for export $fileName: $relative")
+    // Every write (photos, Excel/CSV exports, backups) lands under
+    // Download/ACCC Dynamic Inspection, so the Downloads collection is used for all
+    // of them. MediaStore creates the directory tree implicitly on first insert
+    // (API >= 29) — no manual mkdir is needed or performed here.
     val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    nativeLog("collection=Downloads")
+    nativeLog("relativePath='$relative'")
+    nativeLog("displayName='$fileName'")
 
     val values = ContentValues().apply {
       put(MediaStore.Downloads.DISPLAY_NAME, fileName)
@@ -103,20 +136,28 @@ class DownloadStorageModule : Module() {
       put(MediaStore.Downloads.IS_PENDING, 1)
     }
 
-    // Overwrite semantics: reuse an existing row with the same name, otherwise insert a new one.
-    val existing = findMediaRow(relative, fileName, resolver)
-    val uri = existing ?: (resolver.insert(collection, values)
-      ?: throw IllegalStateException("Failed to create MediaStore entry for $fileName"))
+    try {
+      nativeLog("insertStart")
+      // Overwrite semantics: reuse an existing row with the same name, otherwise insert a new one.
+      val existing = findMediaRow(relative, fileName, resolver)
+      val uri = existing ?: (resolver.insert(collection, values)
+        ?: throw IllegalStateException("Failed to create MediaStore entry for $fileName"))
+      nativeLog("insertUri=$uri")
 
-    resolver.openOutputStream(uri, "w")?.use { stream ->
-      stream.write(bytes)
-    } ?: throw IllegalStateException("Failed to open output stream for $fileName")
+      resolver.openOutputStream(uri, "w")?.use { stream ->
+        stream.write(bytes)
+      } ?: throw IllegalStateException("Failed to open output stream for $fileName")
 
-    values.clear()
-    values.put(MediaStore.Downloads.IS_PENDING, 0)
-    resolver.update(uri, values, null, null)
+      values.clear()
+      values.put(MediaStore.Downloads.IS_PENDING, 0)
+      resolver.update(uri, values, null, null)
 
-    return uri.toString()
+      nativeLog("writeSuccess")
+      return uri.toString()
+    } catch (e: Exception) {
+      nativeLog("writeFailed=${e.javaClass.simpleName}:${e.message}")
+      throw e
+    }
   }
 
   private fun findMediaRow(relative: String, fileName: String, resolver: android.content.ContentResolver): Uri? {
@@ -136,12 +177,21 @@ class DownloadStorageModule : Module() {
 
   private fun writeBytesLegacy(relativePath: String, fileName: String, bytes: ByteArray): String {
     val dir = legacyDir(relativePath)
-    if (!dir.exists() && !dir.mkdirs()) {
-      throw IllegalStateException("Failed to create directory $dir")
+    nativeLog("collection=Downloads-legacy (API ${Build.VERSION.SDK_INT})")
+    nativeLog("relativePath='${dir.path}'")
+    nativeLog("displayName='$fileName'")
+    try {
+      if (!dir.exists() && !dir.mkdirs()) {
+        throw IllegalStateException("Failed to create directory $dir")
+      }
+      val file = File(dir, fileName)
+      FileOutputStream(file).use { stream -> stream.write(bytes) }
+      nativeLog("writeSuccess")
+      return Uri.fromFile(file).toString()
+    } catch (e: Exception) {
+      nativeLog("writeFailed=${e.javaClass.simpleName}:${e.message}")
+      throw e
     }
-    val file = File(dir, fileName)
-    FileOutputStream(file).use { stream -> stream.write(bytes) }
-    return Uri.fromFile(file).toString()
   }
 
   private fun legacyDir(relativePath: String): File {
@@ -149,7 +199,8 @@ class DownloadStorageModule : Module() {
       Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
       ROOT_DIR_NAME
     )
-    return if (relativePath.isEmpty()) root else File(root, relativePath)
+    val normalized = normalizeRelativePath(relativePath)
+    return if (normalized.isEmpty()) root else File(root, normalized)
   }
 
   private fun readBase64(uri: String): String {
