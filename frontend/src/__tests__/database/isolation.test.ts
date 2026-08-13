@@ -178,13 +178,12 @@ describe("Cross-project data isolation", () => {
     );
     expect(templateA).not.toBeNull();
 
-    const { SectionRepository } = require("@/src/database/repositories/SectionRepository") as typeof import("@/src/database/repositories/SectionRepository");
-    const sectionId = await SectionRepository.create({
-      TemplateID: templateA!.TemplateID,
-      SectionName: "Leak Probe Section",
-      SectionKey: "leak_probe_section",
-    });
-    expect(sectionId).toBeGreaterThan(0);
+    const insertResult = await dbA.runAsync(
+      `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, DisplayOrder)
+       VALUES (?, ?, ?, ?)`,
+      [templateA!.TemplateID, "Leak Probe Section", "leak_probe_section", 999]
+    );
+    expect(insertResult.lastInsertRowId).toBeGreaterThan(0);
 
     const sectionsInA = await dbA.getAllAsync<{ SectionKey: string }>(
       "SELECT SectionKey FROM InspectionSections"
