@@ -1,0 +1,34 @@
+# Dependencies
+frontend/node_modules/
+
+# Expo local state
+frontend/.expo/
+frontend/.expo-shared/
+frontend/.metro-cache/
+frontend/%TEMP%/
+
+# Native build outputs
+frontend/android/.gradle/
+frontend/android/.kotlin/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/app/.cxx/
+frontend/android/local.properties
+
+# Local tooling state
+.kilo/
+
+# Editor / OS junk
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Secrets
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+frontend/android/keystore.properties
+frontend/android/app/release.keystore

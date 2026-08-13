@@ -2,7 +2,6 @@ import * as FileSystem from "expo-file-system/legacy";
 import { closeAllDatabases, GLOBAL_DATABASE_NAME } from "../db";
 import { listProjectFolders } from "./ProjectDBManager";
 import {
-  BACKUP_DIR_NAME,
   BACKUP_FILE_NAME,
   buildBackupDisplayPath,
   zipBase64,
@@ -10,6 +9,7 @@ import {
   isZipBytes,
 } from "@/src/utils/backupZip";
 import { logger } from "@/src/utils/logger";
+import { ensureTreeUri, resolveInspectionRootDir } from "@/src/utils/storageManager";
 
 export interface BackupResult {
   ok: boolean;
@@ -22,13 +22,6 @@ export const DOWNLOAD_TREE_URI =
 
 export async function getGlobalDbFilePath(): Promise<string> {
   return `${FileSystem.documentDirectory}SQLite/${GLOBAL_DATABASE_NAME}`;
-}
-
-async function ensureBackupDirUri(treeUri: string): Promise<string> {
-  if (treeUri.endsWith(`/${BACKUP_DIR_NAME}`)) return treeUri;
-  const names = await FileSystem.StorageAccessFramework.readDirectoryAsync(treeUri);
-  if (names.includes(BACKUP_DIR_NAME)) return `${treeUri}/${BACKUP_DIR_NAME}`;
-  return FileSystem.StorageAccessFramework.makeDirectoryAsync(treeUri, BACKUP_DIR_NAME);
 }
 
 async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
@@ -70,15 +63,8 @@ async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
 
 export async function backupNow(): Promise<BackupResult> {
   try {
-    const permission =
-      await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(
-        DOWNLOAD_TREE_URI
-      );
-    if (!permission.granted) {
-      return { ok: false, message: "Storage permission denied" };
-    }
-    const selected = permission.directoryUri;
-    const dirUri = await ensureBackupDirUri(selected);
+    const treeUri = await ensureTreeUri();
+    const dirUri = await resolveInspectionRootDir(treeUri);
     const existingUri = `${dirUri}/${BACKUP_FILE_NAME}`;
     const existing = await FileSystem.getInfoAsync(existingUri);
     if (existing.exists) {
@@ -96,9 +82,7 @@ export async function backupNow(): Promise<BackupResult> {
       zip,
       { encoding: FileSystem.EncodingType.Base64 }
     );
-    logger.info(`[Backup:path] selected=${selected}`);
-    logger.info(`[Backup:path] normalized=${dirUri}`);
-    logger.info(`[Backup:path] file=${fileUri}`);
+    logger.info("[Storage:backup] path=" + fileUri);
     logger.info(`[BackupManager] Backup created at ${buildBackupDisplayPath()}`);
     return { ok: true, message: "Backup created", path: buildBackupDisplayPath() };
   } catch (e) {
@@ -109,12 +93,8 @@ export async function backupNow(): Promise<BackupResult> {
 
 export async function findBackupFile(): Promise<string | null> {
   try {
-    const permission =
-      await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(
-        DOWNLOAD_TREE_URI
-      );
-    if (!permission.granted) return null;
-    const dirUri = await ensureBackupDirUri(permission.directoryUri);
+    const treeUri = await ensureTreeUri();
+    const dirUri = await resolveInspectionRootDir(treeUri);
     const names = await FileSystem.StorageAccessFramework.readDirectoryAsync(dirUri);
     if (!names.includes(BACKUP_FILE_NAME)) return null;
     return `${dirUri}/${BACKUP_FILE_NAME}`;

@@ -1,0 +1,82 @@
+# Dependencies — reinstalled on the EAS server / by yarn
+node_modules/
+
+# Expo local state (not source of truth, regenerated)
+.expo/
+.expo-shared/
+.expo/types/
+dist/
+web-build/
+expo-env.d.ts
+
+# Metro
+.metro-cache/
+.metro-health-check*
+
+# Test coverage artifacts (docs/ and test sources are tracked)
+coverage/
+*.test-results.xml
+
+# Native build outputs (source under android/ is tracked)
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/app/.cxx/
+ios/build/
+ios/Pods/
+
+# Build output / dist artifacts
+*.apk
+*.aab
+
+# Caches and temporary files
+.cache/
+.turbo/
+.tmp/
+tmp/
+temp/
+.temp/
+%TEMP%/
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Media and archive downloads — not in source control
+*.mp4
+*.mov
+*.avi
+*.zip
+*.tar.gz
+*.tar
+*.gz
+
+# Secrets MUST stay out of the repository
+*.jks
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+*.orig.*
+android/keystore.properties
+android/app/release.keystore
+
+# Local env files
+.env*.local
+
+# Local-only package manager flag (save-exact=true; no registry/auth, not needed upstream)
+.npmrc
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Editor / OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Expo typegen output junk
+app-example
