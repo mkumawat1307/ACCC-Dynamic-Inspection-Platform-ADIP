@@ -25,8 +25,8 @@ import {
   encodeWatermarkOverlay,
   WatermarkOverlayTimings,
 } from "@/src/native/WatermarkEncoder";
-import { useInspection } from "@/src/context/InspectionContext";
-import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator, uiPerfStage } from "@/src/utils/perf";
+import { usePhotoStates } from "@/src/context/PhotoStatesContext";
+import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator, uiPerfStage, uiPerfProbeSummary, uiPerfSetProbe, uiPerfStageIfProbe } from "@/src/utils/perf";
 
 type WatermarkStage = "overlay" | "rgba" | "toblob";
 
@@ -135,7 +135,7 @@ function resolveImageSize(inputPath: string): Promise<{ width: number; height: n
 }
 
 export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermarkProcessorOptions) {
-  const { photoStates: watermarkState, setPhotoStates: setWatermarkState } = useInspection();
+  const { photoStates: watermarkState, setPhotoStates: setWatermarkState } = usePhotoStates();
   const [webViewReady, setWebViewReady] = useState(false);
 
   const queueRef = useRef<WatermarkJob[]>([]);
@@ -184,6 +184,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     if (watchdogRef.current) {
       clearTimeout(watchdogRef.current);
       watchdogRef.current = null;
+      uiPerfSetProbe("setTimeoutActive", false);
     }
   }
 
@@ -197,6 +198,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     }
     watchdogRef.current = setTimeout(() => {
       watchdogRef.current = null;
+      uiPerfSetProbe("setTimeoutActive", false);
       if (__DEV__) {
         logger.debug(
           `[Watermark:watchdog] photo=${job.photoId} stage=${job.stage} FIRED`
@@ -204,6 +206,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
       }
       onTimeout();
     }, ms);
+    uiPerfSetProbe("setTimeoutActive", true);
   }
 
   function retryWatermark(photoId: number) {
@@ -257,7 +260,11 @@ function handleJobFailure(job: WatermarkJob) {
     }
 
 setWatermarkState(prev => ({ ...prev, [photoId]: "completed" }));
-    uiPerfStage("stateUpdated", `photo=${photoId}`);
+    uiPerfStage("stateUpdated", `photo=${photoId}`, uiPerfProbeSummary());
+    uiPerfStage("reactRenderStart", `photo=${photoId}`, uiPerfProbeSummary());
+    uiPerfStageIfProbe("timeoutWaitStart", "setTimeoutActive", `photo=${photoId}`);
+    uiPerfStageIfProbe("animationStart", "animationRunning", `photo=${photoId}`);
+    uiPerfStageIfProbe("interactionManagerStart", "interactionManagerUsed", `photo=${photoId}`);
     processingRef.current = false;
     processNext();
 }
@@ -541,7 +548,9 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
                   })}); true;`
                 );
                 // After a brief delay, inject a renderOverlay with minimal layout
+                uiPerfSetProbe("setTimeoutActive", true);
                 setTimeout(() => {
+                  uiPerfSetProbe("setTimeoutActive", false);
                   if (wv) {
                     wv.injectJavaScript(
                       `window.renderWatermarkFromJson(${JSON.stringify({

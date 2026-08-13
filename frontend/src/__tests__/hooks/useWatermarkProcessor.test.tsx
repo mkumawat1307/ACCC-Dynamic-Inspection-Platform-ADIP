@@ -40,6 +40,7 @@ import React from "react";
 import TestRenderer from "react-test-renderer";
 import { Image } from "react-native";
 import { InspectionProvider } from "@/src/context/InspectionContext";
+import { PhotoStatesProvider } from "@/src/context/PhotoStatesContext";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { Project } from "@/src/models/Project";
 import { writePhoto, ensureTreeUri, getProjectDir } from "@/src/utils/storageManager";
@@ -71,9 +72,11 @@ function renderHook<T>(hookFn: () => T) {
   }
   TestRenderer.act(() => {
     tree = TestRenderer.create(
-      <InspectionProvider>
-        <Probe />
-      </InspectionProvider>
+      <PhotoStatesProvider>
+        <InspectionProvider>
+          <Probe />
+        </InspectionProvider>
+      </PhotoStatesProvider>
     );
   });
   return {

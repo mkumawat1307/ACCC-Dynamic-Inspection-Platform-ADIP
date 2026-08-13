@@ -7,6 +7,7 @@ import * as SystemUI from "expo-system-ui";
 import { StatusBar } from "expo-status-bar";
 import { PaperProvider } from "react-native-paper";
 import { InspectionProvider } from "@/src/context/InspectionContext";
+import { PhotoStatesProvider } from "@/src/context/PhotoStatesContext";
 import { WatermarkSettingsProvider } from "@/src/context/WatermarkSettingsContext";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
@@ -78,24 +79,26 @@ export default function RootLayout() {
   return (
     <PaperProvider>
       <WatermarkSettingsProvider>
-        <InspectionProvider>
-          <SafeAreaProvider>
-            <StatusBar
-              style="light"
-              translucent={false}
-              backgroundColor="#0B5ED7"
-            />
+        <PhotoStatesProvider>
+          <InspectionProvider>
+            <SafeAreaProvider>
+              <StatusBar
+                style="light"
+                translucent={false}
+                backgroundColor="#0B5ED7"
+              />
 
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: {
-                  backgroundColor: "#F5F5F5",
-                },
-              }}
-            />
-          </SafeAreaProvider>
-        </InspectionProvider>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: {
+                    backgroundColor: "#F5F5F5",
+                  },
+                }}
+              />
+            </SafeAreaProvider>
+          </InspectionProvider>
+        </PhotoStatesProvider>
       </WatermarkSettingsProvider>
     </PaperProvider>
   );

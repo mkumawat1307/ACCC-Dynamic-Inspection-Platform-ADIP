@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Button, Text, ActivityIndicator, IconButton } from "react-native-paper";
 import * as FileSystem from "expo-file-system/legacy";
 import { useInspection } from "@/src/context/InspectionContext";
+import { usePhotoStates } from "@/src/context/PhotoStatesContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import InspectionValueRepository from "@/src/database/repositories/InspectionValueRepository";
@@ -42,13 +43,14 @@ import {
 } from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { logger } from "@/src/utils/logger";
-import { perfNow, perfLog, uiPerfReset, uiPerfStage } from "@/src/utils/perf";
+import { perfNow, perfLog, uiPerfReset, uiPerfStage, uiPerfProbeSummary, uiPerfStageIfProbe } from "@/src/utils/perf";
 
 export default function CaptureScreen() {
   const router = useRouter();
   const { inspectionId: inspectionIdParam } = useLocalSearchParams<{ inspectionId: string }>();
   const inspectionId = Number(inspectionIdParam);
-  const { project, poleId: contextPoleId, photoStates } = useInspection();
+  const { project, poleId: contextPoleId } = useInspection();
+  const { photoStates } = usePhotoStates();
   const { settings } = useWatermarkSettings();
 
   const cameraRef = useRef<React.ElementRef<typeof CameraView>>(null);
@@ -111,6 +113,7 @@ export default function CaptureScreen() {
   savedTimeoutRef.current = flow.savedTimeout;
   const cameraUiRef = useRef({ shutterBusy, gpsStatus: gps.status });
   cameraUiRef.current = { shutterBusy, gpsStatus: gps.status };
+  const handlePhotosUpdated = useCallback(() => {}, []);
   const {
     webViewRef,
     handleWebViewMessage,
@@ -119,7 +122,7 @@ export default function CaptureScreen() {
     enqueueWatermark,
     clearWatermarkState,
     retryWatermark,
-  } = useWatermarkProcessor({ project, onPhotosUpdated: () => {} });
+  } = useWatermarkProcessor({ project, onPhotosUpdated: handlePhotosUpdated });
 
   useEffect(() => {
     if (permission && !permission.granted) {
@@ -192,14 +195,24 @@ export default function CaptureScreen() {
   useEffect(() => {
     if (flow.phase !== "merging" || flow.pending == null) return;
     const s = photoStates[flow.pending.photoId];
-    if (s === "completed") flow.markMergeCompleted();
+    if (s === "completed") {
+      uiPerfStage("reactRenderEnd", `photo=${flow.pending.photoId}`, uiPerfProbeSummary());
+      uiPerfStageIfProbe("imageDecodeStart", "thumbnailRendering", `photo=${flow.pending.photoId}`);
+      uiPerfStageIfProbe("thumbnailUpdateStart", "thumbnailRendering", `photo=${flow.pending.photoId}`);
+      flow.markMergeCompleted();
+    }
     else if (s === "failed") flow.markMergeFailed();
   }, [flow.phase, flow.pending, photoStates, flow.markMergeCompleted, flow.markMergeFailed]);
 
   useEffect(() => {
     if (flow.phase !== "saved") return;
     const { shutterBusy: busyNow, gpsStatus: gpsNow } = cameraUiRef.current;
-    uiPerfStage("uiReady", `phase=${flow.phase} shutterDisabled=${busyNow || gpsNow !== "fixed"}`);
+    uiPerfStageIfProbe("timeoutWaitEnd", "setTimeoutActive");
+    uiPerfStageIfProbe("animationEnd", "animationRunning");
+    uiPerfStageIfProbe("imageDecodeEnd", "thumbnailRendering");
+    uiPerfStageIfProbe("thumbnailUpdateEnd", "thumbnailRendering");
+    uiPerfStageIfProbe("interactionManagerEnd", "interactionManagerUsed");
+    uiPerfStage("uiReady", `phase=${flow.phase} shutterDisabled=${busyNow || gpsNow !== "fixed"}`, uiPerfProbeSummary());
     savedTimeoutRef.current();
   }, [flow.phase]);
 

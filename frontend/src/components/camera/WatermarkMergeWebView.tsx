@@ -10,7 +10,7 @@ interface Props {
   onRenderProcessGone?: (event: any) => void;
 }
 
-export default function WatermarkMergeWebView({
+export default React.memo(function WatermarkMergeWebView({
   webViewRef,
   onMessage,
   onLoadEnd,
@@ -37,7 +37,7 @@ export default function WatermarkMergeWebView({
       />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   watermarkContainer: {

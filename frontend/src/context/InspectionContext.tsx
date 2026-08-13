@@ -9,10 +9,11 @@ import React, {
 import { Project } from "@/src/models/Project";
 import { openProjectDb, deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
 import { clearActiveProject } from "@/src/database/db";
-import { WatermarkState } from "@/src/components/inspection/photoUtils";
 import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
 import { logger } from "@/src/utils/logger";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
+import { usePhotoStates } from "@/src/context/PhotoStatesContext";
+import { WatermarkState } from "@/src/components/inspection/photoUtils";
 
 export interface InspectionContextType {
   project: Project | null;
@@ -30,8 +31,7 @@ export interface InspectionContextType {
   poleId: string;
   setPoleId: (poleId: string) => void;
 
-  photoStates: Record<number, WatermarkState>;
-  setPhotoStates: React.Dispatch<React.SetStateAction<Record<number, WatermarkState>>>;
+  getPhotoStates: () => Record<number, WatermarkState>;
 }
 
 const InspectionContext = createContext<InspectionContextType | undefined>(
@@ -43,12 +43,13 @@ export function InspectionProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const { setPhotoStates, getPhotoStates } = usePhotoStates();
+
   const [project, setProject] = useState<Project | null>(null);
 
 const [inspectionDate, setInspectionDate] = useState("");
 const [inspectionId, setInspectionId] = useState<number | null>(null);
 const [poleId, setPoleId] = useState("");
-const [photoStates, setPhotoStates] = useState<Record<number, WatermarkState>>({});
 
 const openProject = useCallback(async (p: Project) => {
   if (p.DBPath) {
@@ -67,7 +68,7 @@ const closeProject = useCallback(async () => {
   setPoleId("");
   setInspectionDate("");
   setPhotoStates({});
-}, []);
+}, [setPhotoStates]);
 
 const removeProject = useCallback(async (p: Project) => {
   if (project?.ProjectID === p.ProjectID) {
@@ -96,10 +97,9 @@ const value = useMemo(
     poleId,
     setPoleId,
 
-    photoStates,
-    setPhotoStates,
+    getPhotoStates,
   }),
-  [project, inspectionDate, inspectionId, poleId, photoStates, openProject, closeProject, removeProject]
+  [project, inspectionDate, inspectionId, poleId, openProject, closeProject, removeProject, getPhotoStates]
 );
 
   return (

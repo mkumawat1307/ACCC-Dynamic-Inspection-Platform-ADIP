@@ -24,8 +24,8 @@ import TestRenderer from "react-test-renderer";
 import * as FileSystemLegacy from "expo-file-system/legacy";
 import {
   InspectionProvider,
-  useInspection,
 } from "@/src/context/InspectionContext";
+import { PhotoStatesProvider, usePhotoStates } from "@/src/context/PhotoStatesContext";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { Project } from "@/src/models/Project";
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
@@ -39,7 +39,7 @@ const project = {
 } as unknown as Project;
 
 function Seed({ states }: { states: Record<number, WatermarkState> }) {
-  const { setPhotoStates } = useInspection();
+  const { setPhotoStates } = usePhotoStates();
   useEffect(() => {
     setPhotoStates(states);
   }, [states, setPhotoStates]);
@@ -57,10 +57,12 @@ function renderHookInProvider<T>(
   }
   TestRenderer.act(() => {
     TestRenderer.create(
-      <InspectionProvider>
-        {seedStates ? <Seed states={seedStates} /> : null}
-        <TestComponent />
-      </InspectionProvider>
+      <PhotoStatesProvider>
+        <InspectionProvider>
+          {seedStates ? <Seed states={seedStates} /> : null}
+          <TestComponent />
+        </InspectionProvider>
+      </PhotoStatesProvider>
     );
   });
   return result;

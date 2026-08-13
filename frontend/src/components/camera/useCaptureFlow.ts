@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useCallback, useReducer } from "react";
 
 export type CapturePhase = "preview" | "merging" | "saved" | "failed";
 
@@ -55,13 +55,19 @@ export function captureFlowReducer(
 
 export function useCaptureFlow() {
   const [state, dispatch] = useReducer(captureFlowReducer, initialState);
+  const beginCapture = useCallback((photo: PendingPhoto) => dispatch({ type: "BEGIN_CAPTURE", photo }), [dispatch]);
+  const markMergeCompleted = useCallback(() => dispatch({ type: "MERGE_COMPLETED" }), [dispatch]);
+  const markMergeFailed = useCallback(() => dispatch({ type: "MERGE_FAILED" }), [dispatch]);
+  const savedTimeout = useCallback(() => dispatch({ type: "SAVED_TIMEOUT" }), [dispatch]);
+  const retry = useCallback(() => dispatch({ type: "RETRY" }), [dispatch]);
+  const discard = useCallback(() => dispatch({ type: "DISCARD" }), [dispatch]);
   return {
     ...state,
-    beginCapture: (photo: PendingPhoto) => dispatch({ type: "BEGIN_CAPTURE", photo }),
-    markMergeCompleted: () => dispatch({ type: "MERGE_COMPLETED" }),
-    markMergeFailed: () => dispatch({ type: "MERGE_FAILED" }),
-    savedTimeout: () => dispatch({ type: "SAVED_TIMEOUT" }),
-    retry: () => dispatch({ type: "RETRY" }),
-    discard: () => dispatch({ type: "DISCARD" }),
+    beginCapture,
+    markMergeCompleted,
+    markMergeFailed,
+    savedTimeout,
+    retry,
+    discard,
   };
 }

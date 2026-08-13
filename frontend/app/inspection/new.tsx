@@ -23,6 +23,7 @@ import {
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
+import { usePhotosProcessing } from "@/src/context/PhotoStatesContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
 import SectionRenderer from "@/src/components/inspection/SectionRenderer";
 import GeneralInformation from "@/src/components/inspection/GeneralInformation";
@@ -54,16 +55,14 @@ const {
   setInspectionId,
   inspectionId,
   setPoleId,
-  photoStates,
+  getPhotoStates,
 } = useInspection();
+
+const photosProcessing = usePhotosProcessing();
 
 const [sections, setSections] = useState<InspectionSection[]>([]);
 const [expandedSections, setExpandedSections] = useState<number[]>([1]);
 const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
-
-const photosProcessing = Object.values(photoStates).some(
-  (state) => state === "processing" || state === "pending"
-);
 
 const validateBeforeExit = async (): Promise<boolean> => {
   if (!inspectionId) return true;
@@ -232,7 +231,7 @@ const handleSave = async () => {
       inspectionId
     );
 
-  const photoValidation = validatePhotosForSave(photos, photoStates);
+  const photoValidation = validatePhotosForSave(photos, getPhotoStates());
 
   if (!photoValidation.canSave) {
     const message = getPhotoBlockMessage(photoValidation.reason);

@@ -13,6 +13,7 @@ import {
   InspectionProvider,
   useInspection,
 } from "@/src/context/InspectionContext";
+import { PhotoStatesProvider } from "@/src/context/PhotoStatesContext";
 import { openProjectDb, deleteProjectDb } from "@/src/database/helpers/ProjectDBManager";
 import { clearActiveProject } from "@/src/database/db";
 import { migrateProjectPhotoFolder } from "@/src/utils/folderManager";
@@ -42,9 +43,11 @@ function renderHookInProvider<T>(hookFn: () => T) {
   }
   TestRenderer.act(() => {
     TestRenderer.create(
-      <InspectionProvider>
-        <TestComponent />
-      </InspectionProvider>
+      <PhotoStatesProvider>
+        <InspectionProvider>
+          <TestComponent />
+        </InspectionProvider>
+      </PhotoStatesProvider>
     );
   });
   return result;
@@ -172,30 +175,6 @@ describe("InspectionProvider", () => {
       result.current.setPoleId("P001");
     });
     expect(result.current.poleId).toBe("P001");
-  });
-
-  it("initializes photoStates as empty", () => {
-    const result = renderHookInProvider(() => useInspection());
-    expect(result.current.photoStates).toEqual({});
-  });
-
-  it("sets photoStates", () => {
-    const result = renderHookInProvider(() => useInspection());
-    TestRenderer.act(() => {
-      result.current.setPhotoStates({ 1: "completed", 2: "processing" });
-    });
-    expect(result.current.photoStates).toEqual({ 1: "completed", 2: "processing" });
-  });
-
-  it("clears photoStates when closing the project", async () => {
-    const result = renderHookInProvider(() => useInspection());
-    TestRenderer.act(() => {
-      result.current.setPhotoStates({ 1: "completed" });
-    });
-    await TestRenderer.act(async () => {
-      await result.current.closeProject();
-    });
-    expect(result.current.photoStates).toEqual({});
   });
 });
 
