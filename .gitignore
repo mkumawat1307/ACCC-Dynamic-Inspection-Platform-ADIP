@@ -17,6 +17,7 @@ frontend/android/local.properties
 
 # Local tooling state
 .kilo/
+.claude/
 
 # Editor / OS junk
 .vscode/

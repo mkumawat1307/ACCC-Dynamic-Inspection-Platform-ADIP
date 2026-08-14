@@ -213,6 +213,56 @@ describe("InspectionRepository", () => {
     });
   });
 
+  describe("updatePoleIdDirectSave", () => {
+    it("writes the field value and Inspections.PoleID inside one transaction", async () => {
+      mockDb.withTransactionAsync.mockImplementation(
+        async (fn: () => Promise<unknown>) => fn()
+      );
+      mockDb.getFirstAsync
+        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
+        .mockResolvedValueOnce({ ValueID: 5 })
+        .mockResolvedValue({ ProjectID: 1 });
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+
+      await InspectionRepository.updatePoleIdDirectSave(42, 1, "SIK101");
+
+      expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+      expect(mockDb.runAsync).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE InspectionValues"),
+        expect.arrayContaining(["SIK101"])
+      );
+      expect(mockDb.runAsync).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE Inspections"),
+        ["SIK101", 42]
+      );
+    });
+
+    it("does not emit changed events when the transaction aborts", async () => {
+      mockDb.withTransactionAsync.mockRejectedValue(new Error("boom"));
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+      const { InspectionDataBus } = require("@/src/utils/InspectionDataBus");
+
+      await expect(
+        InspectionRepository.updatePoleIdDirectSave(42, 1, "SIK101")
+      ).rejects.toThrow("boom");
+
+      expect(InspectionDataBus.emitInspectionsChanged).not.toHaveBeenCalled();
+    });
+
+    it("rejects when a write inside the transaction fails", async () => {
+      mockDb.withTransactionAsync.mockImplementation(
+        async (fn: () => Promise<unknown>) => fn()
+      );
+      mockDb.getFirstAsync.mockResolvedValue({ hasInspection: 1, hasField: 1 });
+      mockDb.runAsync.mockRejectedValue(new Error("db failure"));
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+
+      await expect(
+        InspectionRepository.updatePoleIdDirectSave(42, 1, "SIK101")
+      ).rejects.toThrow("db failure");
+    });
+  });
+
   describe("updateInspectionStatus", () => {
     it("updates the status", async () => {
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");

@@ -15,7 +15,7 @@ import { getCurrentLocation } from "@/src/utils/location";
 import { reverseGeocode } from "@/src/utils/geo";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { PoleRenameService } from "@/src/database/repositories/PoleRenameService";
-import { cleanPoleToken } from "./photoUtils";
+import { cleanPoleToken, decidePoleIdChange } from "./photoUtils";
 import PoleRenameConfirmDialog from "./PoleRenameConfirmDialog";
 
 const GeneralInformation = forwardRef((_props, ref) => {
@@ -41,6 +41,7 @@ const [pendingRename, setPendingRename] = useState<{
 } | null>(null);
 const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+const poleIdSaveChain = useRef<Promise<unknown>>(Promise.resolve());
 
 useEffect(() => {
   return () => {
@@ -233,39 +234,60 @@ async function handlePoleIdSave(
   fieldId: number,
   text: string
 ) {
-  const trimmed = text.trim();
-  const current = await InspectionRepository.getInspectionPoleId(inspectionId);
+  const run = async () => {
+    const trimmed = text.trim();
+    const current = await InspectionRepository.getInspectionPoleId(inspectionId);
 
-  if (trimmed === "" || cleanPoleToken(trimmed) === cleanPoleToken(current)) {
-    await InspectionRepository.saveFieldValue(inspectionId, fieldId, trimmed);
-    if (trimmed !== current) {
-      await InspectionRepository.updateInspectionPoleId(inspectionId, trimmed);
+    if (cleanPoleToken(trimmed) === cleanPoleToken(current)) {
+      await InspectionRepository.saveFieldValue(inspectionId, fieldId, trimmed);
+      if (trimmed !== current) {
+        await InspectionRepository.updateInspectionPoleId(inspectionId, trimmed);
+      }
+      return;
     }
-    return;
-  }
 
-  const photos = await PhotoRepository.getByInspection(inspectionId);
-  const states = getPhotoStates();
-  const processing = photos.some(
-    (photo) =>
-      photo.PhotoID != null &&
-      ["pending", "processing", "failed"].includes(states[photo.PhotoID])
-  );
+    const photos = await PhotoRepository.getByInspection(inspectionId);
+    const decision = decidePoleIdChange(photos, getPhotoStates());
 
-  if (processing) {
-    Alert.alert(
-      "Rename Blocked",
-      "Wait for all photos to finish processing before changing the Site ID."
-    );
-    revertPoleId(current);
-    return;
-  }
+    if (decision.type === "blocked") {
+      Alert.alert(
+        "Rename Blocked",
+        "Wait for all photos to finish processing before changing the Site ID."
+      );
+      revertPoleId(current);
+      return;
+    }
 
-  setPendingRename({
-    oldPoleId: current,
-    newPoleId: trimmed,
-    photoCount: photos.length,
-  });
+    if (decision.type === "direct-save") {
+      logger.info("[PoleRename] directSaveNoPhotos");
+      try {
+        await InspectionRepository.updatePoleIdDirectSave(
+          inspectionId,
+          fieldId,
+          trimmed
+        );
+      } catch (error) {
+        logger.error("[PoleRename] directSaveFailed:", error);
+        Alert.alert(
+          "Save Failed",
+          "Could not update the Site ID. Please try again."
+        );
+        revertPoleId(current);
+      }
+      return;
+    }
+
+    logger.info(`[PoleRename] dialogShown photoCount=${decision.photoCount}`);
+    setPendingRename({
+      oldPoleId: current,
+      newPoleId: trimmed,
+      photoCount: decision.photoCount,
+    });
+  };
+
+  const chained = poleIdSaveChain.current.then(run, run);
+  poleIdSaveChain.current = chained;
+  await chained;
 }
 
 function revertPoleId(value: string) {
@@ -456,6 +478,7 @@ return (
       photoCount={pendingRename?.photoCount ?? 0}
       onCancel={() => {
         if (pendingRename) {
+          logger.info("[PoleRename] cancelled");
           revertPoleId(pendingRename.oldPoleId);
         }
         setPendingRename(null);
@@ -464,6 +487,7 @@ return (
         if (!pendingRename || !inspectionId) return;
         const { oldPoleId, newPoleId } = pendingRename;
         setPendingRename(null);
+        logger.info("[PoleRename] confirmed");
         try {
           await PoleRenameService.renamePoleId(
             inspectionId,

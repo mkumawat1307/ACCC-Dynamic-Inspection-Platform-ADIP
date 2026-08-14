@@ -8,6 +8,7 @@ import {
   validatePhotosForSave,
   cleanPoleToken,
   renamePoleTokenInFileName,
+  decidePoleIdChange,
 } from "@/src/components/inspection/photoUtils";
 import { Photo } from "@/src/models/Photo";
 
@@ -310,5 +311,55 @@ describe("validatePhotosForSave", () => {
     expect(
       validatePhotosForSave(photos, { 1: "completed", 2: "processing" })
     ).toEqual({ canSave: false, reason: "processing" });
+  });
+});
+
+describe("decidePoleIdChange", () => {
+  it("returns direct-save when there are no photos", () => {
+    expect(decidePoleIdChange([], {})).toEqual({ type: "direct-save" });
+  });
+
+  it("returns dialog with photoCount when there is at least one photo", () => {
+    const photos = [
+      makePhoto(1, "content://media/1.jpg"),
+      makePhoto(2, "content://media/2.jpg"),
+      makePhoto(3, "content://media/3.jpg"),
+    ];
+    expect(decidePoleIdChange(photos, {})).toEqual({
+      type: "dialog",
+      photoCount: 3,
+    });
+  });
+
+  it("blocks when any photo is pending", () => {
+    const photos = [
+      makePhoto(1, "file:///tmp/1.jpg"),
+      makePhoto(2, "content://media/2.jpg"),
+    ];
+    expect(decidePoleIdChange(photos, { 1: "pending", 2: "completed" })).toEqual({
+      type: "blocked",
+    });
+  });
+
+  it("blocks when any photo is processing", () => {
+    const photos = [makePhoto(1, "content://media/1.jpg")];
+    expect(decidePoleIdChange(photos, { 1: "processing" })).toEqual({
+      type: "blocked",
+    });
+  });
+
+  it("blocks when any photo is failed", () => {
+    const photos = [makePhoto(1, "content://media/1.jpg")];
+    expect(decidePoleIdChange(photos, { 1: "failed" })).toEqual({
+      type: "blocked",
+    });
+  });
+
+  it("shows dialog when photos have no recorded state", () => {
+    const photos = [makePhoto(1, "content://media/1.jpg")];
+    expect(decidePoleIdChange(photos, {})).toEqual({
+      type: "dialog",
+      photoCount: 1,
+    });
   });
 });

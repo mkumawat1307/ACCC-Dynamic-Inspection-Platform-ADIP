@@ -249,6 +249,18 @@ static async updateInspectionPoleId(
   InspectionDataBus.emitInspectionsChanged(projectId ?? 0);
 }
 
+static async updatePoleIdDirectSave(
+  inspectionId: number,
+  fieldId: number,
+  poleId: string
+) {
+  const db = await getDatabase();
+  await db.withTransactionAsync(async () => {
+    await this.saveFieldValue(inspectionId, fieldId, poleId);
+    await this.updateInspectionPoleId(inspectionId, poleId);
+  });
+}
+
 static async getInspectionValues(
   inspectionId: number
 ): Promise<Record<string, string>> {
