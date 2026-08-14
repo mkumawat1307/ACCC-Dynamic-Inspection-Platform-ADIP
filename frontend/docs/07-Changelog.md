@@ -24,7 +24,17 @@ Patch → Bug fixes
 
 ---
 
-## [Unreleased]
+## [1.1.0] — 2026-08-14
+
+### Summary
+
+- Hardened database restore and ZIP validation
+- Fixed fresh-install restore flow
+- Added app-level Database screen
+- Added template safety guards
+- Fixed CSV/XLSX export open-file flow
+- Added cascading Pole ID rename with audit history
+- Improved rollback handling for photo rename failures
 
 ### Changed
 - **Automatic Download-folder storage** — replaced the SAF folder-picker flow with a local Android module (`expo-download-storage`, `modules/download-storage`) that writes via `MediaStore.Downloads` (API ≥ 29) with a legacy `Environment.DIRECTORY_DOWNLOADS` fallback. Storage permission is requested once (legacy API < 29 only); photos save to `Download/ACCC Dynamic Inspection/<District>_<Project>/` and Excel/CSV/backup (`accc_backup.zip`) to the root folder, with overwrite semantics so duplicate `(1)`/`(2)` files never appear. Deleted `folderManager.ts` and the SAF picker/persisted-tree-URI/migration surface. Requires a native rebuild (`npx expo run:android`) to take effect.
