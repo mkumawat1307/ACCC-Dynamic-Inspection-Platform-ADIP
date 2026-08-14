@@ -61,7 +61,11 @@ export default function InspectionListScreen() {
 
   const exportFlow = useExportFlow(
     Number(projectId ?? 0),
-    project?.ProjectName ?? "Project"
+    project?.ProjectName ?? "Project",
+    {
+      division: project?.DivisionName ?? "",
+      inspector: project?.InspectorName ?? "",
+    }
   );
 
   const exportState = exportFlow.state;
@@ -445,7 +449,6 @@ export default function InspectionListScreen() {
         onCloseError={exportFlow.dismiss}
         onCloseSuccess={exportFlow.dismiss}
         onOpen={() => { void exportFlow.open(); }}
-        onShare={() => { void exportFlow.share(); }}
       />
           </SafeAreaView>
   );

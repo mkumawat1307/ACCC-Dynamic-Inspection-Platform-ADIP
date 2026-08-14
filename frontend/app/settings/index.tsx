@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { getDatabase } from "@/src/database/db";
+import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import { Project } from "@/src/models/Project";
 
 export default function SettingsScreen() {
@@ -28,7 +29,23 @@ export default function SettingsScreen() {
     ? { projectId: project.ProjectID.toString(), projectData: JSON.stringify(project) }
     : undefined;
 
-  const handleResetToDefault = () => {
+  const handleResetToDefault = async () => {
+    try {
+      const completed = await InspectionRepository.countFinalInspections();
+      if (completed > 0) {
+        logger.info(`[TemplateReset] blockedCompletedInspections=${completed}`);
+        Alert.alert(
+          "Reset Blocked",
+          "Template restore is blocked because this project contains completed inspections. Create a new project if you need a different template."
+        );
+        return;
+      }
+    } catch (error) {
+      logger.error("Reset check error:", error);
+      Alert.alert("Reset Blocked", "Unable to verify project inspections before resetting templates.");
+      return;
+    }
+
     Alert.alert(
       "Reset to Default?",
       "This will restore the inspection form to its original default state:\n\n" +

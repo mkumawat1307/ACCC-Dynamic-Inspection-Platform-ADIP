@@ -1,5 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { closeAllDatabases, GLOBAL_DATABASE_NAME } from "../db";
+import { closeAllDatabases, getGlobalDatabase, GLOBAL_DATABASE_NAME } from "../db";
 import { listProjectFolders } from "./ProjectDBManager";
 import {
   BACKUP_FILE_NAME,
@@ -8,6 +8,7 @@ import {
   unzipBase64,
   isZipBytes,
 } from "@/src/utils/backupZip";
+import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { logger } from "@/src/utils/logger";
 import { ensureRootFolder } from "@/src/utils/storageManager";
 import { downloadStorage } from "@/src/utils/downloadStorage";
@@ -16,6 +17,19 @@ export interface BackupResult {
   ok: boolean;
   message: string;
   path?: string;
+}
+
+const BASE64_CHUNK_SIZE = 0x8000;
+
+const RESTORE_ENTRY_RE =
+  /^(SQLite\/accc_global\.db(-wal|-shm)?|Projects\/[^/]+\/inspection\.db(-wal|-shm)?)$/;
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += BASE64_CHUNK_SIZE) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_CHUNK_SIZE));
+  }
+  return btoa(binary);
 }
 
 export async function getGlobalDbFilePath(): Promise<string> {
@@ -102,19 +116,46 @@ export async function validateBackupFile(
 }
 
 async function restoreEntries(entries: Record<string, Uint8Array>): Promise<void> {
+  logger.info("[Restore] closeAllDatabases");
   await closeAllDatabases();
+
+  // Delete stale WAL/SHM sidecars for every restored database that the backup
+  // does not provide, so a restored .db is never opened against a sidecar
+  // that belongs to the previous database.
+  const restoredBases = new Set<string>();
+  for (const relPath of Object.keys(entries)) {
+    const m = relPath.match(/^(.*\.db)(-wal|-shm)?$/);
+    if (m) restoredBases.add(m[1]);
+  }
+  for (const base of restoredBases) {
+    for (const suffix of ["-wal", "-shm"]) {
+      const sidecarRel = base + suffix;
+      if (entries[sidecarRel]) continue;
+      try {
+        await FileSystem.deleteAsync(`${FileSystem.documentDirectory}${sidecarRel}`, {
+          idempotent: true,
+        });
+      } catch {
+        // sidecar absent — fine
+      }
+    }
+  }
 
   const restoredFolders = new Set<string>();
   for (const [relPath, bytes] of Object.entries(entries)) {
     const target = `${FileSystem.documentDirectory}${relPath}`;
     const parent = target.slice(0, target.lastIndexOf("/"));
     await FileSystem.makeDirectoryAsync(parent, { intermediates: true });
-    const outB64 = btoa(String.fromCharCode(...bytes));
-    await FileSystem.writeAsStringAsync(target, outB64, {
+    await FileSystem.writeAsStringAsync(target, bytesToBase64(bytes), {
       encoding: FileSystem.EncodingType.Base64,
     });
     const m = relPath.match(/^Projects\/([^/]+)\//);
     if (m) restoredFolders.add(m[1]);
+    if (relPath === `SQLite/${GLOBAL_DATABASE_NAME}`) {
+      logger.info("[Restore] replaceGlobalDb");
+    } else if (m && relPath.endsWith("inspection.db")) {
+      logger.info(`[Restore] replaceProjectDb=${m[1]}`);
+    }
   }
 
   const onDisk = await listProjectFolders();
@@ -123,6 +164,57 @@ async function restoreEntries(entries: Record<string, Uint8Array>): Promise<void
       await FileSystem.deleteAsync(`${FileSystem.documentDirectory}Projects/${folder}/`);
     }
   }
+}
+
+function validateRestoreEntries(entries: Record<string, Uint8Array>): {
+  ok: boolean;
+  message?: string;
+} {
+  const entryNames = Object.keys(entries);
+
+  for (const name of entryNames) {
+    if (!RESTORE_ENTRY_RE.test(name) || name.includes("..") || name.includes("\\")) {
+      return { ok: false, message: `Backup contains an invalid entry: ${name}` };
+    }
+  }
+
+  const hasGlobalDb = entryNames.includes(`SQLite/${GLOBAL_DATABASE_NAME}`);
+  logger.info(`[Restore] foundGlobalDb=${hasGlobalDb}`);
+  if (!hasGlobalDb) {
+    return {
+      ok: false,
+      message: "Backup is missing the global database (SQLite/accc_global.db)",
+    };
+  }
+
+  const projectFolders = new Set<string>();
+  for (const name of entryNames) {
+    const m = name.match(/^Projects\/([^/]+)\/inspection\.db$/);
+    if (m) projectFolders.add(m[1]);
+  }
+  for (const name of entryNames) {
+    const m = name.match(/^Projects\/([^/]+)\//);
+    if (m && !projectFolders.has(m[1])) {
+      return {
+        ok: false,
+        message: `Project folder "${m[1]}" is missing inspection.db`,
+      };
+    }
+  }
+  for (const folder of projectFolders) {
+    logger.info(`[Restore] projectDb=${folder}`);
+  }
+
+  return { ok: true };
+}
+
+async function reloadAfterRestore(): Promise<number> {
+  logger.info("[Restore] reopenGlobalDb");
+  await getGlobalDatabase();
+  logger.info("[Restore] reloadProjectList");
+  const projects = await ProjectRepository.getProjects();
+  logger.info(`[Restore] projectsAfterRestore=${projects.length}`);
+  return projects.length;
 }
 
 export async function restoreBackup(
@@ -141,10 +233,14 @@ export async function restoreBackup(
     const b64 = await downloadStorage.readBase64(fileUri);
     const entries = await unzipBase64(b64);
 
+    const structure = validateRestoreEntries(entries);
+    if (!structure.ok) return { ok: false, message: structure.message ?? "Invalid backup" };
+
     await restoreEntries(entries);
+    const count = await reloadAfterRestore();
 
     logger.info("[BackupManager] Restore completed.");
-    return { ok: true, message: "Restore completed. Reloading data." };
+    return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
   } catch (e) {
     logger.error("[BackupManager] restoreBackup failed:", e);
     return { ok: false, message: String(e) };
@@ -158,23 +254,36 @@ export async function restoreBackupFromUri(
   try {
     logger.info("[Import] selectedUri=" + selectedUri);
 
-    const selectedInfo = await FileSystem.getInfoAsync(selectedUri);
-    if (!selectedInfo.exists) {
-      const message = "Selected file does not exist";
-      logger.info("[Import] restoreFailed=" + message);
-      return { ok: false, message };
-    }
-
+    // Android's ZIP file picker returns content:// URIs that the legacy
+    // FileSystem cannot always stat. Always copy them to a local temp file
+    // first, then validate the temp file (a reliable file:// path).
     let sourceUri = selectedUri;
     if (selectedUri.startsWith("content://")) {
       sourceUri = `${FileSystem.cacheDirectory}${BACKUP_FILE_NAME}`;
-      await FileSystem.copyAsync({ from: selectedUri, to: sourceUri });
+      try {
+        await FileSystem.copyAsync({ from: selectedUri, to: sourceUri });
+      } catch (e) {
+        const message = `Failed to copy selected file: ${String(e)}`;
+        logger.info("[Import] restoreFailed=" + message);
+        logger.info("[Restore] failed=" + message);
+        return { ok: false, message };
+      }
       logger.info("[Import] copiedToCache=" + sourceUri);
+      logger.info("[Restore] copyToTemp=" + sourceUri);
       const cacheInfo = await FileSystem.getInfoAsync(sourceUri);
       logger.info("[Import] cacheExists=" + String(cacheInfo.exists));
       if (!cacheInfo.exists) {
         const message = "Failed to copy selected file to cache";
         logger.info("[Import] restoreFailed=" + message);
+        logger.info("[Restore] failed=" + message);
+        return { ok: false, message };
+      }
+    } else {
+      const selectedInfo = await FileSystem.getInfoAsync(selectedUri);
+      if (!selectedInfo.exists) {
+        const message = "Selected file does not exist";
+        logger.info("[Import] restoreFailed=" + message);
+        logger.info("[Restore] failed=" + message);
         return { ok: false, message };
       }
     }
@@ -186,6 +295,7 @@ export async function restoreBackupFromUri(
     if (!isZipBytes(bytes)) {
       const message = "Not a valid ACCC backup file";
       logger.info("[Import] restoreFailed=" + message);
+      logger.info("[Restore] failed=" + message);
       return { ok: false, message };
     }
 
@@ -193,16 +303,29 @@ export async function restoreBackupFromUri(
     if (!confirmed) {
       const message = "Restore cancelled";
       logger.info("[Import] restoreFailed=" + message);
+      logger.info("[Restore] failed=" + message);
       return { ok: false, message };
     }
 
     logger.info("[Import] restoreStart");
+    logger.info("[Restore] unzipStart");
     const entries = await unzipBase64(b64);
+    logger.info(`[Restore] entries=${Object.keys(entries).length}`);
+
+    const structure = validateRestoreEntries(entries);
+    if (!structure.ok) {
+      const message = structure.message ?? "Invalid backup";
+      logger.info("[Import] restoreFailed=" + message);
+      logger.info("[Restore] failed=" + message);
+      return { ok: false, message };
+    }
+
     await restoreEntries(entries);
+    const count = await reloadAfterRestore();
 
     logger.info("[Import] restoreSuccess");
     logger.info("[Restore] success");
-    return { ok: true, message: "Restore completed. Reloading data." };
+    return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
   } catch (e) {
     logger.info("[Import] restoreFailed=" + String(e));
     logger.info("[Restore] failed=" + String(e));

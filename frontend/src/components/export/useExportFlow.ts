@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { createExportFile, ExportFormat, ExportResult, openExportFile, shareExportFile } from "@/src/utils/exportData";
+import { createExportFile, ExportFormat, ExportProjectMeta, ExportResult, openExportFile } from "@/src/utils/exportData";
 import { logger } from "@/src/utils/logger";
 
 export interface ExportTarget {
@@ -18,7 +18,7 @@ const FORMAT_LABEL: Record<ExportFormat, string> = {
   csv: "CSV",
 };
 
-export function useExportFlow(projectId: number, projectName: string) {
+export function useExportFlow(projectId: number, projectName: string, meta?: ExportProjectMeta) {
   const [state, setState] = useState<ExportFlowState>({ phase: "idle" });
   const lastFormat = useRef<ExportFormat>("excel");
   const lastTarget = useRef<ExportTarget | null>(null);
@@ -35,7 +35,7 @@ export function useExportFlow(projectId: number, projectName: string) {
       lastFormat.current = format;
       setState({ phase: "exporting", format, target });
       try {
-        const result = await createExportFile(projectId, projectName, target.ids, format);
+        const result = await createExportFile(projectId, projectName, target.ids, format, meta);
         if (!result) {
           setState({
             phase: "error",
@@ -54,7 +54,7 @@ export function useExportFlow(projectId: number, projectName: string) {
         });
       }
     },
-    [projectId, projectName]
+    [projectId, projectName, meta]
   );
 
   const retry = useCallback(() => {
@@ -72,20 +72,10 @@ export function useExportFlow(projectId: number, projectName: string) {
     try {
       const ok = await openExportFile(state.result);
       if (!ok) {
-        logger.warn("Open unavailable, falling back to share");
-        await shareExportFile(state.result);
+        logger.warn("Open unavailable on this device");
       }
     } catch (error) {
       logger.error("Open file error:", error);
-    }
-  }, [state]);
-
-  const share = useCallback(async () => {
-    if (state.phase !== "success") return;
-    try {
-      await shareExportFile(state.result);
-    } catch (error) {
-      logger.error("Share file error:", error);
     }
   }, [state]);
 
@@ -99,6 +89,5 @@ export function useExportFlow(projectId: number, projectName: string) {
     retry,
     dismiss,
     open,
-    share,
   };
 }

@@ -90,6 +90,26 @@ describe("InspectionRepository", () => {
     });
   });
 
+  describe("countFinalInspections", () => {
+    it("returns the number of Completed and Submitted inspections", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ Count: 4 });
+      const count = await InspectionRepository.countFinalInspections();
+      expect(count).toBe(4);
+    });
+
+    it("returns zero when no inspections exist", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ Count: 0 });
+      const count = await InspectionRepository.countFinalInspections();
+      expect(count).toBe(0);
+    });
+
+    it("returns zero when the query returns null", async () => {
+      mockDb.getFirstAsync.mockResolvedValue(null);
+      const count = await InspectionRepository.countFinalInspections();
+      expect(count).toBe(0);
+    });
+  });
+
   describe("getAllSections", () => {
     it("returns sections including non-default ones", async () => {
       mockDb.getAllAsync.mockResolvedValue([sampleSection]);

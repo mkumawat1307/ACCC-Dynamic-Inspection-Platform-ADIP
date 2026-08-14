@@ -111,6 +111,7 @@ export async function clearActiveProject(): Promise<void> {
 }
 
 export async function closeAllDatabases(): Promise<void> {
+  activeProjectPath = null;
   await closeCurrentDb();
 }
 

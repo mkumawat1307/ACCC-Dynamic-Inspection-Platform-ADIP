@@ -24,11 +24,6 @@ jest.mock("expo-document-picker", () => {
   };
 });
 
-jest.mock("expo-sharing", () => ({
-  isAvailableAsync: jest.fn().mockResolvedValue(true),
-  shareAsync: jest.fn().mockResolvedValue(undefined),
-}));
-
 jest.mock("@/src/utils/downloadStorage", () => ({
   downloadStorage: {
     ensureFolder: jest.fn(async () => true),
@@ -100,7 +95,7 @@ describe("backupTemplatesToFile", () => {
     logSpy.mockRestore();
   });
 
-  it("writes the backup JSON under the project's Downloads folder", async () => {
+  it("writes the backup JSON to the ACCC Dynamic Inspection root folder", async () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce([
         { TemplateID: 1, TemplateName: "Default", Description: null, IsDefault: 1, IsActive: 1 },
@@ -114,9 +109,9 @@ describe("backupTemplatesToFile", () => {
     const result = await backupTemplatesToFile(PROJECT_LABEL);
 
     expect(result.ok).toBe(true);
-    expect(downloadStorage.ensureFolder).toHaveBeenCalledWith(PROJECT_LABEL);
+    expect(downloadStorage.ensureFolder).not.toHaveBeenCalled();
     expect(downloadStorage.writeUtf8).toHaveBeenCalledWith(
-      PROJECT_LABEL,
+      "",
       `${PROJECT_LABEL}_templates_backup.json`,
       "application/json",
       expect.stringContaining('"version": "2.0"')

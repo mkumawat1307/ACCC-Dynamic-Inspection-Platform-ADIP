@@ -213,6 +213,7 @@ export default function ProjectDashboard() {
                     params: {
                       projectId: project.ProjectID.toString(),
                       projectName: project.ProjectName,
+                      projectData: JSON.stringify(project),
                     },
                   })
                 }

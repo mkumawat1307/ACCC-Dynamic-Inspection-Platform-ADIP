@@ -1,4 +1,4 @@
-import { getDatabase, getGlobalDatabase } from "@/src/database/db";
+import { getDatabase } from "@/src/database/db";
 
 jest.mock("@/src/database/db");
 
@@ -47,6 +47,7 @@ import * as XLSX from "xlsx";
 
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { Alert } from "react-native";
 import { downloadStorage } from "@/src/utils/downloadStorage";
 
 function createMockDb(overrides: Record<string, unknown> = {}) {
@@ -630,11 +631,15 @@ describe("exportInspections", () => {
     jest.clearAllMocks();
     mockDb = createMockDb();
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
-    (getGlobalDatabase as jest.Mock).mockResolvedValue(mockDb);
     setSharingAvailable(true);
+    jest.spyOn(Alert, "alert").mockImplementation(() => {});
   });
 
-  it("exports CSV with a header row and shares it", async () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("exports CSV with a header row and reports success without sharing", async () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce([
         { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID", FieldDisplayOrder: 1 },
@@ -653,7 +658,8 @@ describe("exportInspections", () => {
     expect(writeCall[3]).toContain("Pole ID");
     expect(writeCall[3]).not.toContain("General Information");
     expect(writeCall[3]).toContain("P001");
-    expect(Sharing.shareAsync).toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith("Export Successful", "CSV exported successfully");
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 
   it("returns false when no inspections exist", async () => {
@@ -670,10 +676,11 @@ describe("exportInspections", () => {
 
     expect(result).toBe(false);
     expect(downloadStorage.writeUtf8).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalled();
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 
-  it("exports Excel as base64 with Base64 encoding and shares it", async () => {
+  it("exports Excel as base64 with Base64 encoding and reports success without sharing", async () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
@@ -688,10 +695,11 @@ describe("exportInspections", () => {
     expect(result).toBe(true);
     const writeCall = (downloadStorage.writeBase64 as jest.Mock).mock.calls[0];
     expect(writeCall[3]).toMatch(/^UEsDB/);
-    expect(Sharing.shareAsync).toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith("Export Successful", "Excel exported successfully");
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 
-  it("returns false when sharing is unavailable", async () => {
+  it("reports success even when sharing is unavailable", async () => {
     mockDb.getAllAsync
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
@@ -704,7 +712,8 @@ describe("exportInspections", () => {
     const { exportInspections } = require("@/src/utils/exportData");
     const result = await exportInspections(1, "TestProject", "csv");
 
-    expect(result).toBe(false);
+    expect(result).toBe(true);
+    expect(Alert.alert).toHaveBeenCalled();
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
   });
 });
@@ -716,7 +725,6 @@ describe("createExportFile", () => {
     jest.clearAllMocks();
     mockDb = createMockDb();
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
-    (getGlobalDatabase as jest.Mock).mockResolvedValue(mockDb);
     setSharingAvailable(true);
   });
 
@@ -788,46 +796,29 @@ describe("createExportFile", () => {
     expect(result).toBeNull();
     expect(downloadStorage.writeUtf8).not.toHaveBeenCalled();
   });
-});
 
-describe("shareExportFile", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    setSharingAvailable(true);
-  });
+  it("uses passed project meta for division and inspector in the file name", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([
+        { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID", FieldDisplayOrder: 1 },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ InspectionID: 1, Status: "Completed" }])
+      .mockResolvedValueOnce([{ InspectionID: 1, FieldID: 1, FieldValue: "P001" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
 
-  it("shares an existing file with the CSV mime type", async () => {
-    const { shareExportFile } = require("@/src/utils/exportData");
-    const result = await shareExportFile({
-      fileUri: "file:///mock/documents/report.csv",
-      fileName: "report.csv",
-      format: "csv",
-      inspectionCount: 1,
-      rowCount: 1,
-      durationMs: 10,
-    });
-
-    expect(result).toBe(true);
-    expect(Sharing.shareAsync).toHaveBeenCalledWith(
-      "file:///mock/documents/report.csv",
-      expect.objectContaining({ mimeType: "text/csv" })
+    const { createExportFile } = require("@/src/utils/exportData");
+    const result = await createExportFile(
+      1,
+      "TestProject",
+      [1],
+      "csv",
+      { division: "East Division", inspector: "R. Kumar" }
     );
-  });
 
-  it("returns false when sharing is unavailable", async () => {
-    setSharingAvailable(false);
-    const { shareExportFile } = require("@/src/utils/exportData");
-    const result = await shareExportFile({
-      fileUri: "file:///mock/documents/report.xlsx",
-      fileName: "report.xlsx",
-      format: "excel",
-      inspectionCount: 1,
-      rowCount: 1,
-      durationMs: 10,
-    });
-
-    expect(result).toBe(false);
-    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(result!.fileName).toMatch(/^East_Division_TestProject_R._Kumar_\d{4}-\d{2}-\d{2}/);
   });
 });
 
@@ -877,6 +868,34 @@ describe("openExportFile", () => {
       "android.intent.action.VIEW",
       expect.objectContaining({
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        flags: 1,
+      })
+    );
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  it("uses the MediaStore content URI directly on Android without re-conversion", async () => {
+    const { Platform } = require("react-native");
+    jest.replaceProperty(Platform, "OS", "android");
+    const IntentLauncher = require("expo-intent-launcher");
+
+    const { openExportFile } = require("@/src/utils/exportData");
+    const result = await openExportFile({
+      fileUri: "content://media/external_primary/downloads/ACCC%20Dynamic%20Inspection/report.csv",
+      fileName: "report.csv",
+      format: "csv",
+      inspectionCount: 1,
+      rowCount: 1,
+      durationMs: 10,
+    });
+
+    expect(result).toBe(true);
+    expect(FileSystem.getContentUriAsync).not.toHaveBeenCalled();
+    expect(IntentLauncher.startActivityAsync).toHaveBeenCalledWith(
+      "android.intent.action.VIEW",
+      expect.objectContaining({
+        data: "content://media/external_primary/downloads/ACCC%20Dynamic%20Inspection/report.csv",
+        type: "text/csv",
         flags: 1,
       })
     );

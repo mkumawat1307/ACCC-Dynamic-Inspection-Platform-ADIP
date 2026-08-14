@@ -25,10 +25,9 @@ export async function backupTemplatesToFile(
     if (!built) {
       return { ok: false, message: "No template found to back up." };
     }
-    await downloadStorage.ensureFolder(projectLabel);
     const json = JSON.stringify(built.data, null, 2);
     const fileName = templateBackupFileName(projectLabel);
-    await downloadStorage.writeUtf8(projectLabel, fileName, "application/json", json);
+    await downloadStorage.writeUtf8("", fileName, "application/json", json);
     logger.info("[TemplateBackup] success");
     return { ok: true, message: "Template backup saved." };
   } catch (e) {

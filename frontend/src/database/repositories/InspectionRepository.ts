@@ -35,6 +35,14 @@ static async getSections(templateId?: number): Promise<InspectionSection[]> {
     return [];
   }
 
+  static async countFinalInspections(): Promise<number> {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<{ Count: number }>(
+      `SELECT COUNT(*) AS Count FROM Inspections WHERE Status IN ('Completed', 'Submitted')`
+    );
+    return row?.Count ?? 0;
+  }
+
   static async getAllSections(templateId?: number): Promise<InspectionSection[]> {
     const db = await getDatabase();
 

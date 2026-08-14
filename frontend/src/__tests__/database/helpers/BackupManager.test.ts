@@ -9,6 +9,12 @@ jest.mock("@/src/database/helpers/ProjectDBManager", () => ({
   listProjectFolders: jest.fn().mockResolvedValue(["Alpha", "Beta"]),
 }));
 
+jest.mock("@/src/database/repositories/ProjectRepository", () => ({
+  ProjectRepository: {
+    getProjects: jest.fn().mockResolvedValue([]),
+  },
+}));
+
 const mockFsEntries = new Map<string, { type: "file" | "dir"; content: string }>();
 
 jest.mock("expo-file-system/legacy", () => ({
@@ -410,18 +416,36 @@ describe("BackupManager restoreBackupFromUri", () => {
     BackupManager = require("@/src/database/helpers/BackupManager");
   });
 
-  it("logs the selected URI and fails when the picked file does not exist", async () => {
+  it("fails when a picked file:// URI does not exist", async () => {
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const missingUri = "file:///mock/downloads/missing.zip";
+
+    const result = await BackupManager.restoreBackupFromUri(missingUri, async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("does not exist");
+    expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + missingUri);
+    expect(logSpy).toHaveBeenCalledWith(
+      "[Import] restoreFailed=Selected file does not exist"
+    );
+    expect(FileSystem.copyAsync).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
+  it("fails when a content:// pick cannot be copied to temp", async () => {
     const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
 
     expect(result.ok).toBe(false);
-    expect(result.message).toContain("does not exist");
-    expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + CONTENT_URI);
+    expect(result.message).toContain("Failed to copy selected file");
+    expect(FileSystem.copyAsync).toHaveBeenCalledWith({
+      from: CONTENT_URI,
+      to: CACHE_URI,
+    });
     expect(logSpy).toHaveBeenCalledWith(
-      "[Import] restoreFailed=Selected file does not exist"
+      "[Restore] failed=Failed to copy selected file: Error: File not found: " + CONTENT_URI
     );
-    expect(FileSystem.copyAsync).not.toHaveBeenCalled();
     logSpy.mockRestore();
   });
 
@@ -446,6 +470,17 @@ describe("BackupManager restoreBackupFromUri", () => {
     expect(logSpy).toHaveBeenCalledWith("[Import] cacheExists=true");
     expect(logSpy).toHaveBeenCalledWith("[Import] restoreStart");
     expect(logSpy).toHaveBeenCalledWith("[Import] restoreSuccess");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] copyToTemp=" + CACHE_URI);
+    expect(logSpy).toHaveBeenCalledWith("[Restore] unzipStart");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] entries=2");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] foundGlobalDb=true");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] projectDb=Alpha");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] closeAllDatabases");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] replaceGlobalDb");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] replaceProjectDb=Alpha");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] reopenGlobalDb");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] reloadProjectList");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] projectsAfterRestore=0");
     expect(logSpy).toHaveBeenCalledWith("[Restore] success");
 
     const globalB64 = await FileSystem.readAsStringAsync(`${DOC}SQLite/accc_global.db`, {
@@ -498,5 +533,94 @@ describe("BackupManager restoreBackupFromUri", () => {
     expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
     expect(logSpy).toHaveBeenCalledWith("[Import] restoreFailed=Restore cancelled");
     logSpy.mockRestore();
+  });
+
+  it("rejects a zip without the global database before writing anything", async () => {
+    await seedPickedZip({ "Projects/Alpha/inspection.db": [9, 8, 7] });
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("missing the global database");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] foundGlobalDb=false");
+    expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
+    expect(mockFsEntries.has(`${DOC}Projects/Alpha/inspection.db`)).toBe(false);
+    logSpy.mockRestore();
+  });
+
+  it("rejects a project folder entry without inspection.db", async () => {
+    await seedPickedZip({
+      "SQLite/accc_global.db": [1, 2, 3, 4],
+      "Projects/Alpha/inspection.db-wal": [9, 8, 7],
+    });
+
+    const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("missing inspection.db");
+    expect(mockFsEntries.has(`${DOC}Projects/Alpha/inspection.db-wal`)).toBe(false);
+    expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
+  });
+
+  it("rejects a zip with a path traversal entry before writing anything", async () => {
+    await seedPickedZip({
+      "SQLite/accc_global.db": [1, 2, 3],
+      "../evil": [4],
+    });
+
+    const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("invalid entry");
+    expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
+    expect(mockFsEntries.has(`${DOC}evil`)).toBe(false);
+  });
+
+  it("rejects a zip with an entry outside the whitelist", async () => {
+    await seedPickedZip({
+      "SQLite/accc_global.db": [1, 2, 3],
+      "shared_prefs/evil.xml": [4],
+      "Projects/Beta/../../secret.db": [5],
+    });
+
+    const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("invalid entry");
+    expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
+    expect(mockFsEntries.has(`${DOC}shared_prefs/evil.xml`)).toBe(false);
+  });
+
+  it("rejects a zip with a backslash entry name", async () => {
+    await seedPickedZip({
+      "SQLite/accc_global.db": [1, 2, 3],
+      "Projects\\Alpha\\inspection.db": [9, 8, 7],
+    });
+
+    const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("invalid entry");
+    expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
+  });
+
+  it("restores a large database file without stack overflows", async () => {
+    const big = new Uint8Array(300000);
+    for (let i = 0; i < big.length; i++) big[i] = i % 251;
+    await seedPickedZip({
+      "SQLite/accc_global.db": Array.from(big),
+      "Projects/Alpha/inspection.db": [9, 8, 7],
+    });
+
+    const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
+
+    expect(result.ok).toBe(true);
+    const stored = await FileSystem.readAsStringAsync(`${DOC}SQLite/accc_global.db`, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const restored = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
+    expect(restored.length).toBe(big.length);
+    expect(restored[123456]).toBe(big[123456]);
   });
 });

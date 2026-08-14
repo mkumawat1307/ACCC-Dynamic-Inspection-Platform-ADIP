@@ -11,6 +11,7 @@ import {
 } from "@/src/utils/exportData";
 import ReportTablePreview from "@/src/components/reports/ReportTablePreview";
 import { logger } from "@/src/utils/logger";
+import { Project } from "@/src/models/Project";
 
 const EXPORT_ACTIONS: { format: ExportFormat; label: string; icon: string }[] = [
   { format: "excel", label: "Export as Excel", icon: "microsoft-excel" },
@@ -18,10 +19,21 @@ const EXPORT_ACTIONS: { format: ExportFormat; label: string; icon: string }[] = 
 ];
 
 export default function ReportsScreen() {
-  const { projectId, projectName } = useLocalSearchParams<{
+  const { projectId, projectName, projectData } = useLocalSearchParams<{
     projectId?: string;
     projectName?: string;
+    projectData?: string;
   }>();
+
+  const project: Project | null = (() => {
+    if (!projectData) return null;
+    try {
+      return JSON.parse(projectData) as Project;
+    } catch {
+      return null;
+    }
+  })();
+
   const router = useRouter();
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [table, setTable] = useState<ReportTable | null>(null);
@@ -52,7 +64,10 @@ export default function ReportsScreen() {
     }
     setExporting(format);
     try {
-      const success = await exportInspections(Number(projectId), projectName ?? "Project", format);
+      const success = await exportInspections(Number(projectId), projectName ?? "Project", format, {
+        division: project?.DivisionName ?? "",
+        inspector: project?.InspectorName ?? "",
+      });
       if (!success) {
         Alert.alert("No Data", "No inspection data found to export for this project.");
       }

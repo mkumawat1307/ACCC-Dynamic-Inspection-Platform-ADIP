@@ -1,4 +1,3 @@
-import * as Sharing from "expo-sharing";
 import { logger } from "@/src/utils/logger";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -8,20 +7,6 @@ const VALID_FIELD_TYPES = ["text", "number", "multiline", "dropdown", "date", "d
 
 function normalizeFieldType(type: string): string {
   return VALID_FIELD_TYPES.find((t) => t.toUpperCase() === type.toUpperCase()) ?? type;
-}
-
-export interface TemplateExportSummary {
-  templateCount: number;
-  sectionCount: number;
-  fieldCount: number;
-  deviceTypeCount: number;
-  deviceOptionCount: number;
-}
-
-export interface TemplateExportResult {
-  fileUri: string;
-  fileName: string;
-  summary: TemplateExportSummary;
 }
 
 export interface TemplateExportData {
@@ -273,37 +258,6 @@ export async function buildTemplateExportData(): Promise<{
       deviceOptionCount,
     },
   };
-}
-
-export async function exportTemplates(): Promise<TemplateExportResult | null> {
-  const built = await buildTemplateExportData();
-  if (!built) return null;
-
-  const json = JSON.stringify(built.data, null, 2);
-  const fileName = `template_${new Date().toISOString().slice(0, 10)}.json`;
-  const fileUri = FileSystem.documentDirectory + fileName;
-
-  await FileSystem.writeAsStringAsync(fileUri, json, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-
-  return {
-    fileUri,
-    fileName,
-    summary: built.summary,
-  };
-}
-
-export async function shareTemplateFile(result: TemplateExportResult): Promise<boolean> {
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(result.fileUri, {
-      mimeType: "application/json",
-      dialogTitle: "Export Inspection Template",
-      UTI: "public.json",
-    });
-    return true;
-  }
-  return false;
 }
 
 function computeImportSummary(templates: TemplateExportTemplate[]): TemplateImportSummary {

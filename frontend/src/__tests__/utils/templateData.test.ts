@@ -20,132 +20,14 @@ jest.mock("expo-document-picker", () => {
   };
 });
 
-jest.mock("expo-sharing", () => {
-  let sharingAvailable = true;
-  return {
-    isAvailableAsync: jest.fn().mockImplementation(async () => sharingAvailable),
-    shareAsync: jest.fn().mockResolvedValue(undefined),
-    __setSharingAvailable: (v: boolean) => { sharingAvailable = v; },
-  };
-});
-
 import { getDatabase } from "@/src/database/db";
 import * as FileSystem from "expo-file-system/legacy";
 import { __setMockResult, __resetPickerState } from "expo-document-picker";
-import { __setSharingAvailable } from "expo-sharing";
 
-declare module "expo-sharing" {
-  export function __setSharingAvailable(v: boolean): void;
+declare module "expo-document-picker" {
+  export function __setMockResult(r: { canceled: boolean; assets?: { uri: string; name?: string }[] }): void;
+  export function __resetPickerState(): void;
 }
-
-describe("exportTemplates", () => {
-  let mockDb: any;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockDb = {
-      getFirstAsync: jest.fn(),
-      getAllAsync: jest.fn(),
-      runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 42, changes: 1 }),
-      withTransactionAsync: jest.fn(),
-    };
-    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
-  });
-
-  it("returns null when no templates exist", async () => {
-    mockDb.getAllAsync.mockResolvedValue([]);
-    const { exportTemplates } = require("@/src/utils/templateData");
-    expect(await exportTemplates()).toBeNull();
-  });
-
-  it("exports all templates with sections, fields, options, device data and summary", async () => {
-    mockDb.getAllAsync
-      .mockResolvedValueOnce([
-        { TemplateID: 1, TemplateName: "Default", Description: "d", IsDefault: 1, IsActive: 1 },
-        { TemplateID: 2, TemplateName: "Custom", Description: null, IsDefault: 0, IsActive: 1 },
-      ])
-      .mockResolvedValueOnce([
-        { SectionID: 1, SectionName: "General", SectionKey: "general", Description: null, Icon: null, DisplayOrder: 1, IsRepeatable: 0, IsVisible: 1 },
-      ])
-      .mockResolvedValueOnce([
-        { FieldID: 1, FieldName: "Voltage", FieldKey: "voltage", FieldType: "text", Placeholder: null, DefaultValue: null, HelpText: null, ValidationRule: null, DisplayOrder: 1, IsRequired: 1, IsVisible: 1, IsReadOnly: 0, IsSystemField: 0, Width: 12 },
-      ])
-      .mockResolvedValueOnce([
-        { OptionLabel: "A", OptionValue: "a", DisplayOrder: 1, IsDefault: 0 },
-      ])
-      .mockResolvedValueOnce([]) // sections for template 2
-      .mockResolvedValueOnce([]) // device types for template 1
-      .mockResolvedValueOnce([]) // device options for template 1
-      .mockResolvedValueOnce([]) // device types for template 2
-      .mockResolvedValueOnce([]) // device options for template 2
-      .mockResolvedValueOnce(["Camera", "Switch", "UPS"]); // projectDeviceTypes
-
-    const { exportTemplates } = require("@/src/utils/templateData");
-    const result = await exportTemplates();
-
-    expect(result).not.toBeNull();
-    expect(result!.fileName).toMatch(/^template_.+\.json$/);
-    expect(result!.summary).toEqual({
-      templateCount: 2,
-      sectionCount: 1,
-      fieldCount: 1,
-      deviceTypeCount: 0,
-      deviceOptionCount: 0,
-    });
-    expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
-
-    const { shareAsync } = require("expo-sharing");
-    expect(shareAsync).not.toHaveBeenCalled();
-  });
-
-  it("writes the v2.0 JSON shape", async () => {
-    mockDb.getAllAsync
-      .mockResolvedValueOnce([{ TemplateID: 1, TemplateName: "Default", Description: null, IsDefault: 1, IsActive: 1 }])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ DeviceType: "Camera" }]);
-
-    const { exportTemplates } = require("@/src/utils/templateData");
-    await exportTemplates();
-
-    const [, json] = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0];
-    const data = JSON.parse(json);
-    expect(data.version).toBe("2.0");
-    expect(data.templates).toHaveLength(1);
-    expect(data.templates[0].TemplateName).toBe("Default");
-    expect(data.templates[0].sections).toEqual([]);
-    expect(data.templates[0].deviceTypes).toEqual([]);
-    expect(data.projectDeviceTypes).toEqual(["Camera"]);
-  });
-});
-
-describe("shareTemplateFile", () => {
-  it("shares the exported file", async () => {
-    __setSharingAvailable(true);
-    const { shareTemplateFile } = require("@/src/utils/templateData");
-    const result = {
-      fileUri: "file:///mock/documents/template_2026-08-01.json",
-      fileName: "template_2026-08-01.json",
-      summary: { templateCount: 1, sectionCount: 0, fieldCount: 0, deviceTypeCount: 0, deviceOptionCount: 0 },
-    };
-    const ok = await shareTemplateFile(result);
-    expect(ok).toBe(true);
-    const { shareAsync } = require("expo-sharing");
-    expect(shareAsync).toHaveBeenCalledWith(result.fileUri, expect.any(Object));
-  });
-
-  it("returns false when sharing is unavailable", async () => {
-    __setSharingAvailable(false);
-    const { shareTemplateFile } = require("@/src/utils/templateData");
-    const result = {
-      fileUri: "file:///mock/documents/template.json",
-      fileName: "template.json",
-      summary: { templateCount: 1, sectionCount: 0, fieldCount: 0, deviceTypeCount: 0, deviceOptionCount: 0 },
-    };
-    expect(await shareTemplateFile(result)).toBe(false);
-  });
-});
 
 function makeValidV2(): any {
   return {

@@ -99,6 +99,18 @@ describe("db.ts DatabaseManager", () => {
     expect(mockOpenDatabaseAsync).toHaveBeenCalledTimes(1);
   });
 
+  it("closeAllDatabases clears the active project", async () => {
+    const mockDb = createMockDb();
+    mockOpenDatabaseAsync.mockResolvedValue(mockDb);
+
+    const dbModule = require("@/src/database/db");
+    await dbModule.setActiveProject("/path/to/project.db");
+    await dbModule.closeAllDatabases();
+
+    const db = await dbModule.getDatabase();
+    expect(mockOpenDatabaseAsync).toHaveBeenLastCalledWith("accc_global.db");
+  });
+
   it("closeAllDatabases is safe with no open handle", async () => {
     const dbModule = require("@/src/database/db");
     await expect(dbModule.closeAllDatabases()).resolves.toBeUndefined();

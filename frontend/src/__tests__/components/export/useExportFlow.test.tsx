@@ -6,21 +6,20 @@ import { useExportFlow, ExportTarget } from "@/src/components/export/useExportFl
 jest.mock("@/src/utils/exportData", () => ({
   createExportFile: jest.fn(),
   openExportFile: jest.fn().mockResolvedValue(true),
-  shareExportFile: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock("@/src/utils/logger", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-const { createExportFile, openExportFile, shareExportFile } = require("@/src/utils/exportData");
+const { createExportFile, openExportFile } = require("@/src/utils/exportData");
 
 type Flow = ReturnType<typeof useExportFlow>;
 
 const target: ExportTarget = { ids: [1, 2] };
 
 function Host({ flowRef }: { flowRef: { current: Flow | null } }) {
-  const flow = useExportFlow(1, "Project");
+  const flow = useExportFlow(1, "Project", { division: "East", inspector: "R" });
   useEffect(() => {
     flowRef.current = flow;
   }, [flow, flowRef]);
@@ -68,7 +67,7 @@ describe("useExportFlow", () => {
       flowRef.current!.runExport("excel");
     });
 
-    expect(createExportFile).toHaveBeenCalledWith(1, "Project", [1, 2], "excel");
+    expect(createExportFile).toHaveBeenCalledWith(1, "Project", [1, 2], "excel", { division: "East", inspector: "R" });
     expect(find(root, "phase")).toBe("success");
     expect(find(root, "fileName")).toBe("report.xlsx");
     expect(find(root, "rows")).toBe(4);
@@ -90,7 +89,7 @@ describe("useExportFlow", () => {
       flowRef.current!.retry();
     });
 
-    expect(createExportFile).toHaveBeenLastCalledWith(1, "Project", [1, 2], "csv");
+    expect(createExportFile).toHaveBeenLastCalledWith(1, "Project", [1, 2], "csv", { division: "East", inspector: "R" });
     expect(find(root, "phase")).toBe("success");
   });
 
@@ -121,7 +120,7 @@ describe("useExportFlow", () => {
     expect(find(root, "phase")).toBe("idle");
   });
 
-  it("opens and shares the exported file from the success phase", async () => {
+  it("opens the exported file from the success phase", async () => {
     const { flowRef } = renderHost();
 
     await act(async () => {
@@ -134,11 +133,6 @@ describe("useExportFlow", () => {
       flowRef.current!.open();
     });
     expect(openExportFile).toHaveBeenCalled();
-
-    await act(async () => {
-      flowRef.current!.share();
-    });
-    expect(shareExportFile).toHaveBeenCalled();
   });
 });
 

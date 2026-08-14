@@ -2,8 +2,8 @@ import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as XLSX from "xlsx";
-import { Platform } from "react-native";
-import { getDatabase, getGlobalDatabase } from "../database/db";
+import { Alert, Platform } from "react-native";
+import { getDatabase } from "../database/db";
 import { INSPECTION_FINAL_STATUSES } from "../database/repositories/InspectionRepository";
 import { getCurrentInspectionDate } from "./date";
 import { ensureRootFolder } from "./storageManager";
@@ -19,6 +19,11 @@ export interface ExportResult {
   inspectionCount: number;
   rowCount: number;
   durationMs: number;
+}
+
+export interface ExportProjectMeta {
+  division: string;
+  inspector: string;
 }
 
 export interface ReportColumn {
@@ -386,21 +391,6 @@ function buildFileName(division: string, projectName: string, inspector: string,
   return `${parts.join("_")}_${stamp}.${ext}`;
 }
 
-async function getProjectExportMeta(
-  projectId: number
-): Promise<{ division: string; inspector: string }> {
-  const db = await getGlobalDatabase();
-  const row = await db.getFirstAsync<{ DivisionName: string | null; InspectorName: string | null }>(
-    `SELECT dv.DivisionName, p.InspectorName
-     FROM Projects p
-     INNER JOIN Districts d ON p.DistrictID = d.DistrictID
-     INNER JOIN Divisions dv ON d.DivisionID = dv.DivisionID
-     WHERE p.ProjectID = ?`,
-    [projectId]
-  );
-  return { division: row?.DivisionName ?? "", inspector: row?.InspectorName ?? "" };
-}
-
 function mimeInfo(format: ExportFormat): { mimeType: string; uti: string } {
   return format === "csv"
     ? { mimeType: "text/csv", uti: "public.comma-separated-values-text" }
@@ -410,14 +400,20 @@ function mimeInfo(format: ExportFormat): { mimeType: string; uti: string } {
       };
 }
 
+function exportLogTag(format: ExportFormat): string {
+  return format === "excel" ? "xlsx" : "csv";
+}
+
 export async function createExportFile(
   projectId: number,
   projectName: string,
   inspectionIds: number[] | null,
-  format: ExportFormat
+  format: ExportFormat,
+  meta?: ExportProjectMeta
 ): Promise<ExportResult | null> {
   const startedAt = Date.now();
-  const { division, inspector } = await getProjectExportMeta(projectId);
+  const division = meta?.division ?? "";
+  const inspector = meta?.inspector ?? "";
   const { table, inspectionCount } = await buildReportTableInternal(
     projectId,
     inspectionIds && inspectionIds.length > 0 ? inspectionIds : undefined
@@ -432,6 +428,7 @@ export async function createExportFile(
   if (format === "csv") {
     fileUri = await downloadStorage.writeUtf8("", fileName, "text/csv", buildCsv(table));
     logger.info("[Storage:csv] path=" + fileUri);
+    logger.info(`[Export:csv] saved=${fileUri}`);
   } else {
     fileUri = await downloadStorage.writeBase64(
       "",
@@ -440,6 +437,7 @@ export async function createExportFile(
       buildExcelBase64(table)
     );
     logger.info("[Storage:excel] path=" + fileUri);
+    logger.info(`[Export:xlsx] saved=${fileUri}`);
   }
 
   return {
@@ -452,7 +450,20 @@ export async function createExportFile(
   };
 }
 
-export async function shareExportFile(result: ExportResult): Promise<boolean> {
+export async function openExportFile(result: ExportResult): Promise<boolean> {
+  if (Platform.OS === "android") {
+    const contentUri = result.fileUri.startsWith("content://")
+      ? result.fileUri
+      : await FileSystem.getContentUriAsync(result.fileUri);
+    const { mimeType } = mimeInfo(result.format);
+    await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
+      data: contentUri,
+      type: mimeType,
+      flags: 1,
+    });
+    logger.info(`[Export:${exportLogTag(result.format)}] openIntent=${contentUri}`);
+    return true;
+  }
   if (!(await Sharing.isAvailableAsync())) return false;
   const { mimeType, uti } = mimeInfo(result.format);
   const dialogTitle =
@@ -463,22 +474,17 @@ export async function shareExportFile(result: ExportResult): Promise<boolean> {
   return true;
 }
 
-export async function openExportFile(result: ExportResult): Promise<boolean> {
-  if (Platform.OS === "android") {
-    const contentUri = await FileSystem.getContentUriAsync(result.fileUri);
-    const { mimeType } = mimeInfo(result.format);
-    await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
-      data: contentUri,
-      type: mimeType,
-      flags: 1,
-    });
-    return true;
-  }
-  return shareExportFile(result);
-}
-
-export async function exportInspections(projectId: number, projectName: string, format: ExportFormat): Promise<boolean> {
-  const result = await createExportFile(projectId, projectName, null, format);
+export async function exportInspections(
+  projectId: number,
+  projectName: string,
+  format: ExportFormat,
+  meta?: ExportProjectMeta
+): Promise<boolean> {
+  const result = await createExportFile(projectId, projectName, null, format, meta);
   if (!result) return false;
-  return shareExportFile(result);
+  Alert.alert(
+    "Export Successful",
+    result.format === "csv" ? "CSV exported successfully" : "Excel exported successfully"
+  );
+  return true;
 }

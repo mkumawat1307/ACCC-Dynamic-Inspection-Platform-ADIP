@@ -16,7 +16,6 @@ interface ExportDialogsProps {
   onCloseError: () => void;
   onCloseSuccess: () => void;
   onOpen: () => void;
-  onShare: () => void;
 }
 
 const FORMAT_META: Record<ExportFormat, { label: string; icon: string; message: string; success: string }> = {
@@ -40,7 +39,6 @@ export default function InspectionExportDialogs({
   onCloseError,
   onCloseSuccess,
   onOpen,
-  onShare,
 }: ExportDialogsProps) {
   const isBulk = formatDialog !== null && formatDialog.ids.length > 1;
 
@@ -99,7 +97,6 @@ export default function InspectionExportDialogs({
         </Dialog.Content>
         <Dialog.Actions>
           <Button icon="folder-open-outline" onPress={onOpen}>Open File</Button>
-          <Button icon="share-variant" onPress={onShare}>Share File</Button>
           <Button onPress={onCloseSuccess}>Close</Button>
         </Dialog.Actions>
       </Dialog>

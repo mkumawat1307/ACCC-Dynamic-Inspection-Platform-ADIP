@@ -5,6 +5,8 @@ import { Appbar, Divider, List, ActivityIndicator, Text } from "react-native-pap
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Project } from "@/src/models/Project";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
+import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { logger } from "@/src/utils/logger";
 import { ParsedTemplateFile } from "@/src/utils/templateData";
 import {
   applyTemplateRestore,
@@ -69,6 +71,28 @@ export default function TemplateBackupScreen() {
   };
 
   const handleRestore = async () => {
+    try {
+      const completed = await InspectionRepository.countFinalInspections();
+      if (completed > 0) {
+        logger.info(`[TemplateRestore] blockedCompletedInspections=${completed}`);
+        Alert.alert(
+          "Restore Blocked",
+          "Template restore is blocked because this project contains completed inspections. Create a new project if you need a different template."
+        );
+        return;
+      }
+    } catch (error) {
+      logger.error("Restore check error:", error);
+      Alert.alert("Restore Blocked", "Unable to verify project inspections before restoring templates.");
+      return;
+    }
+    Alert.alert("Select JSON file", "Pick a template (.json) backup file to restore from.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Select", onPress: () => void pickAndRestore() },
+    ]);
+  };
+
+  const pickAndRestore = async () => {
     setBusy("restore");
     try {
       const step = await restoreTemplatesFromFile();
