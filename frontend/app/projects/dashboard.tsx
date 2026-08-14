@@ -191,7 +191,15 @@ export default function ProjectDashboard() {
                 title="Settings"
                 subtitle="Templates, Sections and Fields"
                 icon="cog"
-                onPress={() => router.push("/settings")}
+                onPress={() =>
+                  router.push({
+                    pathname: "/settings",
+                    params: {
+                      projectId: project.ProjectID.toString(),
+                      projectData: JSON.stringify(project),
+                    },
+                  })
+                }
               />
             </View>
             <View style={styles.actionHalf}>

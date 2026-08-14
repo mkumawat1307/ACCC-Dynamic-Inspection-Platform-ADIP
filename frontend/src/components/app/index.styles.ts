@@ -11,6 +11,14 @@ export const styles = StyleSheet.create({
     marginBottom: 25,
     fontWeight: "bold",
   },
+  topRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
+  },
+  topBtn: {
+    flex: 1,
+  },
   button: {
     marginBottom: 20,
   },

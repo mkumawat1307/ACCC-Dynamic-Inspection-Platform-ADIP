@@ -192,14 +192,25 @@ export default function HomeScreen() {
         ACCC Dynamic Inspection Platform
       </Text>
 
-      <Button
-        mode="contained"
-        icon="plus"
-        style={styles.button}
-        onPress={() => router.push("/projects/new")}
-      >
-        New Project
-      </Button>
+      <View style={styles.topRow}>
+        <Button
+          mode="contained"
+          icon="plus"
+          style={styles.topBtn}
+          onPress={() => router.push("/projects/new")}
+        >
+          New Project
+        </Button>
+
+        <Button
+          mode="outlined"
+          icon="database"
+          style={styles.topBtn}
+          onPress={() => router.push("/database")}
+        >
+          Database
+        </Button>
+      </View>
 
       <Searchbar
         placeholder="Search Project, District, Division, Inspector or Client..."

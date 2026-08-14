@@ -181,6 +181,7 @@ describe("BackupManager backupNow", () => {
   it("writes the backup zip straight to Download/ACCC Dynamic Inspection without a folder picker", async () => {
     seedGlobalDb("GLOBAL");
     seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
+    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await BackupManager.backupNow();
 
@@ -192,6 +193,9 @@ describe("BackupManager backupNow", () => {
       expect.any(String)
     );
     expect(downloadStorage.ensureFolder).toHaveBeenCalledWith("");
+    expect(logSpy).toHaveBeenCalledWith("[Backup] start");
+    expect(logSpy).toHaveBeenCalledWith("[Backup] success");
+    logSpy.mockRestore();
   });
 
   it("includes global DB sidecars when present", async () => {
@@ -442,6 +446,7 @@ describe("BackupManager restoreBackupFromUri", () => {
     expect(logSpy).toHaveBeenCalledWith("[Import] cacheExists=true");
     expect(logSpy).toHaveBeenCalledWith("[Import] restoreStart");
     expect(logSpy).toHaveBeenCalledWith("[Import] restoreSuccess");
+    expect(logSpy).toHaveBeenCalledWith("[Restore] success");
 
     const globalB64 = await FileSystem.readAsStringAsync(`${DOC}SQLite/accc_global.db`, {
       encoding: FileSystem.EncodingType.Base64,

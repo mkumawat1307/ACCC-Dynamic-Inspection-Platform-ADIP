@@ -1,30 +1,32 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { logger } from "@/src/utils/logger";
-import { ScrollView, StyleSheet, Alert } from "react-native";
+import { ScrollView, StyleSheet, Alert, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
-import { useRouter } from "expo-router";
-import * as DocumentPicker from "expo-document-picker";
-import { useTemplateFlow } from "@/src/components/template/useTemplateFlow";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { getDatabase } from "@/src/database/db";
-import { backupNow, findBackupFile, restoreBackup, restoreBackupFromUri } from "@/src/database/helpers/BackupManager";
-import { buildBackupDisplayPath } from "@/src/utils/backupZip";
-import TemplateExportDialogs from "@/src/components/app/settings/components/TemplateExportDialogs";
-import TemplateImportDialogs from "@/src/components/app/settings/components/TemplateImportDialogs";
-import { ensureRootFolder } from "@/src/utils/storageManager";
+import { Project } from "@/src/models/Project";
 
 export default function SettingsScreen() {
+  const { projectData: projectDataJson } = useLocalSearchParams<{
+    projectId?: string;
+    projectData?: string;
+  }>();
   const router = useRouter();
   const [resetting, setResetting] = useState(false);
-  const [backupBusy, setBackupBusy] = useState(false);
-  const flow = useTemplateFlow();
 
-  useEffect(() => {
-    // Auto-create Download/ACCC Dynamic Inspection when the Database screen opens.
-    ensureRootFolder().catch((e) =>
-      logger.error("[Storage] settingsScreen ensureRootFolder failed:", e)
-    );
-  }, []);
+  const project = useMemo<Project | null>(() => {
+    if (!projectDataJson) return null;
+    try {
+      return JSON.parse(projectDataJson) as Project;
+    } catch {
+      return null;
+    }
+  }, [projectDataJson]);
+
+  const settingsParams = project
+    ? { projectId: project.ProjectID.toString(), projectData: JSON.stringify(project) }
+    : undefined;
 
   const handleResetToDefault = () => {
     Alert.alert(
@@ -52,19 +54,16 @@ export default function SettingsScreen() {
       const db = await getDatabase();
 
       await db.withTransactionAsync(async () => {
-        // 1. Deactivate all non-default sections
         await db.runAsync(`
           UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
           WHERE IsDefault = 0
         `);
 
-        // 2. Reactivate default sections
         await db.runAsync(`
           UPDATE InspectionSections SET IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
           WHERE IsDefault = 1
         `);
 
-        // 3. Deactivate all non-default fields (fields not in original seed)
         const defaultKeys = [
           "date", "division", "district", "block", "inspector_name", "pole_id", "location", "gps",
           "foundation_cond", "pole_avail", "pole_si", "pole_status",
@@ -82,14 +81,12 @@ export default function SettingsScreen() {
           defaultKeys
         );
 
-        // 4. Reactivate default fields
         await db.runAsync(
           `UPDATE InspectionFields SET IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
            WHERE FieldKey IN (${placeholders})`,
           defaultKeys
         );
 
-        // 5. Delete custom device types (only keep Camera and Switch)
         await db.runAsync(`
           UPDATE DeviceFieldDefinitions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
           WHERE DeviceType NOT IN ('Camera', 'Switch')
@@ -99,7 +96,6 @@ export default function SettingsScreen() {
           WHERE DeviceType IN ('Camera', 'Switch')
         `);
 
-        // 6. Delete custom device options
         await db.runAsync(`
           UPDATE DeviceOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
           WHERE DeviceType NOT IN ('Camera', 'Switch')
@@ -109,20 +105,17 @@ export default function SettingsScreen() {
           WHERE DeviceType IN ('Camera', 'Switch')
         `);
 
-        // 7. Remove all project device type mappings for custom types
         await db.runAsync(`
           DELETE FROM ProjectDeviceTypes
           WHERE DeviceType NOT IN ('Camera', 'Switch')
         `);
 
-        // 8. Deactivate custom sections from device types (e.g., nvr_information)
         await db.runAsync(`
           UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
           WHERE SectionKey LIKE '%_information'
           AND SectionKey NOT IN ('general_information', 'camera_information', 'switch_information')
         `);
 
-        // 9. Deactivate custom count fields
         await db.runAsync(`
           UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
           WHERE FieldKey LIKE '%_count'
@@ -139,153 +132,26 @@ export default function SettingsScreen() {
     }
   };
 
-  const errorFlow = React.useRef<"export" | "import" | null>(null);
-
-  const exporting = flow.state.phase === "exporting";
-  const parsing = flow.state.phase === "parsing";
-  const importing = flow.state.phase === "importing";
-  const busy = flow.busy;
-
-  const exportResult = flow.state.phase === "exported" ? flow.state.result : null;
-  const confirming = flow.state.phase === "confirming" ? flow.state.parsed : null;
-  const importedMessage = flow.state.phase === "imported" ? flow.state.message : null;
-  const errorMessage = flow.state.phase === "error" ? flow.state.message : null;
-  const exportError = errorFlow.current === "export" ? errorMessage : null;
-  const importError = errorFlow.current === "import" ? errorMessage : null;
-
-  const handleBeginExport = () => {
-    errorFlow.current = "export";
-    void flow.beginExport();
-  };
-
-  const handleBeginImport = () => {
-    errorFlow.current = "import";
-    void flow.beginImport();
-  };
-
-  const handleBackupNow = async () => {
-    setBackupBusy(true);
-    try {
-      const result = await backupNow();
-      if (result.ok) {
-        Alert.alert("Backup Created", `Backup saved to:\n${buildBackupDisplayPath()}`);
-      } else {
-        Alert.alert("Backup Failed", result.message);
-      }
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
-  const handleRestoreLatest = async () => {
-    setBackupBusy(true);
-    try {
-      const fileUri = await findBackupFile();
-      if (!fileUri) {
-        logger.info("[Import] restoreLatestMissing");
-        Alert.alert(
-          "No Backup Found",
-          `No backup was found at:\n${buildBackupDisplayPath()}\n\nChoose a backup file to restore instead.`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Choose File",
-              onPress: () => {
-                void handleRestoreFromFile();
-              },
-            },
-          ]
-        );
-        return;
-      }
-      logger.info("[Import] restoreLatestFound=" + fileUri);
-      Alert.alert(
-        "Restore Latest Backup?",
-        `Replace all current data with the latest backup at:\n${buildBackupDisplayPath()}`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Restore",
-            style: "destructive",
-            onPress: () => {
-              void (async () => {
-                setBackupBusy(true);
-                try {
-                  logger.info("[Import] restoreLatestStart");
-                  const result = await restoreBackup(async () => true);
-                  if (result.ok) {
-                    logger.info("[Import] restoreLatestSuccess");
-                    Alert.alert("Restore Completed", result.message);
-                    router.replace("/");
-                  } else {
-                    logger.info("[Import] restoreLatestFailed=" + result.message);
-                    Alert.alert("Restore Failed", result.message);
-                  }
-                } catch (e) {
-                  logger.info("[Import] restoreLatestFailed=" + String(e));
-                  Alert.alert("Restore Failed", String(e));
-                } finally {
-                  setBackupBusy(false);
-                }
-              })();
-            },
-          },
-        ]
-      );
-    } catch (e) {
-      logger.info("[Import] restoreLatestFailed=" + String(e));
-      Alert.alert("Restore Failed", String(e));
-    } finally {
-      setBackupBusy(false);
-    }
-  };
-
-  const handleRestoreFromFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/zip", "application/octet-stream"],
-        copyToCacheDirectory: false,
-      });
-      if (result.canceled || !result.assets?.length) return;
-      const selectedUri = result.assets[0].uri;
-      const fileName = result.assets[0].name;
-      Alert.alert(
-        "Restore Backup?",
-        `Replace all current data with the selected file "${fileName}"?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Restore",
-            style: "destructive",
-            onPress: () => {
-              void (async () => {
-                setBackupBusy(true);
-                try {
-                  const restoreResult = await restoreBackupFromUri(selectedUri, async () => true);
-                  Alert.alert(restoreResult.ok ? "Restore Completed" : "Restore Failed", restoreResult.message);
-                  if (restoreResult.ok) router.replace("/");
-                } finally {
-                  setBackupBusy(false);
-                }
-              })();
-            },
-          },
-        ]
-      );
-    } catch (e) {
-      Alert.alert("Restore Failed", String(e));
-    }
-  };
+  if (!project || !settingsParams) {
+    return (
+      <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+        <Appbar.Header>
+          <Appbar.BackAction onPress={() => router.back()} />
+          <Appbar.Content title="Project Settings" />
+        </Appbar.Header>
+        <Text style={styles.guard}>Open a project to access settings.</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={() => router.back()} />
-        <Appbar.Content title="Inspection Settings" />
+        <Appbar.Content title="Project Settings" />
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.content}>
-
         <List.Section>
           <List.Subheader>Inspection Form</List.Subheader>
 
@@ -300,23 +166,16 @@ export default function SettingsScreen() {
           <Divider />
 
           <List.Item
-            title="Export Template"
-            description="Export inspection template with sections, fields and options as JSON file"
-            left={(props) => <List.Icon {...props} icon="file-export" />}
-            right={(props) => (busy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={handleBeginExport}
-            disabled={busy}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Import Template"
-            description="Import inspection template from a JSON file"
-            left={(props) => <List.Icon {...props} icon="file-import" />}
-            right={(props) => (busy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={handleBeginImport}
-            disabled={busy}
+            title="Template Backup & Restore"
+            description="Back up or restore the inspection form as a JSON file"
+            left={(props) => <List.Icon {...props} icon="file-cog" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() =>
+              router.push({
+                pathname: "/settings/template-backup",
+                params: settingsParams,
+              })
+            }
           />
         </List.Section>
 
@@ -333,37 +192,24 @@ export default function SettingsScreen() {
         </List.Section>
 
         <List.Section>
-          <List.Subheader>Backup & Restore</List.Subheader>
+          <List.Subheader>General</List.Subheader>
 
           <List.Item
-            title="Backup Now"
-            description={`Export all data to ${buildBackupDisplayPath()}`}
-            left={(props) => <List.Icon {...props} icon="database-export" />}
-            right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={handleBackupNow}
-            disabled={backupBusy}
+            title="Appearance"
+            description="Theme settings"
+            left={(props) => <List.Icon {...props} icon="theme-light-dark" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => router.push("/settings/appearance")}
           />
 
           <Divider />
 
           <List.Item
-            title="Restore Latest Backup"
-            description="Restore from the latest saved backup"
-            left={(props) => <List.Icon {...props} icon="database-import" />}
-            right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={() => { void handleRestoreLatest(); }}
-            disabled={backupBusy}
-          />
-
-          <Divider />
-
-          <List.Item
-            title="Choose Backup File…"
-            description="Pick a backup file (.zip) and restore from it"
-            left={(props) => <List.Icon {...props} icon="file-restore" />}
-            right={(props) => (backupBusy ? <ActivityIndicator size={20} /> : <List.Icon {...props} icon="chevron-right" />)}
-            onPress={() => { void handleRestoreFromFile(); }}
-            disabled={backupBusy}
+            title="About"
+            description="App version and information"
+            left={(props) => <List.Icon {...props} icon="information-outline" />}
+            right={(props) => <List.Icon {...props} icon="chevron-right" />}
+            onPress={() => router.push("/settings/about")}
           />
         </List.Section>
 
@@ -380,30 +226,7 @@ export default function SettingsScreen() {
             titleStyle={{ color: "#D32F2F" }}
           />
         </List.Section>
-
       </ScrollView>
-
-      <TemplateExportDialogs
-        exporting={exporting}
-        result={exportResult}
-        errorMessage={exportError}
-        onShare={() => { void flow.shareExported(); }}
-        onCloseSuccess={flow.dismissExport}
-        onRetry={() => { void flow.retry(); }}
-        onCloseError={flow.dismissError}
-      />
-      <TemplateImportDialogs
-        parsing={parsing}
-        confirming={confirming}
-        importing={importing}
-        importedMessage={importedMessage}
-        errorMessage={importError}
-        onConfirm={() => { void flow.confirmImport(); }}
-        onCancel={flow.cancelImport}
-        onCloseSuccess={flow.dismissImport}
-        onRetry={() => { void flow.retry(); }}
-        onCloseError={flow.dismissError}
-      />
     </SafeAreaView>
   );
 }
@@ -416,5 +239,9 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: 30,
   },
+  guard: {
+    textAlign: "center",
+    marginTop: 40,
+    color: "#666",
+  },
 });
-

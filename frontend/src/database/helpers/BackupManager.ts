@@ -61,12 +61,14 @@ async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
 
 export async function backupNow(): Promise<BackupResult> {
   try {
+    logger.info("[Backup] start");
     await ensureRootFolder();
     const files = await collectDbFiles();
     const zip = await zipBase64(files);
     const fileUri = await downloadStorage.writeBase64("", BACKUP_FILE_NAME, "application/zip", zip);
     logger.info("[Storage:backup] path=" + fileUri);
     logger.info(`[BackupManager] Backup created at ${buildBackupDisplayPath()}`);
+    logger.info("[Backup] success");
     return { ok: true, message: "Backup created", path: buildBackupDisplayPath() };
   } catch (e) {
     logger.error("[BackupManager] backupNow failed:", e);
@@ -199,9 +201,11 @@ export async function restoreBackupFromUri(
     await restoreEntries(entries);
 
     logger.info("[Import] restoreSuccess");
+    logger.info("[Restore] success");
     return { ok: true, message: "Restore completed. Reloading data." };
   } catch (e) {
     logger.info("[Import] restoreFailed=" + String(e));
+    logger.info("[Restore] failed=" + String(e));
     return { ok: false, message: String(e) };
   }
 }

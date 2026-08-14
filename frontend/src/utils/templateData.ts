@@ -98,7 +98,10 @@ export interface ParsedTemplateFile {
   summary: TemplateImportSummary;
 }
 
-export async function exportTemplates(): Promise<TemplateExportResult | null> {
+export async function buildTemplateExportData(): Promise<{
+  data: TemplateExportData;
+  summary: TemplateImportSummary;
+} | null> {
   const db = await getDatabase();
 
   const templates = await db.getAllAsync<{
@@ -260,7 +263,23 @@ export async function exportTemplates(): Promise<TemplateExportResult | null> {
     projectDeviceTypes,
   };
 
-  const json = JSON.stringify(exportData, null, 2);
+  return {
+    data: exportData,
+    summary: {
+      templateCount: activeTemplates.length,
+      sectionCount,
+      fieldCount,
+      deviceTypeCount,
+      deviceOptionCount,
+    },
+  };
+}
+
+export async function exportTemplates(): Promise<TemplateExportResult | null> {
+  const built = await buildTemplateExportData();
+  if (!built) return null;
+
+  const json = JSON.stringify(built.data, null, 2);
   const fileName = `template_${new Date().toISOString().slice(0, 10)}.json`;
   const fileUri = FileSystem.documentDirectory + fileName;
 
@@ -271,13 +290,7 @@ export async function exportTemplates(): Promise<TemplateExportResult | null> {
   return {
     fileUri,
     fileName,
-    summary: {
-      templateCount: activeTemplates.length,
-      sectionCount,
-      fieldCount,
-      deviceTypeCount,
-      deviceOptionCount,
-    },
+    summary: built.summary,
   };
 }
 
@@ -318,7 +331,7 @@ function computeImportSummary(templates: TemplateExportTemplate[]): TemplateImpo
 export async function pickAndParseTemplate(): Promise<
   | { status: "canceled" }
   | { status: "error"; message: string }
-  | { status: "ready"; parsed: ParsedTemplateFile }
+  | { status: "ready"; parsed: ParsedTemplateFile; fileName: string }
 > {
   const result = await DocumentPicker.getDocumentAsync({
     type: "application/json",
@@ -329,7 +342,10 @@ export async function pickAndParseTemplate(): Promise<
     return { status: "canceled" };
   }
 
-  const fileUri = result.assets[0].uri;
+  const asset = result.assets[0];
+  const fileUri = asset.uri;
+  const fileName = asset.name ?? fileUri;
+  logger.info("[TemplateRestore] fileSelected=" + fileName);
   const content = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.UTF8,
   });
@@ -416,7 +432,7 @@ export async function pickAndParseTemplate(): Promise<
     projectDeviceTypes,
   };
 
-  return { status: "ready", parsed: { data, summary: computeImportSummary(templates) } };
+  return { status: "ready", parsed: { data, summary: computeImportSummary(templates) }, fileName };
 }
 
 export async function applyTemplateImport(data: TemplateExportData): Promise<{ success: boolean; message: string }> {
