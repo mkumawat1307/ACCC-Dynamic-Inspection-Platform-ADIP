@@ -19,6 +19,7 @@ export interface DownloadStorageNative {
   readBase64(uri: string): Promise<string>;
   deleteFile(uri: string): Promise<boolean>;
   findFile(relativePath: string, fileName: string): Promise<string | null>;
+  renameFile(uri: string, newFileName: string): Promise<string | null>;
 }
 
 let nativeModule: DownloadStorageNative | null = null;

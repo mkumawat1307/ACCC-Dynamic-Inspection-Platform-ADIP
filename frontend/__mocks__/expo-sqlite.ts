@@ -15,6 +15,7 @@ const PRIMARY_KEYS: Record<string, string> = {
   DeviceOptions: "OptionID",
   DeviceFieldDefinitions: "FieldDefID",
   ProjectDeviceTypes: "ID",
+  InspectionPoleIdHistory: "HistoryID",
   InspectionTemplates: "TemplateID",
   InspectionSections: "SectionID",
   InspectionFields: "FieldID",

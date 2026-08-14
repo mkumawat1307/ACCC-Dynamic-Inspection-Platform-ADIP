@@ -136,3 +136,22 @@ export function generateFileName(
 
   return `${cleanDistrict}_${cleanBlock}_${cleanPole}_${day}${month}${year}_${time}.jpg`;
 }
+
+export function cleanPoleToken(pole: string): string {
+  return (pole || "NA").replace(/[^a-zA-Z0-9]/g, "").substring(0, 20);
+}
+
+export function renamePoleTokenInFileName(
+  fileName: string,
+  oldPoleId: string,
+  newPoleId: string
+): string | null {
+  const oldToken = cleanPoleToken(oldPoleId);
+  if (!oldToken || oldToken === "NA") return null;
+  const parts = fileName.split("_");
+  const index = parts.findIndex((part) => part === oldToken);
+  if (index === -1) return null;
+  const newToken = cleanPoleToken(newPoleId) || "NA";
+  parts[index] = newToken;
+  return parts.join("_");
+}

@@ -6,6 +6,8 @@ import {
   formatLatLngWM,
   generateFileName,
   validatePhotosForSave,
+  cleanPoleToken,
+  renamePoleTokenInFileName,
 } from "@/src/components/inspection/photoUtils";
 import { Photo } from "@/src/models/Photo";
 
@@ -154,6 +156,75 @@ describe("generateFileName", () => {
     const long = "A".repeat(30);
     const result = generateFileName(long, "BlockA", "P001", "2024-06-15T10:30:00");
     expect(result).toMatch(new RegExp(`^A{20}_BlockA_P001_`));
+  });
+});
+
+describe("cleanPoleToken", () => {
+  it("keeps alphanumeric characters only", () => {
+    expect(cleanPoleToken("SIK-001/A")).toBe("SIK001A");
+  });
+
+  it("defaults to NA for empty input", () => {
+    expect(cleanPoleToken("")).toBe("NA");
+  });
+
+  it("defaults to NA for null input", () => {
+    expect(cleanPoleToken(null as unknown as string)).toBe("NA");
+  });
+
+  it("truncates to 20 characters", () => {
+    expect(cleanPoleToken("A".repeat(30))).toBe("A".repeat(20));
+  });
+});
+
+describe("renamePoleTokenInFileName", () => {
+  const fileName = "Sikar_SIK001_14AUG2026_112948.jpg";
+
+  it("replaces the old pole token in the middle of the filename", () => {
+    expect(renamePoleTokenInFileName(fileName, "SIK001", "SIK101")).toBe(
+      "Sikar_SIK101_14AUG2026_112948.jpg"
+    );
+  });
+
+  it("preserves extension, date and time tokens", () => {
+    const result = renamePoleTokenInFileName(fileName, "SIK001", "SIK101");
+    expect(result).toMatch(/^Sikar_SIK101_14AUG2026_112948\.jpg$/);
+  });
+
+  it("matches the old token after cleaning special characters", () => {
+    expect(renamePoleTokenInFileName(fileName, "SIK-001", "SIK101")).toBe(
+      "Sikar_SIK101_14AUG2026_112948.jpg"
+    );
+  });
+
+  it("cleans the new token before inserting it", () => {
+    expect(renamePoleTokenInFileName(fileName, "SIK001", "SIK-101/A")).toBe(
+      "Sikar_SIK101A_14AUG2026_112948.jpg"
+    );
+  });
+
+  it("returns null when the old token is not present", () => {
+    expect(renamePoleTokenInFileName(fileName, "ZZZ999", "SIK101")).toBeNull();
+  });
+
+  it("returns null when the old token is NA", () => {
+    expect(renamePoleTokenInFileName("Sikar_NA_14AUG2026_112948.jpg", "NA", "SIK101")).toBeNull();
+  });
+
+  it("returns null for an empty old pole id", () => {
+    expect(renamePoleTokenInFileName(fileName, "", "SIK101")).toBeNull();
+  });
+
+  it("uses NA when the new pole cleans to empty", () => {
+    expect(renamePoleTokenInFileName(fileName, "SIK001", "!!!")).toBe(
+      "Sikar_NA_14AUG2026_112948.jpg"
+    );
+  });
+
+  it("handles the user's example format with a project segment", () => {
+    expect(renamePoleTokenInFileName("Sikar_Project_OLDID_112948.jpg", "OLDID", "NEWID")).toBe(
+      "Sikar_Project_NEWID_112948.jpg"
+    );
   });
 });
 

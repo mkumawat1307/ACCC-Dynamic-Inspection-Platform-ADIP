@@ -49,6 +49,10 @@ class DownloadStorageModule : Module() {
     AsyncFunction("findFile") { relativePath: String, fileName: String ->
       findFile(relativePath, fileName)
     }
+
+    AsyncFunction("renameFile") { uri: String, newFileName: String ->
+      renameFile(uri, newFileName)
+    }
   }
 
   private val context: Context
@@ -287,6 +291,44 @@ class DownloadStorageModule : Module() {
     }
     val file = File(legacyDir(relativePath), fileName)
     return if (file.exists()) Uri.fromFile(file).toString() else null
+  }
+
+  /**
+   * Renames an existing file in place. Returns the resulting URI, or null when
+   * the file does not exist (the caller decides to skip). Never re-encodes the
+   * bytes, so watermark pixels and GPS metadata are preserved.
+   */
+  private fun renameFile(uri: String, newFileName: String): String? {
+    val parsed = Uri.parse(uri)
+    if (parsed.scheme == "content") {
+      val resolver = context.contentResolver
+      val exists = resolver.query(parsed, arrayOf(MediaStore.Downloads._ID), null, null, null)
+        ?.use { cursor -> cursor.moveToFirst() } ?: false
+      if (!exists) {
+        nativeLog("renameNotFound uri=$uri")
+        return null
+      }
+      val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, newFileName)
+      }
+      val updated = resolver.update(parsed, values, null, null)
+      if (updated <= 0) {
+        throw IllegalStateException("Failed to rename MediaStore entry $uri")
+      }
+      nativeLog("renameSuccess uri=$uri")
+      return parsed.toString()
+    }
+    val file = File(parsed.path ?: return null)
+    if (!file.exists()) {
+      nativeLog("renameNotFound path=${file.path}")
+      return null
+    }
+    val renamed = File(file.parentFile, newFileName)
+    if (!file.renameTo(renamed)) {
+      throw IllegalStateException("Failed to rename ${file.path}")
+    }
+    nativeLog("renameSuccess path=${renamed.path}")
+    return Uri.fromFile(renamed).toString()
   }
 
   private companion object {

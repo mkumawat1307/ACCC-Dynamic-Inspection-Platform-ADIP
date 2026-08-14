@@ -275,4 +275,41 @@ describe("Cross-project data isolation", () => {
     );
     expect(valuesInB).toEqual([]);
   });
+
+  it("does not leak a pole ID rename history row into another project", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { db: dbA } = await openProject(PROJECT_A);
+
+    const insp = await dbA.runAsync(
+      `INSERT INTO Inspections (ProjectID, DistrictID, PoleID, InspectionDate, Status) VALUES (?, ?, ?, ?, ?)`,
+      [1, 1, "SIK001", "2026-08-02", "Draft"]
+    );
+    const inspId = insp.lastInsertRowId as number;
+
+    await dbA.runAsync(
+      `INSERT INTO InspectionPoleIdHistory (InspectionID, OldPoleId, NewPoleId) VALUES (?, ?, ?)`,
+      [inspId, "SIK001", "SIK101"]
+    );
+
+    const historyInA = await dbA.getAllAsync<{ NewPoleId: string }>(
+      "SELECT NewPoleId FROM InspectionPoleIdHistory WHERE InspectionID = ?",
+      [inspId]
+    );
+    expect(historyInA).toEqual([{ NewPoleId: "SIK101" }]);
+
+    await dbModule.clearActiveProject();
+
+    const { db: dbB } = await openProject(PROJECT_B);
+
+    const historyInB = await dbB.getAllAsync<{ NewPoleId: string }>(
+      "SELECT NewPoleId FROM InspectionPoleIdHistory"
+    );
+    expect(historyInB).toEqual([]);
+
+    const historyInAAfter = await dbA.getAllAsync<{ NewPoleId: string }>(
+      "SELECT NewPoleId FROM InspectionPoleIdHistory WHERE InspectionID = ?",
+      [inspId]
+    );
+    expect(historyInAAfter).toEqual([{ NewPoleId: "SIK101" }]);
+  });
 });

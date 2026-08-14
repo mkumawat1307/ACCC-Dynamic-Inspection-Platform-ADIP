@@ -13,6 +13,10 @@ import { InspectionRepository } from "@/src/database/repositories/InspectionRepo
 import { InspectionField } from "@/src/database/repositories/InspectionTypes";
 import { getCurrentLocation } from "@/src/utils/location";
 import { reverseGeocode } from "@/src/utils/geo";
+import PhotoRepository from "@/src/database/repositories/PhotoRepository";
+import { PoleRenameService } from "@/src/database/repositories/PoleRenameService";
+import { cleanPoleToken } from "./photoUtils";
+import PoleRenameConfirmDialog from "./PoleRenameConfirmDialog";
 
 const GeneralInformation = forwardRef((_props, ref) => {
 const {
@@ -21,6 +25,7 @@ const {
   inspectionId,
   setInspectionId,
   setPoleId,
+  getPhotoStates,
 } = useInspection();
 
 const [fields, setFields] = useState<InspectionField[]>([]);
@@ -29,6 +34,11 @@ const [values, setValues] = useState<Record<string, string>>({});
 const [formUnlocked, setFormUnlocked] = useState(false);
 const [checkingPoleId, setCheckingPoleId] = useState(false);
 const [locationResolving, setLocationResolving] = useState(false);
+const [pendingRename, setPendingRename] = useState<{
+  oldPoleId: string;
+  newPoleId: string;
+  photoCount: number;
+} | null>(null);
 const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -218,6 +228,52 @@ function isReadOnly(fieldKey: string) {
   return fieldKey === "gps";
 }
 
+async function handlePoleIdSave(
+  inspectionId: number,
+  fieldId: number,
+  text: string
+) {
+  const trimmed = text.trim();
+  const current = await InspectionRepository.getInspectionPoleId(inspectionId);
+
+  if (trimmed === "" || cleanPoleToken(trimmed) === cleanPoleToken(current)) {
+    await InspectionRepository.saveFieldValue(inspectionId, fieldId, trimmed);
+    if (trimmed !== current) {
+      await InspectionRepository.updateInspectionPoleId(inspectionId, trimmed);
+    }
+    return;
+  }
+
+  const photos = await PhotoRepository.getByInspection(inspectionId);
+  const states = getPhotoStates();
+  const processing = photos.some(
+    (photo) =>
+      photo.PhotoID != null &&
+      ["pending", "processing", "failed"].includes(states[photo.PhotoID])
+  );
+
+  if (processing) {
+    Alert.alert(
+      "Rename Blocked",
+      "Wait for all photos to finish processing before changing the Site ID."
+    );
+    revertPoleId(current);
+    return;
+  }
+
+  setPendingRename({
+    oldPoleId: current,
+    newPoleId: trimmed,
+    photoCount: photos.length,
+  });
+}
+
+function revertPoleId(value: string) {
+  setValues((prev) => ({ ...prev, pole_id: value }));
+  setPoleId(value);
+  setFormUnlocked(value.trim().length > 0);
+}
+
 useImperativeHandle(ref, () => ({
   getPoleId() {
     return values.pole_id?.trim() ?? "";
@@ -331,18 +387,20 @@ return (
             saveTimeout.current = setTimeout(async () => {
               if (!currentInspectionId) return;
 
+              if (field.FieldKey === "pole_id") {
+                await handlePoleIdSave(
+                  currentInspectionId,
+                  field.FieldID,
+                  text
+                );
+                return;
+              }
+
               await InspectionRepository.saveFieldValue(
                 currentInspectionId,
                 field.FieldID,
                 text
               );
-
-              if (field.FieldKey === "pole_id") {
-                await InspectionRepository.updateInspectionPoleId(
-                  currentInspectionId,
-                  text
-                );
-              }
             }, 500);
           }}
         />
@@ -391,6 +449,38 @@ return (
         )}
       </React.Fragment>
     ))}
+    <PoleRenameConfirmDialog
+      visible={pendingRename !== null}
+      oldPoleId={pendingRename?.oldPoleId ?? ""}
+      newPoleId={pendingRename?.newPoleId ?? ""}
+      photoCount={pendingRename?.photoCount ?? 0}
+      onCancel={() => {
+        if (pendingRename) {
+          revertPoleId(pendingRename.oldPoleId);
+        }
+        setPendingRename(null);
+      }}
+      onConfirm={async (renameFiles, updateReports) => {
+        if (!pendingRename || !inspectionId) return;
+        const { oldPoleId, newPoleId } = pendingRename;
+        setPendingRename(null);
+        try {
+          await PoleRenameService.renamePoleId(
+            inspectionId,
+            oldPoleId,
+            newPoleId,
+            { renameFiles, updateReports }
+          );
+        } catch (error) {
+          logger.error("[PoleRename] rename error:", error);
+          Alert.alert(
+            "Rename Failed",
+            "Could not rename the Site ID. Original files and records were kept."
+          );
+          revertPoleId(oldPoleId);
+        }
+      }}
+    />
   </View>
 );
 });

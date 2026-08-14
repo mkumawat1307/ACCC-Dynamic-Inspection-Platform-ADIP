@@ -113,6 +113,15 @@ describe("schema.ts schema functions", () => {
     expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
   });
 
+  it("createProjectSchema creates the InspectionPoleIdHistory table", async () => {
+    const { createProjectSchema } = require("@/src/database/schema");
+    const { createInspectionPoleIdHistoryTable } = require("@/src/database/tables/inspection-pole-id-history.table");
+
+    await createProjectSchema();
+
+    expect(mockExecAsync).toHaveBeenCalledWith(createInspectionPoleIdHistoryTable);
+  });
+
   it("migrateProjectSchema creates DashboardCards table even when remarks section already exists", async () => {
     mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
 
@@ -125,6 +134,17 @@ describe("schema.ts schema functions", () => {
     expect(mockRunAsync).toHaveBeenCalledWith("UPDATE DashboardCards SET ProjectID = ?", [1]);
     expect(mockExecAsync).toHaveBeenCalledWith(createDashboardCardsTable);
     expect(DashboardCardRepository.ensureDefaultCards).toHaveBeenCalledWith(1);
+  });
+
+  it("migrateProjectSchema creates the InspectionPoleIdHistory table idempotently", async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ SectionID: 99 });
+
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    const { createInspectionPoleIdHistoryTable } = require("@/src/database/tables/inspection-pole-id-history.table");
+
+    await migrateProjectSchema(1);
+
+    expect(mockExecAsync).toHaveBeenCalledWith(createInspectionPoleIdHistoryTable);
   });
 
   it("migrateProjectSchema creates DashboardCards table when categorization section is missing", async () => {

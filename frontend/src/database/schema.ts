@@ -18,6 +18,7 @@ import { createRepeatableValuesTable } from "./tables/repeatable-values.table";
 import { createCamerasTable } from "./tables/cameras.table";
 import { createSwitchesTable } from "./tables/switches.table";
 import { createPhotosTable } from "./tables/photos.table";
+import { createInspectionPoleIdHistoryTable } from "./tables/inspection-pole-id-history.table";
 import { createDeviceRecordsTable } from "./tables/device-records.table";
 import { createDashboardCardsTable } from "./tables/dashboard-cards.table";
 
@@ -141,6 +142,9 @@ export async function createProjectSchema() {
 
     logger.debug("[schema] Creating photos table...");
     await db.execAsync(createPhotosTable);
+
+    logger.debug("[schema] Creating inspection pole id history table...");
+    await db.execAsync(createInspectionPoleIdHistoryTable);
 
     logger.debug("[schema] Creating DeviceOptions table...");
     await db.execAsync(`
@@ -285,6 +289,12 @@ export async function migrateProjectSchema(projectId: number) {
         await db.execAsync(createDashboardCardsTable);
     } catch (e) {
         logger.info("[schema] migrateProjectSchema — DashboardCards table creation failed (non-fatal):", e);
+    }
+
+    try {
+        await db.execAsync(createInspectionPoleIdHistoryTable);
+    } catch (e) {
+        logger.info("[schema] migrateProjectSchema — InspectionPoleIdHistory table creation failed (non-fatal):", e);
     }
 
     try {

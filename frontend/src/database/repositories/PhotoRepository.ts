@@ -83,6 +83,14 @@ export default class PhotoRepository {
     );
   }
 
+  static async updateFileNameAndPath(photoId: number, fileName: string, filePath: string): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(
+      `UPDATE Photos SET FileName = ?, FilePath = ? WHERE PhotoID = ?`,
+      [fileName, filePath, photoId]
+    );
+  }
+
   static async remapFilePaths(uriMap: Record<string, string>): Promise<number> {
     const db = await getDatabase();
     let updated = 0;

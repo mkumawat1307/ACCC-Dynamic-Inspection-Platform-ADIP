@@ -62,4 +62,10 @@ export const downloadStorage = {
   async findFile(relativePath: string, fileName: string): Promise<string | null> {
     return requireNative().findFile(relativePath, fileName);
   },
+
+  async renameFile(uri: string, newFileName: string): Promise<string | null> {
+    const renamedUri = await requireNative().renameFile(uri, newFileName);
+    logger.info(`[Storage] fileRenamed old=${uri} new=${renamedUri ?? "missing"}`);
+    return renamedUri;
+  },
 };
