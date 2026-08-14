@@ -30,30 +30,22 @@ async function ensureLegacyWritePermission(): Promise<void> {
   }
 }
 
-export async function ensureDownloadRoot(): Promise<void> {
+export async function ensureRootFolder(): Promise<void> {
   await ensureLegacyWritePermission();
 
-  logger.info("[Storage] downloadExists path=Download");
-
-  const rootHasFiles = await downloadStorage.hasFiles("");
-  if (rootHasFiles) {
-    logger.info(`[Storage] rootExists path=Download/${ROOT_DIR_NAME}`);
-  } else {
-    logger.info(`[Storage] rootCreated path=Download/${ROOT_DIR_NAME}`);
-  }
+  logger.info("[Storage] ensureRoot start");
+  const existed = await downloadStorage.ensureFolder("");
+  logger.info(`[Storage] ensureRoot exists=${existed}`);
+  logger.info("[Storage] ensureRoot ready");
 }
 
-export async function getProjectDir(projectLabel: string): Promise<string> {
-  await ensureDownloadRoot();
+export async function ensureProjectFolder(projectLabel: string): Promise<void> {
+  await ensureRootFolder();
 
-  const exists = await downloadStorage.hasFiles(projectLabel);
-  const display = `Download/${ROOT_DIR_NAME}/${projectLabel}`;
-  if (exists) {
-    logger.info(`[Storage] projectExists path=${display}`);
-  } else {
-    logger.info(`[Storage] projectCreated path=${display}`);
-  }
-  return projectLabel;
+  logger.info(`[Storage] ensureProject=${projectLabel}`);
+  const existed = await downloadStorage.ensureFolder(projectLabel);
+  logger.info(`[Storage] ensureProject exists=${existed}`);
+  logger.info("[Storage] ensureProject ready");
 }
 
 export async function writePhoto(

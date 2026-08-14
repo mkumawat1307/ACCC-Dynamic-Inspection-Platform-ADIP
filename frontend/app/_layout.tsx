@@ -14,6 +14,7 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { initializeDatabase, getInitError } from "@/src/database";
 
 import { logger } from "@/src/utils/logger";
+import { ensureRootFolder } from "@/src/utils/storageManager";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -36,6 +37,12 @@ export default function RootLayout() {
         setDbError(msg);
         setDbReady(true);
       }
+
+      // Auto-create Download/ACCC Dynamic Inspection on app start. Non-blocking:
+      // failures are logged and re-checked by backup/export/camera before use.
+      ensureRootFolder().catch((e) =>
+        logger.error("[Storage] appStart ensureRootFolder failed:", e)
+      );
     }
 
     logger.debug(`[perf] RootLayout mount: ${Date.now() - START}ms`);

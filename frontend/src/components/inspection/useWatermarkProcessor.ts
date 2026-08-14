@@ -5,7 +5,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import { writePhoto, getProjectDir } from "@/src/utils/storageManager";
+import { writePhoto } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import {
   buildRenderWatermarkScript,
@@ -449,9 +449,10 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
       uiPerfStage("overlayDone", `photo=${job.photoId}`);
 
       const tSave = perfNow();
-      const projectDir = await getProjectDir(label);
+      // Folder creation happens when the camera screen opens — never on the
+      // shutter/save path. Here we only write the photo.
       uiPerfStage("safWriteStart", `photo=${job.photoId}`);
-      const contentUri = await writePhoto(projectDir, job.fileName, base64);
+      const contentUri = await writePhoto(label, job.fileName, base64);
       uiPerfStage("safWriteDone", `photo=${job.photoId}`);
       if (__DEV__) {
         logger.debug(`[Watermark:save] photo=${job.photoId} writing=${contentUri}`);

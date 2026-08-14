@@ -66,6 +66,13 @@ jest.mock("@/src/utils/downloadStorage", () => ({
       }
       return false;
     }),
+    ensureFolder: jest.fn(async (relativePath: string) => {
+      const prefix = `Download/ACCC Dynamic Inspection/${relativePath ? relativePath + "/" : ""}`;
+      for (const key of mockDownloadStore.keys()) {
+        if (key.startsWith(prefix)) return true;
+      }
+      return false;
+    }),
     writeBase64: jest.fn(
       async (relativePath: string, fileName: string, _mimeType: string, base64: string) => {
         const key = `Download/ACCC Dynamic Inspection/${relativePath ? relativePath + "/" : ""}${fileName}`;
@@ -184,7 +191,7 @@ describe("BackupManager backupNow", () => {
       "application/zip",
       expect.any(String)
     );
-    expect(downloadStorage.hasFiles).toHaveBeenCalledWith("");
+    expect(downloadStorage.ensureFolder).toHaveBeenCalledWith("");
   });
 
   it("includes global DB sidecars when present", async () => {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { logger } from "@/src/utils/logger";
 import { ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,12 +11,20 @@ import { backupNow, findBackupFile, restoreBackup, restoreBackupFromUri } from "
 import { buildBackupDisplayPath } from "@/src/utils/backupZip";
 import TemplateExportDialogs from "@/src/components/app/settings/components/TemplateExportDialogs";
 import TemplateImportDialogs from "@/src/components/app/settings/components/TemplateImportDialogs";
+import { ensureRootFolder } from "@/src/utils/storageManager";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const [resetting, setResetting] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const flow = useTemplateFlow();
+
+  useEffect(() => {
+    // Auto-create Download/ACCC Dynamic Inspection when the Database screen opens.
+    ensureRootFolder().catch((e) =>
+      logger.error("[Storage] settingsScreen ensureRootFolder failed:", e)
+    );
+  }, []);
 
   const handleResetToDefault = () => {
     Alert.alert(

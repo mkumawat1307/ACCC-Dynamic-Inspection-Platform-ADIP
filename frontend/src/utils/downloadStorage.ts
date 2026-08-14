@@ -25,6 +25,10 @@ export const downloadStorage = {
     return requireNative().hasFiles(relativePath);
   },
 
+  async ensureFolder(relativePath: string): Promise<boolean> {
+    return requireNative().ensureFolder(relativePath);
+  },
+
   async writeBase64(
     relativePath: string,
     fileName: string,

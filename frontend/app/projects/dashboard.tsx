@@ -7,9 +7,12 @@ import { Card, Text, ActivityIndicator, Appbar } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
+import { logger } from "@/src/utils/logger";
 import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
 import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
 import { COLORS, RADIUS, SPACING } from "@/src/constants/ui";
+import { ensureProjectFolder } from "@/src/utils/storageManager";
+import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 
 export default function ProjectDashboard() {
   const { projectId, projectData: projectDataJson } = useLocalSearchParams<{
@@ -26,6 +29,15 @@ export default function ProjectDashboard() {
   useEffect(() => {
     loadProject();
   }, []);
+
+  useEffect(() => {
+    if (!project) return;
+    // Auto-create Download/ACCC Dynamic Inspection/<District>_<Project> when an
+    // existing project is opened. Failure is logged, not fatal.
+    ensureProjectFolder(canonicalProjectLabel(project)).catch((e) =>
+      logger.error("[Storage] dashboard ensureProjectFolder failed:", e)
+    );
+  }, [project]);
 
   useFocusEffect(
     React.useCallback(() => {

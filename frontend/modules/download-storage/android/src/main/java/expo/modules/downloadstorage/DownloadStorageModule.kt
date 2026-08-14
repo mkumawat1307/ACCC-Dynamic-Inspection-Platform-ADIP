@@ -26,6 +26,10 @@ class DownloadStorageModule : Module() {
       hasFiles(relativePath)
     }
 
+    AsyncFunction("ensureFolder") { relativePath: String ->
+      ensureFolder(relativePath)
+    }
+
     AsyncFunction("writeBase64") { relativePath: String, fileName: String, mimeType: String, base64: String ->
       writeBase64(relativePath, fileName, mimeType, base64)
     }
@@ -50,32 +54,28 @@ class DownloadStorageModule : Module() {
   private val context: Context
     get() = requireNotNull(appContext.reactContext)
 
-  // MediaStore.Downloads.RELATIVE_PATH is relative to the Downloads directory —
-  // it must NOT include the "Download/" prefix or MediaStore rejects it.
-  private fun downloadRoot(): String = ROOT_DIR_NAME
-
-  /** Returns e.g. "ACCC Dynamic Inspection/" or "ACCC Dynamic Inspection/<rel>/". */
+  // MediaStore.Downloads.RELATIVE_PATH must start with Download/ for API >= 29.
+  // The path is relative to the Downloads root, but the primary directory segment
+  // must be "Download" for content://media/external_primary/downloads.
   private fun downloadRelativePath(relativePath: String): String {
     val normalized = normalizeRelativePath(relativePath)
-    val base = "${downloadRoot()}/"
-    return if (normalized.isEmpty()) base else "$base$normalized/"
+    val base = "Download/${ROOT_DIR_NAME}/"
+    val finalPath = if (normalized.isEmpty()) base else "$base$normalized/"
+    nativeLog("finalRelativePath='$finalPath'")
+    return finalPath
   }
 
-  // MediaStore.Downloads.RELATIVE_PATH must be relative to the Downloads root:
-  // the final path NEVER contains a leading "/" or a "Download/" segment prefix.
+  // Keep these protections:
+  // - remove leading /
+  // - block ../ traversal
+  // - collapse duplicate Download/Download/
+  // Do NOT strip Download/ — it is required by MediaStore.Downloads.
   private fun normalizeRelativePath(raw: String): String {
     var p = raw.trim()
     while (p.startsWith("/") || p.startsWith("../")) {
       p = if (p.startsWith("/")) p.substring(1) else p.substring(3)
     }
-    if (p.equals("Download", ignoreCase = true)) {
-      p = ""
-    } else if (p.startsWith("Download/", ignoreCase = true)) {
-      p = p.substring("Download/".length)
-    }
-    while (p.startsWith("/")) {
-      p = p.substring(1)
-    }
+    p = p.replace(Regex("(?i)Download/Download/"), "Download/")
     p = p.split('/').filter { it.isNotEmpty() }.joinToString("/")
     if (p != raw) {
       nativeLog("normalizedRelativePath='$p'")
@@ -88,17 +88,71 @@ class DownloadStorageModule : Module() {
   }
 
   private fun hasFiles(relativePath: String): Boolean {
-    val prefix = downloadRelativePath(relativePath)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-      val projection = arrayOf(MediaStore.Downloads._ID)
-      val selection = "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?"
-      val selectionArgs = arrayOf("$prefix%")
-      return context.contentResolver
-        .query(collection, projection, selection, selectionArgs, null)
-        ?.use { cursor -> cursor.moveToFirst() } ?: false
+      return folderHasFiles(downloadRelativePath(relativePath))
     }
     return legacyDir(relativePath).let { dir -> dir.exists() && (dir.listFiles()?.isNotEmpty() ?: false) }
+  }
+
+  /**
+   * Idempotent folder creation. Returns true when the folder already existed,
+   * false when it was just created. Throws on failure — never swallows errors.
+   */
+  private fun ensureFolder(relativePath: String): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      val relative = downloadRelativePath(relativePath)
+      if (folderHasFiles(relative)) {
+        nativeLog("ensureFolderExists=true relativePath='$relative'")
+        return true
+      }
+      // Directory is missing or empty. Materialize it with a pending placeholder
+      // row, then remove the placeholder — MediaStore keeps the empty directory.
+      if (!createDirectoryPlaceholder(relative)) {
+        throw IllegalStateException("Failed to ensure folder '$relative'")
+      }
+      nativeLog("ensureFolderCreated=true relativePath='$relative'")
+      return false
+    }
+    val dir = legacyDir(relativePath)
+    if (dir.exists()) {
+      nativeLog("ensureFolderExists=true path='${dir.path}'")
+      return true
+    }
+    if (!dir.mkdirs()) {
+      throw IllegalStateException("Failed to create directory $dir")
+    }
+    nativeLog("ensureFolderCreated=true path='${dir.path}'")
+    return false
+  }
+
+  private fun folderHasFiles(relative: String): Boolean {
+    val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    val projection = arrayOf(MediaStore.Downloads._ID)
+    val selection = "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?"
+    val selectionArgs = arrayOf("$relative%")
+    return context.contentResolver
+      .query(collection, projection, selection, selectionArgs, null)
+      ?.use { cursor -> cursor.moveToFirst() } ?: false
+  }
+
+  private fun createDirectoryPlaceholder(relative: String): Boolean {
+    val resolver = context.contentResolver
+    val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    try {
+      val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, ".accc_ensure_${System.currentTimeMillis()}")
+        put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+        put(MediaStore.Downloads.RELATIVE_PATH, relative)
+        put(MediaStore.Downloads.IS_PENDING, 1)
+      }
+      val uri = resolver.insert(collection, values) ?: return false
+      resolver.openOutputStream(uri, "w")?.use { /* materialize directory */ } ?: return false
+      resolver.delete(uri, null, null)
+      return true
+    } catch (e: Exception) {
+      nativeLog("ensureFolderPlaceholderFailed=${e.javaClass.simpleName}:${e.message}")
+      return false
+    }
   }
 
   private fun writeBase64(relativePath: String, fileName: String, mimeType: String, base64: String): String {

@@ -3,6 +3,7 @@ import { requireNativeModule } from "expo-modules-core";
 export interface DownloadStorageNative {
   readonly androidApiLevel: number;
   hasFiles(relativePath: string): Promise<boolean>;
+  ensureFolder(relativePath: string): Promise<boolean>;
   writeBase64(
     relativePath: string,
     fileName: string,

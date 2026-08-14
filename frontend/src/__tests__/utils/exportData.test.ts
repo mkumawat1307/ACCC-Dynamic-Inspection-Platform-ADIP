@@ -3,7 +3,7 @@ import { getDatabase, getGlobalDatabase } from "@/src/database/db";
 jest.mock("@/src/database/db");
 
 jest.mock("@/src/utils/storageManager", () => ({
-  ensureDownloadRoot: jest.fn().mockResolvedValue(undefined),
+  ensureRootFolder: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/src/utils/downloadStorage", () => ({

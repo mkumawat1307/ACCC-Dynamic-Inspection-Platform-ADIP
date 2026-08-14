@@ -9,7 +9,7 @@ import {
   isZipBytes,
 } from "@/src/utils/backupZip";
 import { logger } from "@/src/utils/logger";
-import { ensureDownloadRoot } from "@/src/utils/storageManager";
+import { ensureRootFolder } from "@/src/utils/storageManager";
 import { downloadStorage } from "@/src/utils/downloadStorage";
 
 export interface BackupResult {
@@ -61,7 +61,7 @@ async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
 
 export async function backupNow(): Promise<BackupResult> {
   try {
-    await ensureDownloadRoot();
+    await ensureRootFolder();
     const files = await collectDbFiles();
     const zip = await zipBase64(files);
     const fileUri = await downloadStorage.writeBase64("", BACKUP_FILE_NAME, "application/zip", zip);
@@ -76,7 +76,7 @@ export async function backupNow(): Promise<BackupResult> {
 
 export async function findBackupFile(): Promise<string | null> {
   try {
-    await ensureDownloadRoot();
+    await ensureRootFolder();
     return await downloadStorage.findFile("", BACKUP_FILE_NAME);
   } catch {
     return null;

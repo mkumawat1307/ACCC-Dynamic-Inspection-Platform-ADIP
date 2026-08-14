@@ -10,6 +10,8 @@ import { Dropdown } from "react-native-paper-dropdown";
 import { router, useLocalSearchParams } from "expo-router";
 import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
 import { createProjectDb, getProjectDbPath, updateProjectInspectorName } from "@/src/database/helpers/ProjectDBManager";
+import { ensureProjectFolder } from "@/src/utils/storageManager";
+import { sanitizeFolderName } from "@/src/utils/folderNaming";
 
 export default function NewProjectScreen() {
   const { editProjectId } = useLocalSearchParams<{ editProjectId?: string }>();
@@ -101,6 +103,16 @@ const inspector = inspectorName.trim();
 
         // Create the project DB with full schema + seed data (scoped to the real ProjectID)
         await createProjectDb(projectName.trim(), dbPath, newId);
+
+        // Auto-create Download/ACCC Dynamic Inspection/<District>_<Project>.
+        // Failure is logged, not fatal — dashboard/camera re-check on open.
+        const districtName =
+          districts.find((d) => d.DistrictID === Number(district))?.DistrictName ?? "";
+        const folderLabel = sanitizeFolderName(`${districtName}_${projectName.trim()}`);
+        ensureProjectFolder(folderLabel).catch((e) =>
+          logger.error("[Storage] newProject ensureProjectFolder failed:", e)
+        );
+
         Alert.alert("Success", "Project created successfully.");
       }
       router.back();
