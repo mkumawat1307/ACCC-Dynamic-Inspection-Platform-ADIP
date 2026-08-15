@@ -4,6 +4,8 @@ import { logger } from "@/src/utils/logger";
 
 export const ROOT_DIR_NAME = "ACCC Dynamic Inspection";
 
+export const PHOTO_ROOT_DISPLAY = `Download/${ROOT_DIR_NAME}`;
+
 async function ensureLegacyWritePermission(): Promise<void> {
   if (Platform.OS !== "android" || downloadStorage.androidApiLevel < 0) {
     logger.info("[Storage] permissionGranted=false (non-android)");
@@ -63,4 +65,13 @@ export async function deletePhoto(fileUri: string): Promise<void> {
   } catch {
     // ignore delete errors — the file may already be gone
   }
+}
+
+export function buildPhotoFolderDisplayPath(projectLabel: string): string {
+  const label = (projectLabel || "").trim();
+  return label ? `${PHOTO_ROOT_DISPLAY}/${label}/` : `${PHOTO_ROOT_DISPLAY}/`;
+}
+
+export async function hasProjectFolderFiles(projectLabel: string): Promise<boolean> {
+  return downloadStorage.hasFiles(projectLabel);
 }

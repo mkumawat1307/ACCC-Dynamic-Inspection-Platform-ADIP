@@ -1,4 +1,5 @@
 jest.mock("@/src/database/db");
+import type { ProjectDuplicateGroup } from "@/src/database/projectIdentity";
 jest.mock("@/src/database/tables/divisions.table", () => ({
   createDivisionsTable: "CREATE TABLE Divisions...",
 }));
@@ -102,6 +103,170 @@ describe("schema.ts schema functions", () => {
     await createProjectSchema();
 
     expect(mockExecAsync).toHaveBeenCalled();
+  });
+
+  it("createGlobalSchema includes DistrictKey and ProjectKey in Projects DDL", async () => {
+    const { createGlobalSchema } = require("@/src/database/schema");
+    await createGlobalSchema();
+
+    const projectsDdl = mockExecAsync.mock.calls
+      .map((call) => String(call[0]))
+      .find((sql) => sql.includes("CREATE TABLE IF NOT EXISTS Projects"));
+    expect(projectsDdl).toBeDefined();
+    expect(projectsDdl).toContain("DistrictKey TEXT");
+    expect(projectsDdl).toContain("ProjectKey TEXT");
+  });
+
+  it("createGlobalSchema includes PendingPhotoFolderRename in Projects DDL", async () => {
+    const { createGlobalSchema } = require("@/src/database/schema");
+    await createGlobalSchema();
+
+    const projectsDdl = mockExecAsync.mock.calls
+      .map((call) => String(call[0]))
+      .find((sql) => sql.includes("CREATE TABLE IF NOT EXISTS Projects"));
+    expect(projectsDdl).toBeDefined();
+    expect(projectsDdl).toContain("PendingPhotoFolderRename TEXT");
+  });
+
+  it("createGlobalSchema emits the PendingPhotoFolderRename ALTER migration", async () => {
+    const { createGlobalSchema } = require("@/src/database/schema");
+    await createGlobalSchema();
+
+    const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
+    expect(
+      emitted.find((sql) =>
+        sql.includes("ALTER TABLE Projects ADD COLUMN PendingPhotoFolderRename TEXT")
+      )
+    ).toBeDefined();
+  });
+
+  it("migrateProjectSchema emits the Photos StoragePath ALTER migration", async () => {
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema(1);
+    const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
+    expect(
+      emitted.find((sql) => sql.includes("ALTER TABLE Photos ADD COLUMN StoragePath TEXT"))
+    ).toBeDefined();
+  });
+
+  describe("migrateProjectUniqueness", () => {
+    it("creates the unique index on clean data and returns []", async () => {
+      const { migrateProjectUniqueness } = require("@/src/database/schema");
+      const result = await migrateProjectUniqueness();
+
+      expect(result).toEqual([]);
+      const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
+      expect(
+        emitted.find((sql) => sql.includes("CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_district_project"))
+      ).toBeDefined();
+    });
+
+    it("detects existing duplicates and skips index creation", async () => {
+      mockGetAllAsync
+        .mockResolvedValueOnce([
+          {
+            ProjectID: 1,
+            ProjectName: "XYZ",
+            DistrictID: 1,
+            DBPath: "/a",
+            DistrictKey: "sikar",
+            ProjectKey: "xyz",
+          },
+          {
+            ProjectID: 2,
+            ProjectName: "xyz",
+            DistrictID: 1,
+            DBPath: "/b",
+            DistrictKey: "sikar",
+            ProjectKey: "xyz",
+          },
+        ])
+        .mockResolvedValueOnce([{ DistrictID: 1, DistrictName: "SIKAR" }])
+        .mockResolvedValueOnce([
+          { ProjectID: 1, ProjectName: "XYZ", DistrictID: 1, DBPath: "/a" },
+          { ProjectID: 2, ProjectName: "xyz", DistrictID: 1, DBPath: "/b" },
+        ]);
+
+      const { migrateProjectUniqueness } = require("@/src/database/schema") as {
+        migrateProjectUniqueness: () => Promise<ProjectDuplicateGroup[]>;
+      };
+      const groups = await migrateProjectUniqueness();
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].members.map((m) => m.ProjectID)).toEqual([1, 2]);
+      const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
+      expect(
+        emitted.find((sql) => sql.includes("CREATE UNIQUE INDEX"))
+      ).toBeUndefined();
+    });
+
+    it("returns [] and skips work when the index already exists", async () => {
+      mockGetFirstAsync.mockResolvedValueOnce({ cnt: 1 });
+
+      const { migrateProjectUniqueness } = require("@/src/database/schema");
+      const result = await migrateProjectUniqueness();
+
+      expect(result).toEqual([]);
+      expect(mockGetAllAsync).not.toHaveBeenCalled();
+      const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
+      expect(emitted.find((sql) => sql.includes("ALTER TABLE Projects"))).toBeUndefined();
+    });
+
+    it("backfills DistrictKey/ProjectKey for rows with null keys", async () => {
+      mockGetAllAsync
+        .mockResolvedValueOnce([
+          {
+            ProjectID: 1,
+            ProjectName: "XYZ",
+            DistrictID: 1,
+            DBPath: "/a",
+            DistrictKey: null,
+            ProjectKey: null,
+          },
+        ])
+        .mockResolvedValueOnce([{ DistrictID: 1, DistrictName: "SIKAR" }]);
+
+      const { migrateProjectUniqueness } = require("@/src/database/schema");
+      await migrateProjectUniqueness();
+
+      expect(mockRunAsync).toHaveBeenCalledWith(
+        `UPDATE Projects SET DistrictKey = ?, ProjectKey = ? WHERE ProjectID = ?`,
+        ["sikar", "xyz", 1]
+      );
+    });
+
+    it("groups whitespace and case variants as duplicates", async () => {
+      mockGetAllAsync
+        .mockResolvedValueOnce([
+          {
+            ProjectID: 1,
+            ProjectName: "AMC 2026",
+            DistrictID: 1,
+            DBPath: null,
+            DistrictKey: "jaipur",
+            ProjectKey: "amc 2026",
+          },
+          {
+            ProjectID: 2,
+            ProjectName: " amc 2026 ",
+            DistrictID: 1,
+            DBPath: null,
+            DistrictKey: "jaipur",
+            ProjectKey: "amc 2026",
+          },
+        ])
+        .mockResolvedValueOnce([{ DistrictID: 1, DistrictName: "Jaipur" }])
+        .mockResolvedValueOnce([
+          { ProjectID: 1, ProjectName: "AMC 2026", DistrictID: 1, DBPath: null },
+          { ProjectID: 2, ProjectName: " amc 2026 ", DistrictID: 1, DBPath: null },
+        ]);
+
+      const { migrateProjectUniqueness } = require("@/src/database/schema");
+      const groups = await migrateProjectUniqueness();
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].members).toHaveLength(2);
+    });
   });
 
   it("createProjectSchema creates the DashboardCards table", async () => {

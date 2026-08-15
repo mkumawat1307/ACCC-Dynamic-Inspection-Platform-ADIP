@@ -24,6 +24,9 @@ import { createDashboardCardsTable } from "./tables/dashboard-cards.table";
 
 import { DashboardCardRepository } from "./repositories/DashboardCardRepository";
 
+import { buildProjectIdentity, detectProjectDuplicates } from "./projectIdentity";
+import type { ProjectDuplicateGroup } from "./projectIdentity";
+
 import { logger } from "@/src/utils/logger";
 
 export async function createGlobalSchema() {
@@ -50,11 +53,14 @@ export async function createGlobalSchema() {
             ProjectID INTEGER PRIMARY KEY AUTOINCREMENT,
             ProjectName TEXT NOT NULL,
             DistrictID INTEGER NOT NULL,
+            DistrictKey TEXT,
+            ProjectKey TEXT,
             Block TEXT,
             Client TEXT,
             Description TEXT,
             InspectorName TEXT,
             DBPath TEXT,
+            PendingPhotoFolderRename TEXT,
             CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
             UpdatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (DistrictID)
@@ -79,6 +85,16 @@ export async function createGlobalSchema() {
         logger.debug("[schema] Migration: SAFPath column already exists (ok)");
     }
 
+    // Migration: Add PendingPhotoFolderRename column to existing Projects table.
+    // Holds the JSON crash-recovery marker while a photo folder rename is in
+    // flight. NULL for all projects that are not mid-rename.
+    try {
+        await db.execAsync(`ALTER TABLE Projects ADD COLUMN PendingPhotoFolderRename TEXT;`);
+        logger.debug("[schema] Migration: PendingPhotoFolderRename column added to Projects");
+    } catch {
+        logger.debug("[schema] Migration: PendingPhotoFolderRename column already exists (ok)");
+    }
+
     // Migration: Add IsActive column to existing Divisions table
     try {
         await db.execAsync(`ALTER TABLE Divisions ADD COLUMN IsActive INTEGER NOT NULL DEFAULT 1;`);
@@ -96,6 +112,94 @@ export async function createGlobalSchema() {
     }
 
     logger.debug("✅ [schema] createGlobalSchema() — END");
+}
+
+export async function migrateProjectUniqueness(): Promise<ProjectDuplicateGroup[]> {
+    logger.info("[schema] migrateProjectUniqueness() — START");
+
+    const db = await getGlobalDatabase();
+
+    const indexRow = await db.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type = 'index' AND name = 'uq_projects_district_project'`
+    );
+    if ((indexRow?.cnt ?? 0) > 0) {
+        logger.info("[schema] migrateProjectUniqueness() — index already exists, done");
+        return [];
+    }
+
+    try {
+        await db.execAsync(`ALTER TABLE Projects ADD COLUMN DistrictKey TEXT;`);
+        logger.debug("[schema] Migration: DistrictKey column added to Projects");
+    } catch {
+        logger.debug("[schema] Migration: DistrictKey column already exists (ok)");
+    }
+
+    try {
+        await db.execAsync(`ALTER TABLE Projects ADD COLUMN ProjectKey TEXT;`);
+        logger.debug("[schema] Migration: ProjectKey column added to Projects");
+    } catch {
+        logger.debug("[schema] Migration: ProjectKey column already exists (ok)");
+    }
+
+    const projects = await db.getAllAsync<{
+        ProjectID: number;
+        ProjectName: string;
+        DistrictID: number;
+        DBPath: string | null;
+        DistrictKey: string | null;
+        ProjectKey: string | null;
+    }>(
+        `SELECT ProjectID, ProjectName, DistrictID, DBPath, DistrictKey, ProjectKey FROM Projects`
+    );
+
+    const districts = await db.getAllAsync<{ DistrictID: number; DistrictName: string }>(
+        `SELECT DistrictID, DistrictName FROM Districts`
+    );
+
+    const districtNameById = new Map(districts.map((d) => [d.DistrictID, d.DistrictName]));
+
+    for (const project of projects) {
+        if (project.DistrictKey && project.ProjectKey) continue;
+        const districtName = districtNameById.get(project.DistrictID) ?? "";
+        const { districtKey, projectKey } = buildProjectIdentity(districtName, project.ProjectName);
+        await db.runAsync(
+            `UPDATE Projects SET DistrictKey = ?, ProjectKey = ? WHERE ProjectID = ?`,
+            [districtKey, projectKey, project.ProjectID]
+        );
+    }
+
+    const backfilled = await db.getAllAsync<{
+        ProjectID: number;
+        ProjectName: string;
+        DistrictID: number;
+        DBPath: string | null;
+    }>(`SELECT ProjectID, ProjectName, DistrictID, DBPath FROM Projects`);
+
+    const duplicates = detectProjectDuplicates(backfilled, districts);
+    if (duplicates.length > 0) {
+        logger.warn(
+            `[schema] migrateProjectUniqueness() — ${duplicates.length} duplicate group(s) found; UNIQUE index NOT created.`
+        );
+        for (const group of duplicates) {
+            const members = group.members
+                .map(
+                    (m) =>
+                        `id=${m.ProjectID} district=${m.DistrictName} project=${m.ProjectName} dbPath=${m.DBPath}`
+                )
+                .join(" | ");
+            logger.warn(
+                `[schema] duplicate group districtKey=${group.districtKey} projectKey=${group.projectKey}: ${members}`
+            );
+        }
+        return duplicates;
+    }
+
+    await db.execAsync(
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_district_project ON Projects(DistrictKey, ProjectKey)`
+    );
+    logger.info("[schema] migrateProjectUniqueness() — UNIQUE index created");
+    logger.info("[schema] migrateProjectUniqueness() — END");
+    return [];
 }
 
 export async function createProjectSchema() {
@@ -378,6 +482,16 @@ export async function migrateProjectSchema(projectId: number) {
       } catch (e) {
           logger.info("[schema] migrateProjectSchema \u2014 migrateDeviceCards failed (non-fatal):", e);
       }
+
+    // Migration: Add StoragePath column to existing Photos table.
+    // Holds the immutable human-readable folder a photo was saved into.
+    // NULL until lazily backfilled for photos captured before this migration.
+    try {
+        await db.execAsync(`ALTER TABLE Photos ADD COLUMN StoragePath TEXT;`);
+        logger.debug("[schema] Migration: StoragePath column added to Photos");
+    } catch {
+        logger.debug("[schema] Migration: StoragePath column already exists in Photos (ok)");
+    }
 
     logger.debug("✅ [schema] migrateProjectSchema() — END");
 }

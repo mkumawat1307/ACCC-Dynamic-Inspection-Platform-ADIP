@@ -16,7 +16,7 @@ const PROJECT_B = "/mock/documents/Projects/B_ProjectB/inspection.db";
 const PHOTO_A_PATH = "content://mock/tree/ACCC Inspection/A_ProjectA/photo_a.jpg";
 const PHOTO_A_NEW_PATH = "content://mock/tree/ACCC Inspection/A_ProjectA/new_a.jpg";
 
-describe("Photo folder remap cross-project isolation", () => {
+describe("StoragePath isolation (project-scoped)", () => {
   beforeEach(() => {
     jest.resetModules();
   });
@@ -28,8 +28,8 @@ describe("Photo folder remap cross-project isolation", () => {
     return { dbModule, db };
   }
 
-  it("does not leak or remap a Project A photo while Project B is active", async () => {
-    const { dbModule, db: dbA } = await openProject(PROJECT_A);
+  it("does not copy StoragePath updates across projects", async () => {
+    const { dbModule } = await openProject(PROJECT_A);
     const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
 
     const photoId = await PhotoRepository.create({
@@ -42,12 +42,14 @@ describe("Photo folder remap cross-project isolation", () => {
       CapturedAt: "2026-08-04T10:00:00.000Z",
       Remarks: null,
     });
-    expect(photoId).toBeGreaterThan(0);
 
-    const inA = await dbA.getAllAsync<{ PhotoID: number }>(
-      "SELECT PhotoID FROM Photos WHERE InspectionID = 1"
+    await PhotoRepository.updateStoragePath(
+      photoId,
+      "Download/ACCC Dynamic Inspection/B_ProjectB/"
     );
-    expect(inA).toHaveLength(1);
+    expect((await PhotoRepository.getById(photoId))!.StoragePath).toBe(
+      "Download/ACCC Dynamic Inspection/B_ProjectB/"
+    );
 
     await dbModule.clearActiveProject();
 
@@ -57,36 +59,50 @@ describe("Photo folder remap cross-project isolation", () => {
     );
     expect(inB).toHaveLength(0);
 
-    const bByInspection = await PhotoRepository.getByInspection(1);
-    expect(bByInspection).toHaveLength(0);
+    await dbModule.clearActiveProject();
 
-    const changed = await PhotoRepository.remapFilePaths({
-      [PHOTO_A_PATH]: PHOTO_A_NEW_PATH,
-    });
-    expect(changed).toBe(0);
-
-    const aAfter = await dbA.getAllAsync<{ PhotoID: number; FilePath: string }>(
-      "SELECT PhotoID, FilePath FROM Photos WHERE InspectionID = 1"
+    const { db: dbA } = await openProject(PROJECT_A);
+    const aAfter = await dbA.getAllAsync<{ PhotoID: number; StoragePath: string | null }>(
+      "SELECT PhotoID, StoragePath FROM Photos WHERE InspectionID = 1"
     );
     expect(aAfter).toHaveLength(1);
-    expect(aAfter[0].FilePath).toBe(PHOTO_A_PATH);
+    expect(aAfter[0].StoragePath).toBe("Download/ACCC Dynamic Inspection/B_ProjectB/");
 
     await dbModule.clearActiveProject();
   });
 
-  it("does not call getGlobalDatabase during the remap flow", async () => {
+  it("keeps StoragePath per-photo within the same project (no cross-row bleed)", async () => {
     const { dbModule } = await openProject(PROJECT_A);
-    const globalSpy = jest.spyOn(dbModule, "getGlobalDatabase");
     const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
 
-    const changed = await PhotoRepository.remapFilePaths({
-      [PHOTO_A_PATH]: PHOTO_A_NEW_PATH,
+    const photoA = await PhotoRepository.create({
+      InspectionID: 1,
+      PhotoType: "Pole",
+      FileName: "a.jpg",
+      FilePath: PHOTO_A_PATH,
+      Latitude: null,
+      Longitude: null,
+      CapturedAt: null,
+      Remarks: null,
+    });
+    const photoB = await PhotoRepository.create({
+      InspectionID: 1,
+      PhotoType: "Pole",
+      FileName: "b.jpg",
+      FilePath: PHOTO_A_NEW_PATH,
+      Latitude: null,
+      Longitude: null,
+      CapturedAt: null,
+      Remarks: null,
     });
 
-    expect(changed).toBe(0);
-    expect(globalSpy).not.toHaveBeenCalled();
+    await PhotoRepository.updateStoragePath(photoA, "Download/ACCC Dynamic Inspection/A_ProjectA/");
 
-    globalSpy.mockRestore();
+    const a = await PhotoRepository.getById(photoA);
+    const b = await PhotoRepository.getById(photoB);
+    expect(a!.StoragePath).toBe("Download/ACCC Dynamic Inspection/A_ProjectA/");
+    expect(b!.StoragePath).toBeNull();
+
     await dbModule.clearActiveProject();
   });
 });

@@ -6,6 +6,8 @@ import {
   ensureProjectFolder,
   writePhoto,
   deletePhoto,
+  buildPhotoFolderDisplayPath,
+  hasProjectFolderFiles,
 } from "@/src/utils/storageManager";
 
 jest.mock("@/src/utils/downloadStorage", () => ({
@@ -140,5 +142,33 @@ describe("deletePhoto", () => {
     (downloadStorage.deleteFile as jest.Mock).mockRejectedValueOnce(new Error("gone"));
 
     await expect(deletePhoto("content://media/photo.jpg")).resolves.toBeUndefined();
+  });
+});
+
+describe("photo folder helpers", () => {
+  it("builds the display path for a project label", () => {
+    expect(buildPhotoFolderDisplayPath("Jaipur_AMC 2026")).toBe(
+      "Download/ACCC Dynamic Inspection/Jaipur_AMC 2026/"
+    );
+  });
+
+  it("falls back to the root display path for an empty label", () => {
+    expect(buildPhotoFolderDisplayPath("")).toBe("Download/ACCC Dynamic Inspection/");
+  });
+
+  it("hasProjectFolderFiles forwards to downloadStorage.hasFiles", async () => {
+    (downloadStorage.hasFiles as jest.Mock).mockResolvedValueOnce(true);
+
+    await expect(hasProjectFolderFiles("Jaipur_AMC 2026")).resolves.toBe(true);
+    expect(downloadStorage.hasFiles).toHaveBeenCalledWith("Jaipur_AMC 2026");
+  });
+});
+
+describe("removed photo-folder-rename surface", () => {
+  it("no longer exposes moveProjectFolder or rename error classes", async () => {
+    const storageManager = require("@/src/utils/storageManager");
+    expect(storageManager.moveProjectFolder).toBeUndefined();
+    expect(storageManager.PhotoFolderConflictError).toBeUndefined();
+    expect(storageManager.PhotoFolderRenameError).toBeUndefined();
   });
 });

@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Image, Modal, StyleSheet, View } from "react-native";
 import { Text, Button, IconButton } from "react-native-paper";
 import { Photo } from "@/src/models/Photo";
-import { Project } from "@/src/models/Project";
-import { formatLocation, getFileUri } from "./photoUtils";
+import { getFileUri } from "./photoUtils";
+import { resolvePhotoStoragePath } from "@/src/utils/photoStoragePath";
+import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 
 interface PhotoPreviewModalProps {
   photo: Photo | null;
@@ -11,7 +12,6 @@ interface PhotoPreviewModalProps {
   onClose: () => void;
   contextPoleId: string | undefined;
   block: string;
-  project: Project | null;
 }
 
 export default function PhotoPreviewModal({
@@ -19,6 +19,40 @@ export default function PhotoPreviewModal({
   visible,
   onClose,
 }: PhotoPreviewModalProps) {
+  const [storagePath, setStoragePath] = useState<string | null>(
+    photo?.StoragePath ?? null
+  );
+
+  useEffect(() => {
+    if (!photo) {
+      setStoragePath(null);
+      return;
+    }
+    if (photo.StoragePath && photo.StoragePath.trim()) {
+      setStoragePath(photo.StoragePath);
+      return;
+    }
+    let cancelled = false;
+    resolvePhotoStoragePath(photo).then(async (resolved) => {
+      if (cancelled) return;
+      if (resolved) {
+        setStoragePath(resolved);
+        if (photo.PhotoID) {
+          try {
+            await PhotoRepository.updateStoragePath(photo.PhotoID, resolved);
+          } catch {
+            // non-fatal: StoragePath is display-only
+          }
+        }
+      } else {
+        setStoragePath(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [photo]);
+
   return (
     <Modal
       visible={visible}
@@ -49,8 +83,13 @@ export default function PhotoPreviewModal({
           )}
 
           <View style={styles.info}>
+            {storagePath ? (
+              <Text variant="bodySmall" style={styles.infoText}>
+                Saved Location: {storagePath}
+              </Text>
+            ) : null}
             <Text variant="bodySmall" style={styles.infoText}>
-              {formatLocation(photo?.Latitude ?? null, photo?.Longitude ?? null)} | {photo?.FileName ?? ""}
+              File Name: {photo?.FileName ?? ""}
             </Text>
           </View>
 

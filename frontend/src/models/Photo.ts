@@ -17,5 +17,7 @@ export interface Photo {
 
   Remarks: string | null;
 
+  StoragePath?: string;
+
   CreatedAt?: string;
 }

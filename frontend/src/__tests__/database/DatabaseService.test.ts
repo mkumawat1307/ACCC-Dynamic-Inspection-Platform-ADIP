@@ -3,6 +3,9 @@ jest.mock("@/src/database/db", () => ({
 }));
 jest.mock("@/src/database/schema");
 jest.mock("@/src/database/seed");
+jest.mock("@/src/database/services/PendingRenameDrain", () => ({
+  drainLegacyPendingPhotoFolderRenames: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { getGlobalDatabase } from "@/src/database/db";
 import { createGlobalSchema } from "@/src/database/schema";
@@ -50,10 +53,49 @@ describe("DatabaseService", () => {
     expect(getInitError()).toBe("Schema error");
   });
 
+  it("stores duplicate groups from the uniqueness migration", async () => {
+    jest.resetModules();
+    const { migrateProjectUniqueness } = require("@/src/database/schema");
+    (migrateProjectUniqueness as jest.Mock).mockResolvedValue([
+      { districtKey: "sikar", projectKey: "xyz", members: [] },
+    ]);
+    const { initializeDatabase, getProjectDuplicates } = require("@/src/database/DatabaseService");
+    await initializeDatabase();
+    expect(getProjectDuplicates()).toHaveLength(1);
+  });
+
+  it("does not throw when pre-existing duplicates are detected", async () => {
+    jest.resetModules();
+    const { migrateProjectUniqueness } = require("@/src/database/schema");
+    (migrateProjectUniqueness as jest.Mock).mockResolvedValue([
+      {
+        districtKey: "sikar",
+        projectKey: "xyz",
+        members: [{ ProjectID: 1 }, { ProjectID: 2 }],
+      },
+    ]);
+    const { initializeDatabase } = require("@/src/database/DatabaseService");
+    await expect(initializeDatabase()).resolves.toBeUndefined();
+  });
+
   it("returns null initError before any initialization attempt", () => {
     jest.isolateModules(() => {
       const { getInitError } = require("@/src/database/DatabaseService");
       expect(getInitError()).toBeNull();
     });
+  });
+
+  it("runs the legacy pending-rename drain during initialization", async () => {
+    const { drainLegacyPendingPhotoFolderRenames } = require("@/src/database/services/PendingRenameDrain");
+    const { initializeDatabase } = require("@/src/database/DatabaseService");
+    await initializeDatabase();
+    expect(drainLegacyPendingPhotoFolderRenames).toHaveBeenCalled();
+  });
+
+  it("does not fail initialization when the drain throws", async () => {
+    const { drainLegacyPendingPhotoFolderRenames } = require("@/src/database/services/PendingRenameDrain");
+    (drainLegacyPendingPhotoFolderRenames as jest.Mock).mockRejectedValueOnce(new Error("drain boom"));
+    const { initializeDatabase } = require("@/src/database/DatabaseService");
+    await expect(initializeDatabase()).resolves.toBeUndefined();
   });
 });

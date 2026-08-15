@@ -2,7 +2,7 @@ jest.mock("@/src/database/helpers/ProjectDBManager");
 jest.mock("@/src/database/db");
 jest.mock("@/src/database/repositories/PhotoRepository", () => ({
   __esModule: true,
-  default: { updateFilePath: jest.fn() },
+  default: { updateFilePathAndStoragePath: jest.fn() },
 }));
 jest.mock("@react-native-async-storage/async-storage", () => ({
   __esModule: true,
@@ -21,6 +21,8 @@ jest.mock("expo-file-system/legacy", () => ({
 }));
 jest.mock("@/src/utils/storageManager", () => ({
   writePhoto: jest.fn(),
+  buildPhotoFolderDisplayPath: (label: string) =>
+    `Download/ACCC Dynamic Inspection/${label}/`,
 }));
 jest.mock("react-native-webview", () => {
   const RN = require("react-native");
@@ -122,7 +124,7 @@ describe("useWatermarkProcessor folder target", () => {
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
 
     (writePhoto as jest.Mock).mockResolvedValue(fileUri);
-    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
 
     const onPhotosUpdated = jest.fn();
@@ -145,7 +147,11 @@ describe("useWatermarkProcessor folder target", () => {
     });
 
     expect(writePhoto).toHaveBeenCalledWith(projectDir, "photo.jpg", "BASE64DATA");
-    expect(PhotoRepository.updateFilePath).toHaveBeenCalledWith(1, fileUri);
+    expect(PhotoRepository.updateFilePathAndStoragePath).toHaveBeenCalledWith(
+      1,
+      fileUri,
+      "Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/"
+    );
     expect(onPhotosUpdated).toHaveBeenCalled();
 
     await TestRenderer.act(async () => {
@@ -217,7 +223,7 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
     const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
     (writePhoto as jest.Mock).mockResolvedValue("content://tree/root/p.jpg");
-    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const { result, unmount } = renderHook(() =>
       useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
@@ -342,7 +348,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     const projectDir = "New Delhi_Project Alpha";
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
     (writePhoto as jest.Mock).mockResolvedValue(fileUri);
-    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const onPhotosUpdated = jest.fn();
     const { result, unmount } = renderHook(() =>
@@ -386,7 +392,11 @@ describe("useWatermarkProcessor native encoder path", () => {
       4000, 3000, "RGBA_B64", 95, "file:///tmp/t.jpg.wm.jpg"
     );
     expect(writePhoto).toHaveBeenCalledWith(projectDir, "photo.jpg", "WM_BASE64");
-    expect(PhotoRepository.updateFilePath).toHaveBeenCalledWith(1, fileUri);
+    expect(PhotoRepository.updateFilePathAndStoragePath).toHaveBeenCalledWith(
+      1,
+      fileUri,
+      "Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/"
+    );
     expect(onPhotosUpdated).toHaveBeenCalled();
 
     await TestRenderer.act(async () => {
@@ -401,7 +411,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     const projectDir = "New Delhi_Project Alpha";
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
     (writePhoto as jest.Mock).mockResolvedValue(fileUri);
-    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const injectJavaScript = jest.fn();
     const { result, unmount } = renderHook(() =>
@@ -453,7 +463,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     const projectDir = "New Delhi_Project Alpha";
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
     (writePhoto as jest.Mock).mockResolvedValue(fileUri);
-    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const injectJavaScript = jest.fn();
     const { result, unmount } = renderHook(() =>
@@ -532,7 +542,7 @@ describe("useWatermarkProcessor overlay encoder stage", () => {
     (writePhoto as jest.Mock).mockResolvedValue(
       "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg"
     );
-    (PhotoRepository.updateFilePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
   }
 
   it("measures text, renders the overlay PNG, and composites via the native overlay encoder", async () => {
@@ -623,9 +633,10 @@ mockOverlayHappyPath();
       "photo.jpg",
       "WM_BASE64"
     );
-    expect(PhotoRepository.updateFilePath).toHaveBeenCalledWith(
+    expect(PhotoRepository.updateFilePathAndStoragePath).toHaveBeenCalledWith(
       1,
-      "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg"
+      "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg",
+      "Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/"
     );
     expect(onPhotosUpdated).toHaveBeenCalled();
 

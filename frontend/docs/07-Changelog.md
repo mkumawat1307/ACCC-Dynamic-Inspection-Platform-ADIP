@@ -24,6 +24,34 @@ Patch → Bug fixes
 
 ---
 
+## [Unreleased]
+
+- Removed photo-folder-rename on project edit: project edits no longer move photos.
+- Added `Photos.StoragePath` (nullable) holding the immutable folder each photo was saved into; set at capture time for new photos, lazily derived for legacy photos.
+- Photo preview "Saved Location" now reads `StoragePath` only, never the current project identity.
+- Added one-time non-destructive drain of legacy `PendingPhotoFolderRename` markers at startup.
+
+---
+
+## [1.2.0] — 2026-08-15
+
+### Summary
+
+- Project edit now renames/moves the Download photo folder to match the new identity
+- Persisted crash-recovery for interrupted photo-folder renames
+- Photo preview shows human-readable Saved Location + File Name
+
+### Added
+- **Project-edit photo folder rename** — editing a project's name/district now moves `Download/ACCC Dynamic Inspection/<old District>_<old Name>/` to the new label via a native `DownloadStorageModule.moveFilesInFolder` (per-file `MediaStore.RELATIVE_PATH` update on API ≥ 29 preserving the content URI and `_id`; legacy `File.renameTo` fallback; per-file failure reporting). Legacy `file://` photo rows are remapped to the new path; `content://` rows are never rewritten. `Photo.FilePath` stays the single source of truth.
+- **Crash-recovery marker** — a persisted `PendingPhotoFolderRename` column on the global `Projects` table is written before a folder move and idempotently completed on every app start (`recoverPendingPhotoFolderRenames`, after `migrateProjectUniqueness`), so an interrupted rename always converges to a consistent state (folder + DB + photos).
+- **Collision rejection** — editing to a name whose photo folder already exists aborts with a "Photo Folder Already Exists" alert; no merge or overwrite.
+- **Photo preview saved location** — `PhotoPreviewModal` now shows `Saved Location: <District>_<Project>` and `File Name:` (display-only) instead of raw GPS/FilePath text.
+
+### Changed
+- **Photo folder rename safety** — renames are orchestrated by `ProjectEditService.updateProjectFlow` (identity-check → collision-check → marker → move → legacy remap → `updateProject` → clear marker), with rollback of both the folder move and remapped paths on failure.
+
+---
+
 ## [1.1.0] — 2026-08-14
 
 ### Summary

@@ -53,6 +53,10 @@ class DownloadStorageModule : Module() {
     AsyncFunction("renameFile") { uri: String, newFileName: String ->
       renameFile(uri, newFileName)
     }
+
+    AsyncFunction("getRelativePath") { uri: String ->
+      getRelativePath(uri)
+    }
   }
 
   private val context: Context
@@ -129,11 +133,22 @@ class DownloadStorageModule : Module() {
     return false
   }
 
+  private fun escapeLikeWildcards(value: String): String {
+    return buildString {
+      for (ch in value) {
+        if (ch == '\\' || ch == '%' || ch == '_') {
+          append('\\')
+        }
+        append(ch)
+      }
+    }
+  }
+
   private fun folderHasFiles(relative: String): Boolean {
     val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
     val projection = arrayOf(MediaStore.Downloads._ID)
-    val selection = "${MediaStore.Downloads.RELATIVE_PATH} LIKE ?"
-    val selectionArgs = arrayOf("$relative%")
+    val selection = "${MediaStore.Downloads.RELATIVE_PATH} LIKE ? ESCAPE '\\'"
+    val selectionArgs = arrayOf("${escapeLikeWildcards(relative)}%")
     return context.contentResolver
       .query(collection, projection, selection, selectionArgs, null)
       ?.use { cursor -> cursor.moveToFirst() } ?: false
@@ -329,6 +344,37 @@ class DownloadStorageModule : Module() {
     }
     nativeLog("renameSuccess path=${renamed.path}")
     return Uri.fromFile(renamed).toString()
+  }
+
+  // Returns the MediaStore RELATIVE_PATH (e.g. "Download/ACCC Dynamic Inspection/<label>/")
+  // for a content:// photo URI, or null when the row is missing or not resolvable.
+  private fun getRelativePath(uri: String): String? {
+    val parsed = try {
+      Uri.parse(uri)
+    } catch (e: Exception) {
+      nativeLog("getRelativePathParseError uri=$uri err=${e.message}")
+      return null
+    }
+    if (parsed.lastPathSegment.isNullOrEmpty()) return null
+    val resolver = context.contentResolver
+    return try {
+      resolver.query(
+        parsed,
+        arrayOf(MediaStore.Downloads.RELATIVE_PATH),
+        null,
+        null,
+        null
+      )?.use { cursor ->
+        if (cursor.moveToFirst()) {
+          cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH))
+        } else {
+          null
+        }
+      }
+    } catch (e: Exception) {
+      nativeLog("getRelativePathQueryError uri=$uri err=${e.message}")
+      null
+    }
   }
 
   private companion object {

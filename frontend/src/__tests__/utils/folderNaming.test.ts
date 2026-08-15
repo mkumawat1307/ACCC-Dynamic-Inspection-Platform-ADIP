@@ -1,5 +1,6 @@
 import { Project } from "@/src/models/Project";
 import {
+  buildProjectFolderLabel,
   canonicalProjectLabel,
   legacyProjectOnlyLabel,
   legacyStrippedLabel,
@@ -93,6 +94,37 @@ describe("legacyProjectOnlyLabel", () => {
   it("returns the project name", () => {
     const project = makeProject({ ProjectName: "Project Alpha" });
     expect(legacyProjectOnlyLabel(project)).toBe("Project Alpha");
+  });
+});
+
+describe("buildProjectFolderLabel", () => {
+  it("combines district and project name", () => {
+    expect(buildProjectFolderLabel("SIKAR", "XYZ")).toBe("SIKAR_XYZ");
+  });
+
+  it("sanitizes illegal characters", () => {
+    expect(buildProjectFolderLabel("A", "B:C/D")).toBe("A_B_C_D");
+  });
+
+  it("trims whitespace", () => {
+    expect(buildProjectFolderLabel("  Jaipur  ", "  AMC 2026 ")).toBe("Jaipur_AMC 2026");
+  });
+
+  it("returns project name when district is empty", () => {
+    expect(buildProjectFolderLabel("", "Project Alpha")).toBe("Project Alpha");
+    expect(buildProjectFolderLabel("   ", "Project Alpha")).toBe("Project Alpha");
+  });
+});
+
+describe("canonical vs buildProjectFolderLabel", () => {
+  it("canonical label matches buildProjectFolderLabel for the same project", () => {
+    const project = makeProject({
+      DistrictName: "New Delhi",
+      ProjectName: "Project Alpha",
+    });
+    expect(canonicalProjectLabel(project)).toBe(
+      buildProjectFolderLabel("New Delhi", "Project Alpha")
+    );
   });
 });
 

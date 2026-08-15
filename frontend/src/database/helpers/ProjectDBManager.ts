@@ -8,6 +8,8 @@ import {
 } from "../db";
 import { logger } from "@/src/utils/logger";
 import { createProjectSchema, migrateProjectSchema } from "../schema";
+import { buildProjectFolderLabel } from "@/src/utils/folderNaming";
+import { buildIdentitySeed } from "../projectIdentity";
 import { seedInspectionTemplate } from "../seeds/inspection-template.seed";
 import { seedInspectionSections } from "../seeds/inspection-sections.seed";
 import { seedInspectionFields } from "../seeds/inspection-fields.seed";
@@ -20,6 +22,13 @@ import { seedDashboardCards } from "../seeds/dashboard-cards.seed";
 import { InspectionRepository } from "../repositories/InspectionRepository";
 
 const PROJECTS_FOLDER = "Projects";
+
+export class ProjectFolderExistsError extends Error {
+  constructor(path: string) {
+    super(`Project DB already exists at ${path}`);
+    this.name = "ProjectFolderExistsError";
+  }
+}
 
 const SETTINGS_TABLES = [
   "InspectionTemplates",
@@ -60,9 +69,23 @@ function getProjectsBasePath(): string {
   return `${FileSystem.documentDirectory}${PROJECTS_FOLDER}/`;
 }
 
-export function getProjectDbPath(projectName: string): string {
-  const safeName = projectName.replace(/[<>:"/\\|?*]/g, "_");
-  return `${getProjectsBasePath()}${safeName}/inspection.db`;
+const FNV1A_OFFSET_BASIS = 0x811c9dc5;
+const FNV1A_PRIME = 0x01000193;
+
+function folderIdentityHash(districtName: string, projectName: string): string {
+  const seed = buildIdentitySeed(districtName, projectName);
+  let hash = FNV1A_OFFSET_BASIS;
+  for (let i = 0; i < seed.length; i++) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, FNV1A_PRIME) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+export function getProjectDbPath(districtName: string, projectName: string): string {
+  const label = buildProjectFolderLabel(districtName, projectName);
+  const hash = folderIdentityHash(districtName, projectName);
+  return `${getProjectsBasePath()}${label}_${hash}/inspection.db`;
 }
 
 export async function createProjectDb(
@@ -73,6 +96,10 @@ export async function createProjectDb(
   logger.debug("[ProjectDBManager] createProjectDb — START");
 
   const folderPath = projectDbPath.replace(/inspection\.db$/, "");
+  const existing = await FileSystem.getInfoAsync(projectDbPath);
+  if (existing.exists) {
+    throw new ProjectFolderExistsError(projectDbPath);
+  }
   await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
 
   await setActiveProject(projectDbPath);
@@ -134,6 +161,10 @@ export async function cloneProjectDb(
   }
 
   const folderPath = projectDbPath.replace(/inspection\.db$/, "");
+  const existing = await FileSystem.getInfoAsync(projectDbPath);
+  if (existing.exists) {
+    throw new ProjectFolderExistsError(projectDbPath);
+  }
   await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
 
   await setActiveProject(projectDbPath);

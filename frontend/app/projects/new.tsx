@@ -8,10 +8,10 @@ import { DistrictRepository } from "@/src/database/repositories/DistrictReposito
 import { District } from "@/src/models/District";
 import { Dropdown } from "react-native-paper-dropdown";
 import { router, useLocalSearchParams } from "expo-router";
-import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
-import { createProjectDb, getProjectDbPath, updateProjectInspectorName } from "@/src/database/helpers/ProjectDBManager";
-import { ensureProjectFolder } from "@/src/utils/storageManager";
-import { sanitizeFolderName } from "@/src/utils/folderNaming";
+import { ProjectRepository, ProjectAlreadyExistsError } from "@/src/database/repositories/ProjectRepository";
+import { updateProjectInspectorName } from "@/src/database/helpers/ProjectDBManager";
+import { createProjectFlow } from "@/src/database/services/ProjectCreateService";
+import { updateProjectFlow } from "@/src/database/services/ProjectEditService";
 
 export default function NewProjectScreen() {
   const { editProjectId } = useLocalSearchParams<{ editProjectId?: string }>();
@@ -74,8 +74,8 @@ const [saving, setSaving] = useState(false);
     setSaving(true);
     try {
       if (isEdit && editProjectId) {
-const inspector = inspectorName.trim();
-        await ProjectRepository.updateProject(Number(editProjectId), {
+        const inspector = inspectorName.trim();
+        await updateProjectFlow(Number(editProjectId), {
           projectName: projectName.trim(),
           districtId: Number(district),
           client: client.trim(),
@@ -89,34 +89,24 @@ const inspector = inspectorName.trim();
         }
         Alert.alert("Success", "Project updated successfully.");
       } else {
-        const dbPath = getProjectDbPath(projectName.trim());
-
-        const newId = await ProjectRepository.createProject({
+        const districtName =
+          districts.find((d) => d.DistrictID === Number(district))?.DistrictName ?? "";
+        await createProjectFlow({
           projectName: projectName.trim(),
           districtId: Number(district),
-          dbPath: dbPath,
-          safPath: null as unknown as string,
+          districtName,
           client: client.trim(),
           description: description.trim(),
           inspectorName: inspectorName.trim(),
         });
-
-        // Create the project DB with full schema + seed data (scoped to the real ProjectID)
-        await createProjectDb(projectName.trim(), dbPath, newId);
-
-        // Auto-create Download/ACCC Dynamic Inspection/<District>_<Project>.
-        // Failure is logged, not fatal — dashboard/camera re-check on open.
-        const districtName =
-          districts.find((d) => d.DistrictID === Number(district))?.DistrictName ?? "";
-        const folderLabel = sanitizeFolderName(`${districtName}_${projectName.trim()}`);
-        ensureProjectFolder(folderLabel).catch((e) =>
-          logger.error("[Storage] newProject ensureProjectFolder failed:", e)
-        );
-
         Alert.alert("Success", "Project created successfully.");
       }
       router.back();
     } catch (error) {
+      if (error instanceof ProjectAlreadyExistsError) {
+        Alert.alert("Project Already Exists", error.message);
+        return;
+      }
       logger.error(error);
       Alert.alert("Error", "Unable to save project.");
     } finally {

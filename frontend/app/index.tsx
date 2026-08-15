@@ -12,12 +12,12 @@ import {
 } from "react-native-paper";
 import { useRouter, useFocusEffect } from "expo-router";
 
-import { ProjectRepository } from "@/src/database/repositories/ProjectRepository";
+import { ProjectRepository, ProjectAlreadyExistsError } from "@/src/database/repositories/ProjectRepository";
 import { Project } from "@/src/models/Project";
 import { DeleteProjectDialog, CloneProjectDialog } from "@/src/components/app/components/ProjectDialogs";
 import { styles } from "@/src/components/app/index.styles";
 import { useInspection } from "@/src/context/InspectionContext";
-import { createProjectDb, cloneProjectDb, deleteProjectDb, getProjectDbPath } from "@/src/database/helpers/ProjectDBManager";
+import { createProjectDb, cloneProjectDb, deleteProjectDb, getProjectDbPath, ProjectFolderExistsError } from "@/src/database/helpers/ProjectDBManager";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
 
 export default function HomeScreen() {
@@ -144,7 +144,8 @@ export default function HomeScreen() {
 
   const handleClone = async () => {
     if (!selectedProject || !cloneName.trim()) return;
-    const projectDbPath = getProjectDbPath(cloneName.trim());
+    const districtName = selectedProject.DistrictName ?? "";
+    const projectDbPath = getProjectDbPath(districtName, cloneName.trim());
     let newId: number | null = null;
     try {
       newId = await ProjectRepository.cloneProject(
@@ -174,9 +175,17 @@ export default function HomeScreen() {
         });
       }
     } catch (error) {
+      if (error instanceof ProjectAlreadyExistsError) {
+        setCloneDialogVisible(false);
+        setSelectedProject(null);
+        Alert.alert("Project Already Exists", error.message);
+        return;
+      }
       logger.error("Clone error:", error);
       try {
-        if (projectDbPath) await deleteProjectDb(projectDbPath);
+        if (!(error instanceof ProjectFolderExistsError) && projectDbPath) {
+          await deleteProjectDb(projectDbPath);
+        }
         if (newId) await ProjectRepository.deleteProject(newId);
       } catch (cleanupError) {
         logger.error("Clone cleanup error:", cleanupError);

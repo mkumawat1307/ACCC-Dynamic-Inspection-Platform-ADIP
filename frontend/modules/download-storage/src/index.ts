@@ -20,6 +20,7 @@ export interface DownloadStorageNative {
   deleteFile(uri: string): Promise<boolean>;
   findFile(relativePath: string, fileName: string): Promise<string | null>;
   renameFile(uri: string, newFileName: string): Promise<string | null>;
+  getRelativePath(uri: string): Promise<string | null>;
 }
 
 let nativeModule: DownloadStorageNative | null = null;

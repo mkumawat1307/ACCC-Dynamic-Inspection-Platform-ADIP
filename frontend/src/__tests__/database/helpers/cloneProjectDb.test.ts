@@ -7,7 +7,7 @@ jest.mock("expo-file-system/legacy", () => ({
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
   moveAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
-  getInfoAsync: jest.fn().mockResolvedValue({ exists: true, isDirectory: false, size: 100 }),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: false, isDirectory: false }),
 }));
 
 import type { SQLiteDatabase } from "expo-sqlite";
@@ -247,5 +247,65 @@ describe("cloneProjectDb", () => {
     expect(cards[0].ProjectID).toBe(99);
     expect(cards[0].CardKey).toBe("total_pole_status");
     await dbModule.clearActiveProject();
+  });
+
+  it("copies Photos.StoragePath verbatim with FilePath (clone reference-sharing is intentional)", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { cloneProjectDb } = require("@/src/database/helpers/ProjectDBManager") as typeof import("@/src/database/helpers/ProjectDBManager");
+
+    const dbA = await setupProject(PROJECT_A);
+
+    await dbA.runAsync(
+      `INSERT INTO Inspections (InspectionID, ProjectID, DistrictID, PoleID, InspectionDate, Status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [101, 7, 1, "P001", "2024-01-01", "Draft"]
+    );
+    await dbA.runAsync(
+      `INSERT INTO Photos (PhotoID, InspectionID, FileName, FilePath, StoragePath, Latitude, Longitude)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        401,
+        101,
+        "p.jpg",
+        "content://media/Download/ACCC Dynamic Inspection/ProjectAlpha/p.jpg",
+        "Download/ACCC Dynamic Inspection/ProjectAlpha/",
+        12.3,
+        77.4,
+      ]
+    );
+
+    await dbModule.clearActiveProject();
+
+    await cloneProjectDb(PROJECT_A, "Clone", PROJECT_B, 99);
+
+    await dbModule.setActiveProject(PROJECT_B);
+    const dbB: SQLiteDatabase = await dbModule.getDatabase();
+
+    const photos = await dbB.getAllAsync<{ FilePath: string; StoragePath: string | null }>(
+      "SELECT FilePath, StoragePath FROM Photos"
+    );
+    expect(photos).toHaveLength(1);
+    expect(photos[0].FilePath).toBe(
+      "content://media/Download/ACCC Dynamic Inspection/ProjectAlpha/p.jpg"
+    );
+    expect(photos[0].StoragePath).toBe("Download/ACCC Dynamic Inspection/ProjectAlpha/");
+
+    await dbModule.clearActiveProject();
+  });
+
+  it("throws ProjectFolderExistsError and copies nothing when the target DB file already exists", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { cloneProjectDb, ProjectFolderExistsError } = require("@/src/database/helpers/ProjectDBManager") as typeof import("@/src/database/helpers/ProjectDBManager");
+
+    const dbA = await setupProject(PROJECT_A);
+    await dbModule.clearActiveProject();
+
+    const fs = require("expo-file-system/legacy");
+    fs.getInfoAsync.mockResolvedValue({ exists: true, isDirectory: false });
+
+    await expect(cloneProjectDb(PROJECT_A, "Clone", PROJECT_B, 99)).rejects.toBeInstanceOf(
+      ProjectFolderExistsError
+    );
+    expect(fs.makeDirectoryAsync).not.toHaveBeenCalled();
   });
 });

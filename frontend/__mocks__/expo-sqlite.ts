@@ -44,10 +44,54 @@ const SQL_COMMANDS = {
   SELECT_SQLITE_MASTER: /^\s*SELECT\s+name\s+FROM\s+sqlite_master/i,
 };
 
+function escapeRegexChar(ch: string): string {
+  return /[.*+?^${}()|[\]\\]/.test(ch) ? `\\${ch}` : ch;
+}
+
+function likeToRegExp(pattern: string, escapeChar: string): RegExp {
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (escapeChar && ch === escapeChar) {
+      const next = pattern[i + 1];
+      if (next !== undefined) {
+        out += escapeRegexChar(next);
+        i++;
+      } else {
+        out += escapeRegexChar(escapeChar);
+      }
+      continue;
+    }
+    if (ch === "%") {
+      out += ".*";
+      continue;
+    }
+    if (ch === "_") {
+      out += ".";
+      continue;
+    }
+    out += escapeRegexChar(ch);
+  }
+  return new RegExp(`^${out}$`, "i");
+}
+
 function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boolean {
   const conditions = whereClause.split(/\s+AND\s+/i);
   let paramIdx = 0;
   const compiled = conditions.map((cond) => {
+    const likeMatch = cond.match(
+      /(?:\w+\.)?(\w+)\s+LIKE\s+(?:\?|'([^']*)')(?:\s+ESCAPE\s+'([^']*)')?/i
+    );
+    if (likeMatch) {
+      const col = likeMatch[1];
+      let value: unknown;
+      if (likeMatch[2] !== undefined) {
+        value = likeMatch[2];
+      } else {
+        value = params[paramIdx++];
+      }
+      return { col, like: likeToRegExp(String(value), likeMatch[3] ?? "") };
+    }
     const match = cond.match(/(?:\w+\.)?(\w+)\s*(!=|<>|=)\s*(?:\?|'([^']*)'|(\d+))/);
     if (!match) return null;
     const col = match[1];
@@ -66,6 +110,7 @@ function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boole
     return compiled.every((cond) => {
       if (!cond) return true;
       const actual = row[cond.col];
+      if (cond.like !== undefined) return cond.like.test(String(actual ?? ""));
       if (cond.op === "!=") return actual !== cond.value;
       if (cond.op === ">=") return (actual as number) >= (cond.value as number);
       return actual === cond.value;
@@ -235,7 +280,17 @@ class MockDatabase {
       }
 
       return results.map((row) => {
-        if (cols[0] === "*" || cols[0] === "") return row as T;
+        if (cols[0] === "*" || cols[0] === "") {
+          const allCols = Array.from(
+            new Set(table.flatMap((r) => Object.keys(r)))
+          );
+          if (allCols.length === 0) return row as T;
+          const fullRow: Row = {};
+          for (const col of allCols) {
+            fullRow[col] = row[col] ?? null;
+          }
+          return fullRow as T;
+        }
         const projected: Row = {};
         for (const col of cols) {
           const trimCol = col.trim();
