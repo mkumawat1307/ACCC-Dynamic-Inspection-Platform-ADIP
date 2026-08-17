@@ -146,9 +146,11 @@ export default function SectionRenderer({
         (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_count" === field.FieldKey
       );
       if (deviceType) {
+        if (value === "") return;
+        const newCount = Number(value);
         setDeviceCounts((prev) => ({
           ...prev,
-          [deviceType]: Number(value || "0"),
+          [deviceType]: newCount,
         }));
       }
     }

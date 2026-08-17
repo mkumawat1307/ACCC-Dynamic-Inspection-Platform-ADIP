@@ -10,6 +10,8 @@ export interface DeviceFieldDefinition {
   IsRequired: number;
   DisplayOrder: number;
   IsActive: number;
+  Placeholder?: string | null;
+  IsVisible?: number;
 }
 
 class DeviceFieldDefinitionsRepository {
@@ -67,8 +69,8 @@ class DeviceFieldDefinitionsRepository {
     const db = await getDatabase();
     const tid = templateId ?? field.TemplateID ?? 1;
     const result = await db.runAsync(
-      `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, Placeholder)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tid,
         field.DeviceType,
@@ -76,7 +78,9 @@ class DeviceFieldDefinitionsRepository {
         field.Label,
         field.FieldType,
         field.IsRequired,
+        field.IsVisible ?? 1,
         field.DisplayOrder,
+        field.Placeholder ?? null,
       ]
     );
     return result.lastInsertRowId;
@@ -86,9 +90,9 @@ class DeviceFieldDefinitionsRepository {
     const db = await getDatabase();
     await db.runAsync(
       `UPDATE DeviceFieldDefinitions
-       SET Label = ?, FieldType = ?, IsRequired = ?, DisplayOrder = ?, UpdatedAt = CURRENT_TIMESTAMP
+       SET Label = ?, FieldType = ?, IsRequired = ?, IsVisible = ?, DisplayOrder = ?, Placeholder = ?, UpdatedAt = CURRENT_TIMESTAMP
        WHERE FieldDefID = ?`,
-      [field.Label, field.FieldType, field.IsRequired, field.DisplayOrder, field.FieldDefID!]
+      [field.Label, field.FieldType, field.IsRequired, field.IsVisible ?? 1, field.DisplayOrder, field.Placeholder ?? null, field.FieldDefID!]
     );
   }
 
@@ -164,9 +168,9 @@ class DeviceFieldDefinitionsRepository {
     );
     for (const f of fields) {
       await db.runAsync(
-        `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder, IsActive)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-        [targetTemplateId, f.DeviceType, f.FieldName, f.Label, f.FieldType, f.IsRequired, f.DisplayOrder]
+        `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, IsActive, Placeholder)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        [targetTemplateId, f.DeviceType, f.FieldName, f.Label, f.FieldType, f.IsRequired, f.IsVisible ?? 1, f.DisplayOrder, f.Placeholder ?? null]
       );
     }
   }

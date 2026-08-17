@@ -27,13 +27,21 @@ export interface Field {
 
 export const FIELD_TYPES = [
   { value: "text", label: "Text Input" },
-  { value: "number", label: "Number" },
+  { value: "number", label: "Numbers" },
   { value: "multiline", label: "Multiline Text" },
   { value: "dropdown", label: "Dropdown" },
   { value: "date", label: "Date" },
   { value: "date_auto", label: "Date (Auto)" },
   { value: "time", label: "Time" },
   { value: "GPS", label: "GPS" },
+  { value: "checkbox", label: "Checkbox" },
+] as const;
+
+export const CREATEABLE_FIELD_TYPES = [
+  { value: "text", label: "Text Input" },
+  { value: "number", label: "Numbers" },
+  { value: "multiline", label: "Multiline Text" },
+  { value: "dropdown", label: "Dropdown" },
   { value: "checkbox", label: "Checkbox" },
 ] as const;
 

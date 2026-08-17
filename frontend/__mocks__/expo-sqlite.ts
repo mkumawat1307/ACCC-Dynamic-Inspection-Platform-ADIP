@@ -92,7 +92,9 @@ function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boole
       }
       return { col, like: likeToRegExp(String(value), likeMatch[3] ?? "") };
     }
-    const match = cond.match(/(?:\w+\.)?(\w+)\s*(!=|<>|=)\s*(?:\?|'([^']*)'|(\d+))/);
+    const match = cond.match(
+      /(?:\w+\.)?(\w+)\s*(>=|<=|!=|<>|=|>|<)\s*(?:\?|'([^']*)'|(\d+))/
+    );
     if (!match) return null;
     const col = match[1];
     const op = match[2];
@@ -113,6 +115,9 @@ function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boole
       if (cond.like !== undefined) return cond.like.test(String(actual ?? ""));
       if (cond.op === "!=") return actual !== cond.value;
       if (cond.op === ">=") return (actual as number) >= (cond.value as number);
+      if (cond.op === "<=") return (actual as number) <= (cond.value as number);
+      if (cond.op === ">") return (actual as number) > (cond.value as number);
+      if (cond.op === "<") return (actual as number) < (cond.value as number);
       return actual === cond.value;
     });
   };
@@ -171,6 +176,9 @@ class MockDatabase {
       if (pk && !cols.includes(pk)) {
         row[pk] = id;
       }
+      if (tableName === "DeviceRecords" && !cols.includes("IsActive")) {
+        row.IsActive = 1;
+      }
       const table = this.tables.get(tableName) ?? [];
       table.push(row);
       this.tables.set(tableName, table);
@@ -193,11 +201,19 @@ class MockDatabase {
       for (const row of table) {
         if (filter(row)) {
           for (const part of setParts) {
-            const setMatch = part.match(/(\w+)\s*=\s*(?:\?|CURRENT_TIMESTAMP)/);
+            const setMatch = part.match(
+              /(\w+)\s*=\s*(?:\?|CURRENT_TIMESTAMP|'([^']*)'|([+-]?\d+(?:\.\d+)?)|NULL)/
+            );
             if (setMatch) {
               const col = setMatch[1];
               if (part.includes("CURRENT_TIMESTAMP")) {
                 row[col] = new Date().toISOString();
+              } else if (setMatch[2] !== undefined) {
+                row[col] = setMatch[2];
+              } else if (setMatch[3] !== undefined) {
+                row[col] = Number(setMatch[3]);
+              } else if (part.includes("NULL")) {
+                row[col] = null;
               } else {
                 row[col] = params[paramIdx++];
               }

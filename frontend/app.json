@@ -11,8 +11,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.accc.dynamicinspection",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Capture GPS coordinates of the pole site",
-        "NSCameraUsageDescription": "Take photos of the pole and equipment",
+        "NSLocationWhenInUseUsageDescription": "Capture GPS coordinates of the site",
+        "NSCameraUsageDescription": "Take photos of the site and equipment",
         "NSPhotoLibraryUsageDescription": "Attach existing photos to the inspection",
         "NSPhotoLibraryAddUsageDescription": "Save inspection Excel files to your device"
       }
@@ -55,13 +55,13 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Capture GPS coordinates of the pole site"
+          "locationAlwaysAndWhenInUsePermission": "Capture GPS coordinates of the site"
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Take photos of the pole and equipment"
+          "cameraPermission": "Take photos of the site and equipment"
         }
       ],
       [

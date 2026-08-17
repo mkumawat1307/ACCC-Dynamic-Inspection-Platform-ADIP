@@ -60,6 +60,8 @@ export interface TemplateExportDeviceType {
   FieldType: string;
   IsRequired: number;
   DisplayOrder: number;
+  Placeholder?: string | null;
+  IsVisible?: number;
 }
 
 export interface TemplateExportDeviceOption {
@@ -204,8 +206,10 @@ export async function buildTemplateExportData(): Promise<{
       FieldType: string;
       IsRequired: number;
       DisplayOrder: number;
+      Placeholder: string | null;
+      IsVisible: number;
     }>(
-      `SELECT DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder
+      `SELECT DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, Placeholder
        FROM DeviceFieldDefinitions WHERE TemplateID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
       [template.TemplateID]
     );
@@ -481,14 +485,14 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
           );
           if (existingDef) {
             await db.runAsync(
-              `UPDATE DeviceFieldDefinitions SET Label = ?, FieldType = ?, IsRequired = ?, DisplayOrder = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldDefID = ?`,
-              [deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.DisplayOrder, existingDef.FieldDefID]
+              `UPDATE DeviceFieldDefinitions SET Label = ?, FieldType = ?, IsRequired = ?, IsVisible = ?, DisplayOrder = ?, Placeholder = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldDefID = ?`,
+              [deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.IsVisible ?? 1, deviceType.DisplayOrder, deviceType.Placeholder ?? null, existingDef.FieldDefID]
             );
           } else {
             await db.runAsync(
-              `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder, IsActive)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-              [templateId, deviceType.DeviceType, deviceType.FieldName, deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.DisplayOrder]
+              `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, Placeholder, IsActive)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+              [templateId, deviceType.DeviceType, deviceType.FieldName, deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.IsVisible ?? 1, deviceType.DisplayOrder, deviceType.Placeholder ?? null]
             );
           }
         }

@@ -274,8 +274,10 @@ export async function createProjectSchema() {
             DeviceType TEXT NOT NULL,
             FieldName TEXT NOT NULL,
             Label TEXT NOT NULL,
+            Placeholder TEXT,
             FieldType TEXT NOT NULL DEFAULT 'text',
             IsRequired INTEGER DEFAULT 0,
+            IsVisible INTEGER DEFAULT 1,
             DisplayOrder INTEGER NOT NULL DEFAULT 0,
             IsActive INTEGER DEFAULT 1,
             CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -491,6 +493,20 @@ export async function migrateProjectSchema(projectId: number) {
         logger.debug("[schema] Migration: StoragePath column added to Photos");
     } catch {
         logger.debug("[schema] Migration: StoragePath column already exists in Photos (ok)");
+    }
+
+    try {
+        await db.execAsync(`ALTER TABLE DeviceFieldDefinitions ADD COLUMN Placeholder TEXT;`);
+        logger.debug("[schema] Migration: Placeholder column added to DeviceFieldDefinitions");
+    } catch {
+        logger.debug("[schema] Migration: Placeholder column already exists in DeviceFieldDefinitions (ok)");
+    }
+
+    try {
+        await db.execAsync(`ALTER TABLE DeviceFieldDefinitions ADD COLUMN IsVisible INTEGER NOT NULL DEFAULT 1;`);
+        logger.debug("[schema] Migration: IsVisible column added to DeviceFieldDefinitions");
+    } catch {
+        logger.debug("[schema] Migration: IsVisible column already exists in DeviceFieldDefinitions (ok)");
     }
 
     logger.debug("✅ [schema] migrateProjectSchema() — END");

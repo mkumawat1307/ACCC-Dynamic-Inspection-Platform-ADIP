@@ -1,14 +1,12 @@
 import React from "react";
 import { View, ScrollView } from "react-native";
 import { Dialog, TextInput, Text, Chip, Button } from "react-native-paper";
+import { CREATEABLE_FIELD_TYPES, FIELD_TYPES } from "@/src/database/repositories/FieldRepository";
 
-const FIELD_TYPES = [
-  { label: "Text", value: "text" },
-  { label: "Dropdown", value: "dropdown" },
-  { label: "Number", value: "number" },
-  { label: "Date", value: "date" },
-  { label: "Checkbox", value: "checkbox" },
-];
+const getTypeLabel = (type: string) =>
+  CREATEABLE_FIELD_TYPES.find((t) => t.value === type)?.label ??
+  FIELD_TYPES.find((t) => t.value === type)?.label ??
+  type;
 
 interface FieldDialogProps {
   visible: boolean;
@@ -25,6 +23,12 @@ interface FieldDialogProps {
   typeChipSelectedStyle?: any;
   chipRowStyle?: any;
   inputStyle?: any;
+  fieldLabelText?: string;
+  showExtraConfig?: boolean;
+  placeholder?: string;
+  isVisible?: boolean;
+  onPlaceholderChange?: (text: string) => void;
+  onVisibleToggle?: () => void;
 }
 
 export function FieldDialog({
@@ -42,42 +46,86 @@ export function FieldDialog({
   typeChipSelectedStyle,
   chipRowStyle,
   inputStyle,
+  fieldLabelText = "Display Label",
+  showExtraConfig = false,
+  placeholder,
+  isVisible,
+  onPlaceholderChange,
+  onVisibleToggle,
 }: FieldDialogProps) {
+  const legacyLocked =
+    editingField && !CREATEABLE_FIELD_TYPES.some((ft) => ft.value === fieldType);
+
+  const baseContent = (
+    <>
+      <TextInput
+        mode="outlined"
+        label={fieldLabelText}
+        value={fieldLabel}
+        onChangeText={onFieldLabelChange}
+        style={inputStyle}
+      />
+      <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Field Type</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+        <View style={chipRowStyle}>
+          {CREATEABLE_FIELD_TYPES.map((ft) => (
+            <Chip
+              key={ft.value}
+              selected={fieldType === ft.value}
+              disabled={legacyLocked}
+              onPress={legacyLocked ? undefined : () => onFieldTypeChange(ft.value)}
+              style={[typeChipStyle, fieldType === ft.value && typeChipSelectedStyle]}
+            >
+              {ft.label}
+            </Chip>
+          ))}
+          {legacyLocked && (
+            <Chip
+              selected
+              style={[typeChipStyle, typeChipSelectedStyle]}
+            >
+              {getTypeLabel(fieldType)}
+            </Chip>
+          )}
+        </View>
+      </ScrollView>
+      <TextInput
+        mode="outlined"
+        label="Placeholder"
+        value={placeholder}
+        onChangeText={onPlaceholderChange}
+        style={inputStyle}
+      />
+      <View style={chipRowStyle}>
+        <Chip
+          selected={fieldRequired}
+          onPress={onFieldRequiredToggle}
+          style={[typeChipStyle, fieldRequired && typeChipSelectedStyle]}
+        >
+          Required
+        </Chip>
+        <Chip
+          selected={!!isVisible}
+          onPress={onVisibleToggle}
+          style={[typeChipStyle, isVisible && typeChipSelectedStyle]}
+        >
+          Visible
+        </Chip>
+      </View>
+    </>
+  );
+
   return (
     <Dialog visible={visible} onDismiss={onDismiss}>
       <Dialog.Title>{editingField ? "Edit Field" : "Add Field"}</Dialog.Title>
-      <Dialog.Content>
-        <TextInput
-          mode="outlined"
-          label="Display Label"
-          value={fieldLabel}
-          onChangeText={onFieldLabelChange}
-          style={inputStyle}
-        />
-        <Text variant="bodyMedium" style={{ marginBottom: 8 }}>Field Type</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-          <View style={chipRowStyle}>
-            {FIELD_TYPES.map((ft) => (
-              <Chip
-                key={ft.value}
-                selected={fieldType === ft.value}
-                onPress={() => onFieldTypeChange(ft.value)}
-                style={[typeChipStyle, fieldType === ft.value && typeChipSelectedStyle]}
-              >
-                {ft.label}
-              </Chip>
-            ))}
-          </View>
-        </ScrollView>
-        <View style={chipRowStyle}>
-          <Chip
-            selected={fieldRequired}
-            onPress={onFieldRequiredToggle}
-            style={[typeChipStyle, fieldRequired && typeChipSelectedStyle]}
-          >
-            Required
-          </Chip>
-        </View>
+      <Dialog.Content style={showExtraConfig ? { maxHeight: 400 } : undefined}>
+        {showExtraConfig ? (
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {baseContent}
+          </ScrollView>
+        ) : (
+          baseContent
+        )}
       </Dialog.Content>
       <Dialog.Actions>
         <Button onPress={onDismiss}>Cancel</Button>

@@ -1,14 +1,17 @@
-import React from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useRef } from "react";
+import { StyleSheet, View, Dimensions, StatusBar } from "react-native";
 import { Checkbox, Switch, Text, TextInput } from "react-native-paper";
-import { Dropdown } from "react-native-element-dropdown";
+import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
+import { sanitizeNumberInput } from "../../utils/fieldInput";
+import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
+import { cancelPendingOpen, registerPendingOpen } from "./dropdownScrollGate";
 
 export interface DropdownOption {
   label: string;
   value: string;
 }
 
-export function renderInput(params: {
+export interface FieldInputProps {
   fieldType: string;
   label: string;
   value: string;
@@ -22,20 +25,92 @@ export function renderInput(params: {
   onChange?: (value: string) => void;
   dropdownFocus: boolean;
   setDropdownFocus: (focused: boolean) => void;
-}) {
-  const {
-    fieldType, label, value, editable, placeholder, error, options, fieldKey,
-    onCameraCountChange, onSwitchCountChange, onChange,
-    dropdownFocus, setDropdownFocus,
-  } = params;
+}
 
+const DROPDOWN_MAX_HEIGHT = 350;
+const SCROLL_PADDING = 16;
+const DROPDOWN_BOTTOM_GAP = 2;
+
+type MeasureCallback = (x: number, y: number, width: number, height: number) => void;
+
+let scrollReentryInProgress = false;
+
+export function autoScrollDropdown(
+  dropdownViewRef: { current: { measureInWindow?: (cb: MeasureCallback) => void } | null },
+  dropdownOpenRef: { current: { open?: () => void } | null },
+  scrollViewRef: {
+    current: {
+      scrollTo: (opts: { x: number; y: number; animated: boolean }) => void;
+    } | null;
+  },
+  currentOffset: number
+): void {
+  if (scrollReentryInProgress) return;
+  cancelPendingOpen();
+  if (dropdownViewRef.current && scrollViewRef.current) {
+    dropdownViewRef.current.measureInWindow?.((x, y, width, height) => {
+      if (!scrollViewRef.current) return;
+
+      const screenHeight = Dimensions.get("window").height;
+
+      const dropdownBottom = y + height;
+
+      const availableSpace = screenHeight - dropdownBottom;
+
+      const statusBarHeight = StatusBar.currentHeight ?? 0;
+
+      const requiredSpace =
+        DROPDOWN_MAX_HEIGHT + DROPDOWN_BOTTOM_GAP + statusBarHeight + SCROLL_PADDING;
+
+      if (availableSpace < requiredSpace) {
+        const scrollNeeded = requiredSpace - availableSpace;
+        const target = currentOffset + scrollNeeded;
+
+        scrollViewRef.current.scrollTo({
+          x: 0,
+          y: target,
+          animated: false,
+        });
+
+        registerPendingOpen(target, () => {
+          if (!dropdownViewRef.current || !scrollViewRef.current) {
+            return;
+          }
+          dropdownViewRef.current.measureInWindow?.(() => {
+            scrollReentryInProgress = true;
+            try {
+              dropdownOpenRef.current?.open?.();
+            } finally {
+              scrollReentryInProgress = false;
+            }
+          });
+        });
+      }
+    });
+  }
+}
+
+export const FieldInput: React.FC<FieldInputProps> = ({
+  fieldType, label, value, editable, placeholder, error, options, fieldKey,
+  onCameraCountChange, onSwitchCountChange, onChange,
+  dropdownFocus, setDropdownFocus,
+}) => {
   const isCameraCount = fieldKey === "camera_count";
   const isSwitchCount = fieldKey === "switch_count";
+  const dropdownViewRef = useRef<View>(null);
+  const dropdownOpenRef = useRef<IDropdownRef | null>(null);
+  const { scrollViewRef, scrollOffsetRef } = useInspectionScroll();
+
+  const handleDropdownFocus = () => {
+    setDropdownFocus(true);
+    autoScrollDropdown(dropdownViewRef, dropdownOpenRef, scrollViewRef, scrollOffsetRef.current);
+  };
 
   function updateNumber(text: string) {
-    const onlyNumbers = text.replace(/[^0-9]/g, "");
-    onChange?.(onlyNumbers);
-    const count = Number(onlyNumbers || "0");
+    const isCount = isCameraCount || isSwitchCount;
+    const clean = sanitizeNumberInput(text, { integerOnly: isCount });
+    onChange?.(clean);
+    const count = Number(clean || "0");
     if (isCameraCount) onCameraCountChange?.(count);
     if (isSwitchCount) onSwitchCountChange?.(count);
   }
@@ -43,9 +118,7 @@ export function renderInput(params: {
   switch (fieldType.toUpperCase()) {
 
     case "TEXT":
-
       return (
-
         <TextInput
           mode="outlined"
           label={label}
@@ -59,20 +132,17 @@ export function renderInput(params: {
           contentStyle={styles.content}
           dense
         />
-
       );
 
     case "NUMBER":
-
       return (
-
         <TextInput
           mode="outlined"
           label={label}
           value={value}
           editable={editable}
           placeholder={placeholder}
-          keyboardType="numeric"
+          keyboardType="decimal-pad"
           error={!!error}
           onChangeText={updateNumber}
           style={styles.input}
@@ -80,13 +150,10 @@ export function renderInput(params: {
           contentStyle={styles.content}
           dense
         />
-
       );
 
     case "MULTILINE":
-
       return (
-
         <TextInput
           mode="outlined"
           label={label}
@@ -100,13 +167,10 @@ export function renderInput(params: {
           style={styles.input}
           outlineStyle={styles.outline}
         />
-
       );
 
     case "DATE_AUTO":
-
       return (
-
         <TextInput
           mode="outlined"
           label={label}
@@ -125,13 +189,10 @@ export function renderInput(params: {
           contentStyle={styles.content}
           dense
         />
-
       );
 
     case "DATE":
-
       return (
-
         <TextInput
           mode="outlined"
           label={label}
@@ -150,13 +211,10 @@ export function renderInput(params: {
           contentStyle={styles.content}
           dense
         />
-
       );
 
     case "TIME":
-
       return (
-
         <TextInput
           mode="outlined"
           label={label}
@@ -175,17 +233,15 @@ export function renderInput(params: {
           contentStyle={styles.content}
           dense
         />
-
       );
-            case "DROPDOWN":
 
-    case "PROJECT_DROPDOWN":
-
+    case "DROPDOWN":
+    case "PROJECT_DROPDOWN": {
       return (
-
-        <View>
+        <View ref={dropdownViewRef}>
           <Text style={styles.fieldLabel}>{label}</Text>
           <Dropdown
+            ref={dropdownOpenRef}
             style={[
               styles.dropdown,
               dropdownFocus && styles.dropdownFocus,
@@ -206,32 +262,23 @@ export function renderInput(params: {
             searchPlaceholder="Search..."
             value={value}
             disable={!editable}
-            onFocus={() =>
-              setDropdownFocus(true)
-            }
-            onBlur={() =>
-              setDropdownFocus(false)
-            }
-            onChange={(item) => {
-
+            onFocus={handleDropdownFocus}
+            onBlur={() => {
               setDropdownFocus(false);
-
-              onChange?.(
-                item.value
-              );
-
+              cancelPendingOpen();
+            }}
+            onChange={(item) => {
+              setDropdownFocus(false);
+              onChange?.(item.value);
             }}
           />
         </View>
-
       );
+    }
 
     case "SWITCH":
-
       return (
-
         <View style={styles.switchContainer}>
-
           <Switch
             value={value === "1"}
             disabled={!editable}
@@ -243,15 +290,11 @@ export function renderInput(params: {
               )
             }
           />
-
         </View>
-
       );
 
     case "CHECKBOX":
-
       return (
-
         <Checkbox.Item
           label={label}
           disabled={!editable}
@@ -268,14 +311,11 @@ export function renderInput(params: {
             )
           }
         />
-
       );
-           case "GPS":
 
+    case "GPS":
       return (
-
         <View>
-
           <TextInput
             mode="outlined"
             label={label}
@@ -292,15 +332,11 @@ export function renderInput(params: {
             contentStyle={styles.content}
             dense
           />
-
         </View>
-
       );
 
     default:
-
       return (
-
         <TextInput
           mode="outlined"
           label={label}
@@ -314,41 +350,32 @@ export function renderInput(params: {
           contentStyle={styles.content}
           dense
         />
-
       );
-
   }
-
 }
 
 const styles = StyleSheet.create({
-
   fieldLabel: {
     fontSize: 14,
     fontWeight: "500",
     color: "#444",
     marginBottom: 4,
   },
-
   input: {
     marginBottom: 12,
     backgroundColor: "#FFFFFF",
   },
-
   outline: {
     borderRadius: 10,
   },
-
   content: {
     paddingVertical: 8,
   },
-
   switchContainer: {
     alignItems: "flex-start",
     marginBottom: 12,
     paddingVertical: 8,
   },
-
   dropdown: {
     height: 56,
     borderWidth: 1,
@@ -358,34 +385,27 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: "#FFFFFF",
   },
-
   dropdownFocus: {
     borderColor: "#1976D2",
   },
-
   dropdownDisabled: {
     backgroundColor: "#F5F5F5",
     opacity: 0.8,
   },
-
   placeholderStyle: {
     fontSize: 15,
     color: "#999999",
   },
-
   selectedTextStyle: {
     fontSize: 15,
     color: "#000000",
   },
-
   searchInputStyle: {
     fontSize: 15,
     borderRadius: 8,
   },
-
   iconStyle: {
     width: 22,
     height: 22,
   },
-
 });

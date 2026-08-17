@@ -6,6 +6,25 @@ import { InspectionSection, InspectionField } from "./InspectionTypes";
 import { deleteInspectionData } from "./inspectionDataHelper";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
+import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
+
+export function isFieldValueEmpty(type: string, value: string): boolean {
+  switch (type) {
+    case "text":
+    case "multiline":
+      return value.trim() === "";
+    case "number":
+      return value === "";
+    case "dropdown":
+      return value.trim() === "";
+    case "checkbox":
+      return value !== "1";
+    case "switch":
+      return value !== "1";
+    default:
+      return value.trim() === "";
+  }
+}
 
 export const INSPECTION_FINAL_STATUSES = ["Completed", "Submitted"] as const;
 
@@ -289,68 +308,190 @@ static async getInspectionValues(
 }
 
 static async validateInspection(
-  inspectionId: number
-): Promise<{
-  valid: boolean;
-  missingFields: string[];
-}> {
-  const db = await getDatabase();
+    inspectionId: number
+  ): Promise<{
+    valid: boolean;
+    missingFields: string[];
+  }> {
+    const db = await getDatabase();
 
     const requiredFields = await db.getAllAsync<{
-    FieldKey: string;
-    FieldName: string;
-    DefaultValue: string | null;
-  }>(
-    `
-    SELECT DISTINCT
-      f.FieldKey,
-      f.FieldName,
-      f.DefaultValue
-    FROM InspectionFields f
-    INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
-    INNER JOIN Inspections i ON 1=1
-    INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
-    WHERE f.IsRequired = 1
-      AND f.IsActive = 1
-      AND f.IsVisible = 1
-      AND s.IsActive = 1
-      AND t.IsDefault = 1
-      AND i.InspectionID = ?
-    GROUP BY f.FieldKey
+      FieldKey: string;
+      FieldName: string;
+      FieldType: string;
+      DefaultValue: string | null;
+    }>(
+      `
+      SELECT DISTINCT
+        f.FieldKey,
+        f.FieldName,
+        f.FieldType,
+        f.DefaultValue
+      FROM InspectionFields f
+      INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
+      INNER JOIN Inspections i ON 1=1
+      INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
+      WHERE f.IsRequired = 1
+        AND f.IsActive = 1
+        AND f.IsVisible = 1
+        AND s.IsActive = 1
+        AND t.IsDefault = 1
+        AND i.InspectionID = ?
+      GROUP BY f.FieldKey
+      `,
+      [inspectionId]
+    );
+
+    const values = await this.getInspectionValues(inspectionId);
+
+    const missingFields: string[] = [];
+
+    const autoFilledFields = [
+      "date",
+      "division",
+      "district",
+    ];
+
+    for (const field of requiredFields) {
+
+      // Skip fields filled automatically by the app
+      if (autoFilledFields.includes(field.FieldKey)) {
+        continue;
+      }
+
+      const value = values[field.FieldKey];
+
+      if (isFieldValueEmpty(field.FieldType, value ?? "")) {
+        missingFields.push(field.FieldName);
+      }
+    }
+
+    return {
+      valid: missingFields.length === 0,
+      missingFields,
+    };
+  }
+
+static async validateDeviceMandatory(
+    inspectionId: number,
+    templateId?: number
+  ): Promise<{
+    valid: boolean;
+    missingFields: string[];
+  }> {
+    await DeviceRecordsRepository.flushPendingDeviceSaves();
+    const db = await getDatabase();
+
+    const templateClause = templateId
+      ? "AND f.TemplateID = ?"
+      : "AND f.TemplateID = (SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1)";
+    const templateArgs = templateId ? [templateId] : [];
+
+    // Required device field definitions per device type
+    const requiredFields = await db.getAllAsync<{
+      DeviceType: string;
+      FieldName: string;
+      Label: string;
+      FieldType: string;
+    }>(
+      `
+      SELECT
+        f.DeviceType,
+        f.FieldName,
+        f.Label,
+        f.FieldType
+      FROM DeviceFieldDefinitions f
+      WHERE f.IsRequired = 1
+        AND f.IsActive = 1
+        ${templateClause}
+      ORDER BY f.DeviceType, f.DisplayOrder
     `,
-    [inspectionId]
-  );
+      templateArgs
+    );
 
-  const values = await this.getInspectionValues(inspectionId);
+    if (requiredFields.length === 0) {
+      return { valid: true, missingFields: [] };
+    }
 
-const missingFields: string[] = [];
+    // Active device types for this template (to resolve {type}_count keys)
+    const deviceTypes = await db.getAllAsync<{ DeviceType: string }>(
+      `SELECT DISTINCT f.DeviceType FROM DeviceFieldDefinitions f WHERE f.IsActive = 1 ${templateClause}`,
+      templateArgs
+    );
 
-const autoFilledFields = [
-  "date",
-  "division",
-  "district",
-];
+    // Device counts come from {type}_count inspection fields (e.g. camera_count)
+    const countFields = await db.getAllAsync<{ FieldKey: string }>(
+      `SELECT DISTINCT f.FieldKey
+       FROM InspectionFields f
+       INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
+       INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
+       WHERE f.IsActive = 1 AND t.IsDefault = 1 AND f.FieldKey LIKE '%_count'`
+    );
+    const values = await this.getInspectionValues(inspectionId);
 
-for (const field of requiredFields) {
+    const counts: Record<string, number> = {};
+    for (const row of countFields) {
+      const match = row.FieldKey.match(/^(.+)_count$/);
+      if (!match) continue;
+      const type = deviceTypes.find(
+        (t) =>
+          t.DeviceType.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_count" ===
+          row.FieldKey
+      );
+      if (type) {
+        const count = Number(values[row.FieldKey] || "0");
+        counts[type.DeviceType] = count > 0 ? count : 0;
+      }
+    }
 
-  // Skip fields filled automatically by the app
-  if (autoFilledFields.includes(field.FieldKey)) {
-    continue;
+    // Get all device records for this inspection
+    const deviceRecords = await DeviceRecordsRepository.getByInspectionAll(inspectionId);
+    const recordsByTypeNo: Record<string, Record<number, { DeviceData: string | null }>> = {};
+    for (const record of deviceRecords) {
+      recordsByTypeNo[record.DeviceType] = recordsByTypeNo[record.DeviceType] ?? {};
+      recordsByTypeNo[record.DeviceType][record.DeviceNo] = record;
+    }
+
+    const fieldsByType: Record<string, typeof requiredFields> = {};
+    for (const field of requiredFields) {
+      fieldsByType[field.DeviceType] = fieldsByType[field.DeviceType] ?? [];
+      fieldsByType[field.DeviceType].push(field);
+    }
+
+    const missingFields: string[] = [];
+
+    // Validate every expected device (DeviceNo 1..count) per type with required fields,
+    // including untouched devices that were never persisted.
+    for (const [deviceType, fields] of Object.entries(fieldsByType)) {
+      const count = counts[deviceType] ?? 0;
+      for (let no = 1; no <= count; no++) {
+        const record = recordsByTypeNo[deviceType]?.[no];
+        let deviceData: Record<string, string | null> = {};
+        if (record?.DeviceData) {
+          try {
+            deviceData = JSON.parse(record.DeviceData);
+          } catch {
+            // If JSON parsing fails, treat all fields as missing
+            deviceData = {};
+          }
+        }
+
+        for (const field of fields) {
+          const value = deviceData[field.FieldName] ?? null;
+          if (isFieldValueEmpty(field.FieldType, value ?? "")) {
+            missingFields.push(`${deviceType} — ${field.Label} (Device ${no})`);
+          }
+        }
+      }
+    }
+
+    return {
+      valid: missingFields.length === 0,
+      missingFields,
+    };
   }
 
-  const value = values[field.FieldKey];
-
-  if (!value || value.trim() === "") {
-    missingFields.push(field.FieldName);
-  }
-}
-
-return {
-  valid: missingFields.length === 0,
-  missingFields,
-};
-}
-static async updateInspectionStatus(
+  static async updateInspectionStatus(
   inspectionId: number,
   status: string
 ) {
