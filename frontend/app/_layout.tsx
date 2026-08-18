@@ -1,5 +1,5 @@
 // frontend\app\_layout.tsx
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
@@ -19,7 +19,6 @@ import { ensureRootFolder } from "@/src/utils/storageManager";
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const START = useRef(Date.now()).current;
   const [loaded, error] = useIconFonts();
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -45,13 +44,11 @@ export default function RootLayout() {
       );
     }
 
-    logger.debug(`[perf] RootLayout mount: ${Date.now() - START}ms`);
     init();
   }, []);
 
   useEffect(() => {
     if (loaded || error) {
-      logger.debug(`[perf] SplashScreen hidden: ${Date.now() - START}ms`);
       SplashScreen.hideAsync();
     }
   }, [loaded, error]);
@@ -82,7 +79,6 @@ export default function RootLayout() {
     );
   }
 
-  logger.info(`Application ready: ${Date.now() - START}ms`);
   return (
     <PaperProvider>
       <WatermarkSettingsProvider>

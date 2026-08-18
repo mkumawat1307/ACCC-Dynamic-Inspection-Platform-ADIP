@@ -30,7 +30,6 @@ export async function initializeDatabase() {
     await getGlobalDatabase();
 
     await createGlobalSchema();
-    logger.info("Global schema migrated");
 
     await seedGlobalDatabase();
 
@@ -41,8 +40,6 @@ export async function initializeDatabase() {
     } catch (e) {
       logger.error("❌ [DatabaseService] Pending photo-folder rename drain failed", e);
     }
-
-    logger.info("✅ Database initialized");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     initError = msg;

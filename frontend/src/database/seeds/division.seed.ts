@@ -2,8 +2,6 @@
 
 import { getGlobalDatabase } from "../db";
 
-import { logger } from "@/src/utils/logger";
-
 export async function seedDivisions() {
     const db = await getGlobalDatabase();
 
@@ -129,6 +127,4 @@ export async function seedDivisions() {
             totalDistricts++;
         }
     }
-
-    logger.debug(`[division.seed] Seeded ${divisions.length} divisions, ${totalDistricts} districts`);
 }
