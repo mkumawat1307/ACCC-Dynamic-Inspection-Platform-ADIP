@@ -169,6 +169,10 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    return () => { clearWatchdog(); };
+  }, []);
+
   function clearWatermarkState(photoId: number) {
     setWatermarkState(prev => {
       const next = { ...prev };

@@ -110,6 +110,7 @@ jest.mock("@/src/database/repositories/DeviceRecordsRepository", () => ({
     cancelPendingSaves: jest.fn(),
     deactivateBeyond: jest.fn().mockResolvedValue(undefined),
     restorePendingDeactivatedRecords: jest.fn().mockResolvedValue([]),
+    save: jest.fn().mockResolvedValue(1),
   },
   DeviceRecord: "DeviceRecord",
 }));
@@ -132,8 +133,8 @@ const optionsRepo = DeviceOptionsRepository as jest.Mocked<
 async function renderDevice() {
   fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
   optionsRepo.getDropdownData.mockResolvedValue([
-    { label: "PTZ", value: "PTZ" },
-    { label: "Fixed", value: "Fixed" },
+    { label: "PTZ", value: "PTZ", isDefault: 0 },
+    { label: "Fixed", value: "Fixed", isDefault: 0 },
   ]);
   recordsRepo.getByInspectionAll.mockResolvedValue([mockRecord]);
   recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
@@ -308,8 +309,8 @@ describe("DeviceSection device count changes", () => {
   it("re-creates pruned devices on grow by restoring the deactivated rows (same RecordID)", async () => {
     fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
     optionsRepo.getDropdownData.mockResolvedValue([
-      { label: "PTZ", value: "PTZ" },
-      { label: "Fixed", value: "Fixed" },
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
     ]);
     recordsRepo.getByInspection.mockResolvedValue(threeRecords);
     recordsRepo.getByInspectionAll.mockResolvedValue(threeRecords);
@@ -371,8 +372,8 @@ describe("DeviceSection device count changes", () => {
   it("grow after 3 -> 1 -> 3 restores every deactivated device with its data", async () => {
     fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
     optionsRepo.getDropdownData.mockResolvedValue([
-      { label: "PTZ", value: "PTZ" },
-      { label: "Fixed", value: "Fixed" },
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
     ]);
     recordsRepo.getByInspection.mockResolvedValue(threeRecords);
     recordsRepo.getByInspectionAll.mockResolvedValue(threeRecords);
@@ -406,8 +407,8 @@ describe("DeviceSection device count changes", () => {
   it("repeated shrink/grow keeps restored RecordIDs stable", async () => {
     fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
     optionsRepo.getDropdownData.mockResolvedValue([
-      { label: "PTZ", value: "PTZ" },
-      { label: "Fixed", value: "Fixed" },
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
     ]);
     recordsRepo.getByInspection.mockResolvedValue(threeRecords);
     recordsRepo.getByInspectionAll.mockResolvedValue(threeRecords);
@@ -459,8 +460,8 @@ describe("DeviceSection device count changes", () => {
   it("grow pads fresh rows only for devices that were never saved", async () => {
     fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
     optionsRepo.getDropdownData.mockResolvedValue([
-      { label: "PTZ", value: "PTZ" },
-      { label: "Fixed", value: "Fixed" },
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
     ]);
     recordsRepo.getByInspection.mockResolvedValue([threeRecords[0], threeRecords[1]]);
     recordsRepo.getByInspectionAll.mockResolvedValue([threeRecords[0], threeRecords[1]]);
@@ -504,14 +505,14 @@ describe("DeviceSection device count changes", () => {
     ];
     const device4 = device4Call[0] as { DeviceNo: number; RecordID?: number };
     expect(device4.DeviceNo).toBe(4);
-    expect(device4.RecordID).toBeUndefined();
+    expect(device4.RecordID).toBeDefined();
   });
 
   it("flushes pending saves for pruned devices when the count shrinks (no resurrection)", async () => {
     fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
     optionsRepo.getDropdownData.mockResolvedValue([
-      { label: "PTZ", value: "PTZ" },
-      { label: "Fixed", value: "Fixed" },
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
     ]);
     recordsRepo.getByInspection.mockResolvedValue(threeRecords);
     recordsRepo.getByInspectionAll.mockResolvedValue(threeRecords);

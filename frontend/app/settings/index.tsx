@@ -4,8 +4,8 @@ import { ScrollView, StyleSheet, Alert, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { getDatabase } from "@/src/database/db";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { ResetRepository } from "@/src/database/repositories/ResetRepository";
 import { Project } from "@/src/models/Project";
 
 export default function SettingsScreen() {
@@ -30,116 +30,57 @@ export default function SettingsScreen() {
     : undefined;
 
   const handleResetToDefault = async () => {
+    let inspectionCount = 0;
     try {
-      const completed = await InspectionRepository.countFinalInspections();
-      if (completed > 0) {
-        logger.info(`[TemplateReset] blockedCompletedInspections=${completed}`);
-        Alert.alert(
-          "Reset Blocked",
-          "Template restore is blocked because this project contains completed inspections. Create a new project if you need a different template."
-        );
-        return;
-      }
+      inspectionCount = await InspectionRepository.countAllInspections();
     } catch (error) {
       logger.error("Reset check error:", error);
       Alert.alert("Reset Blocked", "Unable to verify project inspections before resetting templates.");
       return;
     }
 
-    Alert.alert(
-      "Reset to Default?",
-      "This will restore the inspection form to its original default state:\n\n" +
-      "• Remove all custom sections\n" +
-      "• Remove all custom fields\n" +
-      "• Remove custom device types (NVR, Router, etc.)\n" +
-      "• Restore original Camera/Switch fields\n\n" +
-      "Existing inspection data will NOT be deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset",
-          style: "destructive",
-          onPress: performReset,
-        },
-      ]
-    );
+    if (inspectionCount > 0) {
+      Alert.alert(
+        "Reset to Default?",
+        "Existing inspections were found.\n\n" +
+        "Resetting will remove your custom Sections, Fields, Device Types, and Device Fields. " +
+        "Data stored for those custom configurations in existing inspections will remain " +
+        "but will no longer appear in the form.\n\n" +
+        "Your projects, inspections, default inspection data, and photos will remain unchanged.\n\n" +
+        "This action cannot be undone.\n\n" +
+        "Do you want to continue?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Reset to Default",
+            style: "destructive",
+            onPress: performReset,
+          },
+        ]
+      );
+    } else {
+      Alert.alert(
+        "Reset to Default?",
+        "This will remove your custom inspection form configuration " +
+        "and restore the default Sections, Fields, and Device Types.\n\n" +
+        "Existing inspection data will NOT be deleted.\n\n" +
+        "Continue?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Reset to Default",
+            style: "destructive",
+            onPress: performReset,
+          },
+        ]
+      );
+    }
   };
 
   const performReset = async () => {
     setResetting(true);
     try {
-      const db = await getDatabase();
-
-      await db.withTransactionAsync(async () => {
-        await db.runAsync(`
-          UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE IsDefault = 0
-        `);
-
-        await db.runAsync(`
-          UPDATE InspectionSections SET IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE IsDefault = 1
-        `);
-
-        const defaultKeys = [
-          "date", "division", "district", "block", "inspector_name", "pole_id", "location", "gps",
-          "foundation_cond", "pole_avail", "pole_si", "pole_status",
-          "jb_status", "power_cable", "cable_status", "cable_length",
-          "earthing_wire", "earthing_chamber", "earthing_cover", "earthing_voltage",
-          "meter_box_status", "meter_status", "meter_power_status", "meter_serial",
-          "connectivity_type",
-          "camera_count", "switch_count",
-          "remarks",
-        ];
-        const placeholders = defaultKeys.map(() => "?").join(",");
-        await db.runAsync(
-          `UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
-           WHERE FieldKey NOT IN (${placeholders})`,
-          defaultKeys
-        );
-
-        await db.runAsync(
-          `UPDATE InspectionFields SET IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
-           WHERE FieldKey IN (${placeholders})`,
-          defaultKeys
-        );
-
-        await db.runAsync(`
-          UPDATE DeviceFieldDefinitions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE DeviceType NOT IN ('Camera', 'Switch')
-        `);
-        await db.runAsync(`
-          UPDATE DeviceFieldDefinitions SET IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE DeviceType IN ('Camera', 'Switch')
-        `);
-
-        await db.runAsync(`
-          UPDATE DeviceOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE DeviceType NOT IN ('Camera', 'Switch')
-        `);
-        await db.runAsync(`
-          UPDATE DeviceOptions SET IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE DeviceType IN ('Camera', 'Switch')
-        `);
-
-        await db.runAsync(`
-          DELETE FROM ProjectDeviceTypes
-          WHERE DeviceType NOT IN ('Camera', 'Switch')
-        `);
-
-        await db.runAsync(`
-          UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE SectionKey LIKE '%_information'
-          AND SectionKey NOT IN ('general_information', 'camera_information', 'switch_information')
-        `);
-
-        await db.runAsync(`
-          UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
-          WHERE FieldKey LIKE '%_count'
-          AND FieldKey NOT IN ('camera_count', 'switch_count')
-        `);
-      });
-
+      await ResetRepository.performReset();
       Alert.alert("Done", "Inspection form has been reset to default.");
     } catch (error) {
       logger.error("Reset error:", error);

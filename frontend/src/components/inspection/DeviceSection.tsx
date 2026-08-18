@@ -23,6 +23,7 @@ interface Props {
 interface DropdownItem {
   label: string;
   value: string;
+  isDefault?: number;
 }
 
 export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false }: Props) {
@@ -60,15 +61,27 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       if (list.length < count) {
         for (let i = list.length + 1; i <= count; i++) {
           const emptyData: Record<string, string | null> = {};
-          fieldDefs.forEach((f) => { emptyData[f.FieldName] = null; });
-          list.push({
+          fieldDefs.forEach((f) => {
+            if (f.FieldType === "dropdown") {
+              const fieldOpts = loaded[f.FieldName];
+              const defaultOpt = fieldOpts?.find((o) => o.isDefault === 1);
+              emptyData[f.FieldName] = defaultOpt?.value ?? null;
+            } else {
+              emptyData[f.FieldName] = null;
+            }
+          });
+          const newRec: DeviceRecord = {
             InspectionID: inspectionId,
             DeviceType: deviceType,
             DeviceNo: i,
             DeviceData: JSON.stringify(emptyData),
             DisplayOrder: i,
             IsActive: 1,
-          });
+          };
+          const newId = await DeviceRecordsRepository.save(newRec);
+          newRec.RecordID = newId;
+          persistedIds.current.set(i, newId);
+          list.push(newRec);
         }
       }
 
@@ -102,34 +115,59 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           inspectionId, deviceType, growCount,
         );
         return restored;
-      }).then((restored) => {
+      }).then(async (restored) => {
         const target = countRef.current;
         if (target < growCount && restored.length > 0) {
-          DeviceRecordsRepository.deactivateBeyond(inspectionId, deviceType, target);
+          await DeviceRecordsRepository.deactivateBeyond(inspectionId, deviceType, target);
         }
         const kept = restored.filter((r) => r.DeviceNo <= target);
         for (const r of kept) {
           if (r.RecordID) persistedIds.current.set(r.DeviceNo, r.RecordID);
         }
+
+        const activeRecords = await DeviceRecordsRepository.getByInspection(inspectionId, deviceType);
+        const activeNos = new Set(activeRecords.map((r) => r.DeviceNo));
+        for (const r of activeRecords) {
+          if (r.RecordID) persistedIds.current.set(r.DeviceNo, r.RecordID);
+        }
+
+        const emptyData: Record<string, string | null> = {};
+        fields.forEach((f) => {
+          if (f.FieldType === "dropdown") {
+            const fieldOpts = opts[f.FieldName];
+            const defaultOpt = fieldOpts?.find((o) => o.isDefault === 1);
+            emptyData[f.FieldName] = defaultOpt?.value ?? null;
+          } else {
+            emptyData[f.FieldName] = null;
+          }
+        });
+
+        const persistedByNo = new Map<number, DeviceRecord>();
+        for (let i = 1; i <= target; i++) {
+          if (!activeNos.has(i)) {
+            const newRec: DeviceRecord = {
+              InspectionID: inspectionId,
+              DeviceType: deviceType,
+              DeviceNo: i,
+              DeviceData: JSON.stringify(emptyData),
+              DisplayOrder: i,
+              IsActive: 1,
+            };
+            const newId = await DeviceRecordsRepository.save(newRec);
+            newRec.RecordID = newId;
+            persistedIds.current.set(i, newId);
+            persistedByNo.set(i, newRec);
+          }
+        }
+
+        const restoredByNo = new Map(kept.map((r) => [r.DeviceNo, r]));
         setRecords((prev) => {
           if (prev.length >= target) return prev;
           const next = [...prev];
-          const emptyData: Record<string, string | null> = {};
-          fields.forEach((f) => { emptyData[f.FieldName] = null; });
-          const restoredByNo = new Map(kept.map((r) => [r.DeviceNo, r]));
           for (let i = next.length + 1; i <= target; i++) {
-            const existing = restoredByNo.get(i);
+            const existing = restoredByNo.get(i) ?? persistedByNo.get(i);
             if (existing) {
               next.push({ ...existing, IsActive: 1 });
-            } else {
-              next.push({
-                InspectionID: inspectionId,
-                DeviceType: deviceType,
-                DeviceNo: i,
-                DeviceData: JSON.stringify(emptyData),
-                DisplayOrder: i,
-                IsActive: 1,
-              });
             }
           }
           return next;

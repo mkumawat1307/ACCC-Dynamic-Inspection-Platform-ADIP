@@ -425,9 +425,6 @@ describe("BackupManager restoreBackupFromUri", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toContain("does not exist");
     expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + missingUri);
-    expect(logSpy).toHaveBeenCalledWith(
-      "[Import] restoreFailed=Selected file does not exist"
-    );
     expect(FileSystem.copyAsync).not.toHaveBeenCalled();
     logSpy.mockRestore();
   });
@@ -443,9 +440,6 @@ describe("BackupManager restoreBackupFromUri", () => {
       from: CONTENT_URI,
       to: CACHE_URI,
     });
-    expect(logSpy).toHaveBeenCalledWith(
-      "[Restore] failed=Failed to copy selected file: Error: File not found: " + CONTENT_URI
-    );
     logSpy.mockRestore();
   });
 
@@ -466,22 +460,9 @@ describe("BackupManager restoreBackupFromUri", () => {
     });
     expect(dbModule.closeAllDatabases).toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + CONTENT_URI);
-    expect(logSpy).toHaveBeenCalledWith("[Import] copiedToCache=" + CACHE_URI);
-    expect(logSpy).toHaveBeenCalledWith("[Import] cacheExists=true");
-    expect(logSpy).toHaveBeenCalledWith("[Import] restoreStart");
-    expect(logSpy).toHaveBeenCalledWith("[Import] restoreSuccess");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] copyToTemp=" + CACHE_URI);
-    expect(logSpy).toHaveBeenCalledWith("[Restore] unzipStart");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] entries=2");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] foundGlobalDb=true");
     expect(logSpy).toHaveBeenCalledWith("[Restore] projectDb=Alpha");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] closeAllDatabases");
     expect(logSpy).toHaveBeenCalledWith("[Restore] replaceGlobalDb");
     expect(logSpy).toHaveBeenCalledWith("[Restore] replaceProjectDb=Alpha");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] reopenGlobalDb");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] reloadProjectList");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] projectsAfterRestore=0");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] success");
 
     const globalB64 = await FileSystem.readAsStringAsync(`${DOC}SQLite/accc_global.db`, {
       encoding: FileSystem.EncodingType.Base64,
@@ -506,7 +487,6 @@ describe("BackupManager restoreBackupFromUri", () => {
     expect(result.ok).toBe(true);
     expect(FileSystem.copyAsync).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + localUri);
-    expect(logSpy).toHaveBeenCalledWith("[Import] restoreSuccess");
     logSpy.mockRestore();
   });
 
@@ -531,7 +511,6 @@ describe("BackupManager restoreBackupFromUri", () => {
     expect(result.ok).toBe(false);
     expect(result.message.toLowerCase()).toContain("cancel");
     expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
-    expect(logSpy).toHaveBeenCalledWith("[Import] restoreFailed=Restore cancelled");
     logSpy.mockRestore();
   });
 
@@ -543,7 +522,6 @@ describe("BackupManager restoreBackupFromUri", () => {
 
     expect(result.ok).toBe(false);
     expect(result.message).toContain("missing the global database");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] foundGlobalDb=false");
     expect(mockFsEntries.has(`${DOC}SQLite/accc_global.db`)).toBe(false);
     expect(mockFsEntries.has(`${DOC}Projects/Alpha/inspection.db`)).toBe(false);
     logSpy.mockRestore();

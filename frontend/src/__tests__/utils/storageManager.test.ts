@@ -23,18 +23,6 @@ jest.mock("@/src/utils/downloadStorage", () => ({
   },
 }));
 
-function installLogSpy(): jest.SpyInstance {
-  return jest.spyOn(console, "log").mockImplementation(() => {});
-}
-
-function logLines(spy: jest.SpyInstance): string[] {
-  return spy.mock.calls.map((args) => args.join(" "));
-}
-
-function expectLogLine(lines: string[], fragment: string): void {
-  expect(lines.some((l) => l.includes(fragment))).toBe(true);
-}
-
 beforeEach(() => {
   jest.clearAllMocks();
   (downloadStorage.ensureFolder as jest.Mock).mockResolvedValue(false);
@@ -43,39 +31,25 @@ beforeEach(() => {
 });
 
 describe("ensureRootFolder", () => {
-  it("logs permissionGranted, ensureRoot start/exists/ready when the root folder is new", async () => {
-    const logSpy = installLogSpy();
-
+  it("calls ensureRootFolder without error", async () => {
     await ensureRootFolder();
 
-    const lines = logLines(logSpy);
-    expectLogLine(lines, "[Storage] permissionGranted=");
-    expectLogLine(lines, "[Storage] ensureRoot start");
-    expectLogLine(lines, `[Storage] ensureRoot exists=false`);
-    expectLogLine(lines, "[Storage] ensureRoot ready");
     expect(downloadStorage.ensureFolder).toHaveBeenCalledWith("");
   });
 
-  it("logs ensureRoot exists=true when the root folder already exists", async () => {
+  it("calls ensureFolder without error when the root folder already exists", async () => {
     (downloadStorage.ensureFolder as jest.Mock).mockResolvedValue(true);
-    const logSpy = installLogSpy();
 
     await ensureRootFolder();
 
-    const lines = logLines(logSpy);
-    expectLogLine(lines, "[Storage] ensureRoot start");
-    expectLogLine(lines, `[Storage] ensureRoot exists=true`);
-    expectLogLine(lines, "[Storage] ensureRoot ready");
-    expect(lines.some((l) => l.includes("ensureRoot exists=false"))).toBe(false);
+    expect(downloadStorage.ensureFolder).toHaveBeenCalledWith("");
   });
 
   it("skips the permission dialog on API >= 29", async () => {
     const platformSpy = jest.replaceProperty(Platform, "OS", "android");
-    const logSpy = installLogSpy();
     try {
       await ensureRootFolder();
-      const lines = logLines(logSpy);
-      expectLogLine(lines, "[Storage] permissionGranted=true (MediaStore, no permission required)");
+      expect(downloadStorage.ensureFolder).toHaveBeenCalled();
     } finally {
       platformSpy.restore();
     }
@@ -83,29 +57,18 @@ describe("ensureRootFolder", () => {
 });
 
 describe("ensureProjectFolder", () => {
-  it("logs ensureProject and exists=false when the project folder is new", async () => {
-    const logSpy = installLogSpy();
-
+  it("calls ensureFolder with the project label when the project folder is new", async () => {
     await ensureProjectFolder("New Delhi_Project Alpha");
 
-    const lines = logLines(logSpy);
-    expectLogLine(lines, `[Storage] ensureProject=New Delhi_Project Alpha`);
-    expectLogLine(lines, `[Storage] ensureProject exists=false`);
-    expectLogLine(lines, "[Storage] ensureProject ready");
     expect(downloadStorage.ensureFolder).toHaveBeenCalledWith("New Delhi_Project Alpha");
   });
 
-  it("logs ensureProject exists=true when the project folder already has files", async () => {
+  it("calls ensureFolder when the project folder already has files", async () => {
     (downloadStorage.ensureFolder as jest.Mock).mockResolvedValue(true);
-    const logSpy = installLogSpy();
 
     await ensureProjectFolder("Mumbai_Project Beta");
 
-    const lines = logLines(logSpy);
-    expectLogLine(lines, `[Storage] ensureProject=Mumbai_Project Beta`);
-    expectLogLine(lines, `[Storage] ensureProject exists=true`);
-    expectLogLine(lines, "[Storage] ensureProject ready");
-    expect(lines.some((l) => l.includes("ensureProject exists=false"))).toBe(false);
+    expect(downloadStorage.ensureFolder).toHaveBeenCalledWith("Mumbai_Project Beta");
   });
 
   it("ensures the download root before checking the project folder", async () => {

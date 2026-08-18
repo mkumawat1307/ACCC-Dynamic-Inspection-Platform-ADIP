@@ -62,6 +62,14 @@ static async getSections(templateId?: number): Promise<InspectionSection[]> {
     return row?.Count ?? 0;
   }
 
+  static async countAllInspections(): Promise<number> {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<{ Count: number }>(
+      `SELECT COUNT(*) AS Count FROM Inspections`
+    );
+    return row?.Count ?? 0;
+  }
+
   static async getAllSections(templateId?: number): Promise<InspectionSection[]> {
     const db = await getDatabase();
 

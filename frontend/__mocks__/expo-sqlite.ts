@@ -75,10 +75,30 @@ function likeToRegExp(pattern: string, escapeChar: string): RegExp {
   return new RegExp(`^${out}$`, "i");
 }
 
+type WhereCond = { col: string; op?: string; value?: unknown; values?: unknown[]; like?: RegExp };
+
 function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boolean {
   const conditions = whereClause.split(/\s+AND\s+/i);
   let paramIdx = 0;
-  const compiled = conditions.map((cond) => {
+  const compiled: (WhereCond | null)[] = conditions.map((cond) => {
+    const inMatch = cond.match(
+      /(?:\w+\.)?(\w+)\s+(NOT\s+)?IN\s*\(([\s\S]+)\)/i
+    );
+    if (inMatch) {
+      const col = inMatch[1];
+      const isNot = !!inMatch[2];
+      const inner = inMatch[3].trim();
+      if (/^\s*SELECT\s/i.test(inner)) {
+        return { col, op: isNot ? "NOT_IN_ALL" : "IN_NONE", values: [] };
+      }
+      const values = inner.split(",").map((v) => {
+        v = v.trim();
+        if (/^'.*'$/.test(v)) return v.slice(1, -1);
+        if (/^\d+$/.test(v)) return parseInt(v, 10);
+        return params[paramIdx++];
+      });
+      return { col, op: isNot ? "NOT_IN" : "IN", values };
+    }
     const likeMatch = cond.match(
       /(?:\w+\.)?(\w+)\s+LIKE\s+(?:\?|'([^']*)')(?:\s+ESCAPE\s+'([^']*)')?/i
     );
@@ -118,6 +138,10 @@ function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boole
       if (cond.op === "<=") return (actual as number) <= (cond.value as number);
       if (cond.op === ">") return (actual as number) > (cond.value as number);
       if (cond.op === "<") return (actual as number) < (cond.value as number);
+      if (cond.op === "IN") return cond.values?.includes(actual) ?? false;
+      if (cond.op === "NOT_IN") return !(cond.values?.includes(actual) ?? true);
+      if (cond.op === "NOT_IN_ALL") return false;
+      if (cond.op === "IN_NONE") return false;
       return actual === cond.value;
     });
   };

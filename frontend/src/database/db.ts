@@ -22,7 +22,7 @@ async function closeCurrentDb(): Promise<void> {
   try {
     await old.closeAsync();
   } catch (e) {
-    logger.info(`[db.ts] closeCurrentDb — closeAsync failed (non-fatal):`, e);
+    logger.debug(`[db.ts] closeCurrentDb — closeAsync failed (non-fatal):`, e);
   }
 }
 
@@ -32,8 +32,6 @@ async function ensureGlobalDb(): Promise<SQLite.SQLiteDatabase> {
   }
   if (activeProjectPath) {
     logger.warn(`[db.ts] ensureGlobalDb — switching away from active project DB`);
-  } else {
-    logger.debug(`[db.ts] ensureGlobalDb — opening global DB`);
   }
   await closeCurrentDb();
   database = await SQLite.openDatabaseAsync(GLOBAL_DATABASE_NAME);
@@ -43,7 +41,7 @@ async function ensureGlobalDb(): Promise<SQLite.SQLiteDatabase> {
     await database.execAsync(`PRAGMA foreign_keys = ON;`);
     await database.execAsync(`PRAGMA synchronous = NORMAL;`);
   } catch (e) {
-    logger.info(`[db.ts] ensureGlobalDb — PRAGMA failed (non-fatal):`, e);
+    logger.debug(`[db.ts] ensureGlobalDb — PRAGMA failed (non-fatal):`, e);
   }
   return database;
 }
@@ -70,9 +68,9 @@ async function migrateLegacyProjectDb(dbPath: string): Promise<void> {
     for (const f of dbFiles) {
       await FileSystem.moveAsync({ from: `${legacyDir}/${f}`, to: `${targetDir}/${f}` });
     }
-    logger.info(`[db.ts] Migrated legacy project DB to ${cleaned}`);
-  } catch (e) {
-    logger.info(`[db.ts] migrateLegacyProjectDb — skipped:`, e);
+    logger.debug(`[db.ts] Migrated legacy project DB to ${cleaned}`);
+  } catch {
+    // legacy migration skipped — non-fatal
   }
 }
 
@@ -90,7 +88,7 @@ async function ensureProjectDb(dbPath: string): Promise<SQLite.SQLiteDatabase> {
     await database.execAsync(`PRAGMA foreign_keys = ON;`);
     await database.execAsync(`PRAGMA synchronous = NORMAL;`);
   } catch (e) {
-    logger.info(`[db.ts] ensureProjectDb — PRAGMA failed (non-fatal):`, e);
+    logger.debug(`[db.ts] ensureProjectDb — PRAGMA failed (non-fatal):`, e);
   }
   return database;
 }
@@ -100,7 +98,6 @@ export async function getGlobalDatabase(): Promise<SQLite.SQLiteDatabase> {
 }
 
 export async function setActiveProject(dbPath: string): Promise<void> {
-  logger.debug(`[db.ts] setActiveProject() — setting project: ${dbPath}`);
   activeProjectPath = dbPath;
   await ensureProjectDb(dbPath);
 }

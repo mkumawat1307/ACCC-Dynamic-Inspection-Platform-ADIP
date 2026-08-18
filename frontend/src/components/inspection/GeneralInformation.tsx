@@ -179,10 +179,6 @@ async function fetchCurrentLocation() {
   const longitude = location.longitude.toFixed(6);
   const gpsValue = `${latitude}, ${longitude}`;
 
-  logger.info(`[GPS] lat=${latitude}`);
-  logger.info(`[GPS] lng=${longitude}`);
-  logger.info("[GPS] reverseGeocodeReuse=true");
-
   setLocationResolving(true);
   let address = "";
   try {
@@ -191,9 +187,6 @@ async function fetchCurrentLocation() {
   } finally {
     setLocationResolving(false);
   }
-
-  logger.info("[GPS] addressFormat=fullWatermarkAddress");
-  logger.info(`[GPS] addressFilled=${address.length > 0}`);
 
   setValues((prev) => ({
     ...prev,
@@ -259,7 +252,7 @@ async function handlePoleIdSave(
     }
 
     if (decision.type === "direct-save") {
-      logger.info("[PoleRename] directSaveNoPhotos");
+      logger.debug("[PoleRename] directSaveNoPhotos");
       try {
         await InspectionRepository.updatePoleIdDirectSave(
           inspectionId,
@@ -277,7 +270,7 @@ async function handlePoleIdSave(
       return;
     }
 
-    logger.info(`[PoleRename] dialogShown photoCount=${decision.photoCount}`);
+    logger.debug(`[PoleRename] dialogShown photoCount=${decision.photoCount}`);
     setPendingRename({
       oldPoleId: current,
       newPoleId: trimmed,
@@ -478,7 +471,7 @@ return (
       photoCount={pendingRename?.photoCount ?? 0}
       onCancel={() => {
         if (pendingRename) {
-          logger.info("[PoleRename] cancelled");
+          logger.debug("[PoleRename] cancelled");
           revertPoleId(pendingRename.oldPoleId);
         }
         setPendingRename(null);
@@ -487,7 +480,7 @@ return (
         if (!pendingRename || !inspectionId) return;
         const { oldPoleId, newPoleId } = pendingRename;
         setPendingRename(null);
-        logger.info("[PoleRename] confirmed");
+        logger.debug("[PoleRename] confirmed");
         try {
           await PoleRenameService.renamePoleId(
             inspectionId,

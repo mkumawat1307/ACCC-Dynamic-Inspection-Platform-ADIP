@@ -93,8 +93,6 @@ export async function createProjectDb(
   projectDbPath: string,
   projectId: number
 ): Promise<void> {
-  logger.debug("[ProjectDBManager] createProjectDb — START");
-
   const folderPath = projectDbPath.replace(/inspection\.db$/, "");
   const existing = await FileSystem.getInfoAsync(projectDbPath);
   if (existing.exists) {
@@ -117,7 +115,7 @@ export async function createProjectDb(
   await seedDashboardCards(projectId);
 
   await clearActiveProject();
-  logger.info(`✅ [ProjectDBManager] Project created: ${projectName}`);
+  logger.debug(`✅ [ProjectDBManager] Project created: ${projectName}`);
 }
 
 export async function cloneProjectDb(
@@ -126,7 +124,6 @@ export async function cloneProjectDb(
   projectDbPath: string,
   newProjectId: number
 ): Promise<void> {
-  logger.debug("[ProjectDBManager] cloneProjectDb — START");
 
   const settings: Partial<
     Record<(typeof SETTINGS_TABLES)[number], SettingsRow[]>
@@ -263,11 +260,10 @@ export async function cloneProjectDb(
   } finally {
     await clearActiveProject();
   }
-  logger.info(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
+  logger.debug(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
 }
 
 export async function openProjectDb(dbPath: string, projectId: number): Promise<void> {
-  logger.debug("[ProjectDBManager] openProjectDb — START");
   await setActiveProject(dbPath);
 
   const db = await getDatabase();
@@ -278,11 +274,8 @@ export async function openProjectDb(dbPath: string, projectId: number): Promise<
     await clearActiveProject();
     throw new Error(`Project database is empty or missing schema: ${dbPath}`);
   }
-  logger.debug("[ProjectDBManager] openProjectDb — valid");
 
   await migrateProjectSchema(projectId);
-  logger.debug("[ProjectDBManager] openProjectDb — migrations applied");
-  logger.info(`[ProjectDBManager] Project database opened: ${dbPath}`);
 }
 
 export async function updateProjectInspectorName(
@@ -295,37 +288,31 @@ export async function updateProjectInspectorName(
   } finally {
     await clearActiveProject();
   }
-  logger.info(`[ProjectDBManager] Inspector name synced to inspections: ${dbPath}`);
+  logger.debug(`[ProjectDBManager] Inspector name synced to inspections: ${dbPath}`);
 }
 
 export async function deleteProjectDb(dbPath: string): Promise<void> {
-  logger.debug("[ProjectDBManager] deleteProjectDb — START");
   if (dbPath) {
     const folderPath = dbPath.replace(/inspection\.db$/, "");
     await FileSystem.deleteAsync(folderPath);
   }
-  logger.debug("[ProjectDBManager] deleteProjectDb — END");
 }
 
 export async function listProjectFolders(): Promise<string[]> {
-  logger.debug("[ProjectDBManager] listProjectFolders — START");
-
   try {
     await FileSystem.makeDirectoryAsync(getProjectsBasePath(), { intermediates: true });
   } catch (e) {
-    logger.info("[ProjectDBManager] Ensuring projects folder (non-fatal):", e);
+    logger.debug("[ProjectDBManager] Ensuring projects folder (non-fatal):", e);
   }
 
   let items: string[];
   try {
     items = await FileSystem.readDirectoryAsync(getProjectsBasePath());
   } catch (e) {
-    logger.info("[ProjectDBManager] readDirectoryAsync failed:", e);
+    logger.debug("[ProjectDBManager] readDirectoryAsync failed:", e);
     return [];
   }
 
   const result = items.filter((item) => !item.startsWith("."));
-  logger.debug("[ProjectDBManager] Returning", result.length, "project folders");
-  logger.debug("[ProjectDBManager] listProjectFolders — END");
   return result;
 }

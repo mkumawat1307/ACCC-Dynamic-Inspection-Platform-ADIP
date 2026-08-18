@@ -409,7 +409,8 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
     expect(cam2!.DeviceData ?? "").toContain('"99"');
 
     const batRows = await batteryRows(db);
-    expect(batRows.length).toBe(0);
+    expect(batRows.length).toBe(2);
+    expect(batRows.every((r) => r.IsActive === 1)).toBe(true);
   });
 
   it("8. M-1 resurrection: flush consumes timers so deactivate blocks resurrection", async () => {

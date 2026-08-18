@@ -82,11 +82,21 @@ export default function SectionRenderer({
           )?.OptionValue;
         }
 
-        valueMap[field.FieldID] =
+        const resolved =
           saved?.FieldValue ??
           defaultOptionValue ??
           field.DefaultValue ??
           "";
+
+        if (!saved && resolved) {
+          await InspectionValueRepository.saveValue(
+            inspectionId,
+            field.FieldID,
+            resolved
+          );
+        }
+
+        valueMap[field.FieldID] = resolved;
       }
 
       setFields(sectionFields);

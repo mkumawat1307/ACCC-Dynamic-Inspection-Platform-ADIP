@@ -1,5 +1,4 @@
 import { getGlobalDatabase } from "../db";
-import { logger } from "@/src/utils/logger";
 import { Project } from "@/src/models/Project";
 import { getProjectDbPath } from "../helpers/ProjectDBManager";
 import { buildProjectIdentity } from "../projectIdentity";
@@ -23,9 +22,7 @@ export function isUniqueConstraintError(e: unknown): boolean {
 
 export class ProjectRepository {
   static async getProjects(): Promise<Project[]> {
-    logger.info("[ProjectRepository] getProjects() — START");
     const db = await getGlobalDatabase();
-    logger.info("[ProjectRepository] Got global DB handle");
 
     const projects = await db.getAllAsync<Project>(
       `
@@ -51,15 +48,11 @@ export class ProjectRepository {
     ORDER BY p.CreatedAt DESC;
       `
     );
-    logger.info(`[ProjectRepository] getProjects() — returned ${projects.length} projects`);
-    logger.info(`[ProjectRepository] getProjects() — END`);
     return projects;
   }
 
 static async getProjectById(projectId: number): Promise<Project | null> {
-  logger.info(`[ProjectRepository] getProjectById(${projectId}) — START`);
   const db = await getGlobalDatabase();
-  logger.info(`[ProjectRepository] Got global DB handle`);
 
   const project = await db.getFirstAsync<Project>(
     `
@@ -87,8 +80,6 @@ static async getProjectById(projectId: number): Promise<Project | null> {
     [projectId]
   );
 
-  logger.info(`[ProjectRepository] getProjectById() — ${project ? "found" : "not found"}`);
-  logger.info(`[ProjectRepository] getProjectById() — END`);
   return project ?? null;
 }
 
@@ -103,9 +94,7 @@ static async getProjectById(projectId: number): Promise<Project | null> {
   inspectorName?: string;
 }
 ): Promise<number> {
-  logger.info(`[ProjectRepository] createProject(name="${data.projectName}", districtId=${data.districtId}) — START`);
   const db = await getGlobalDatabase();
-  logger.info(`[ProjectRepository] Got global DB handle`);
 
   const districtName = await this.getDistrictName(data.districtId);
   const { districtKey, projectKey } = buildProjectIdentity(districtName, data.projectName);
@@ -147,8 +136,6 @@ static async getProjectById(projectId: number): Promise<Project | null> {
     );
 
     const newId = result.lastInsertRowId as number;
-    logger.info(`[ProjectCreate] success projectId=${newId}`);
-    logger.info(`[ProjectRepository] createProject() — END`);
     return newId;
   } catch (error) {
     if (isUniqueConstraintError(error)) {
@@ -182,9 +169,7 @@ static async updateProject(
     inspectorName?: string;
   }
 ): Promise<void> {
-  logger.info(`[ProjectRepository] updateProject(${projectId}) — START`);
   const db = await getGlobalDatabase();
-  logger.info(`[ProjectRepository] Got global DB handle`);
 
   const districtName = await this.getDistrictName(data.districtId);
   const { districtKey, projectKey } = buildProjectIdentity(districtName, data.projectName);
@@ -238,20 +223,16 @@ static async updateProject(
     }
     throw error;
   }
-  logger.info(`[ProjectRepository] updateProject() — END`);
 }
 
 static async cloneProject(
   sourceProjectId: number,
   newName: string
 ): Promise<number> {
-  logger.info(`[ProjectRepository] cloneProject(sourceId=${sourceProjectId}, newName="${newName}") — START`);
   const db = await getGlobalDatabase();
-  logger.info(`[ProjectRepository] Got global DB handle`);
 
   const source = await this.getProjectById(sourceProjectId);
   if (!source) {
-    logger.info(`[ProjectRepository] cloneProject() — source not found, returning 0`);
     return 0;
   }
 
@@ -273,9 +254,6 @@ static async cloneProject(
     );
 
     const newId = result.lastInsertRowId as number;
-    logger.info(`[ProjectCreate] success projectId=${newId}`);
-    logger.info(`[ProjectRepository] cloneProject() — cloned with ID ${newId}, DBPath ${dbPath}`);
-    logger.info(`[ProjectRepository] cloneProject() — END`);
     return newId;
   } catch (error) {
     if (isUniqueConstraintError(error)) {
@@ -286,20 +264,15 @@ static async cloneProject(
 }
 
 static async deleteProject(projectId: number): Promise<void> {
-  logger.info(`[ProjectRepository] deleteProject(${projectId}) — START`);
   const db = await getGlobalDatabase();
-  logger.info(`[ProjectRepository] Got global DB handle`);
 
   await db.runAsync(
     `DELETE FROM Projects WHERE ProjectID = ?;`,
     [projectId]
   );
-  logger.info(`[ProjectRepository] deleteProject() — END`);
 }
 
 private static rejectDuplicate(existingProjectId?: number): never {
-  logger.info(`[ProjectCreate] duplicateDetected projectId=${existingProjectId ?? "unknown"}`);
-  logger.info("[ProjectCreate] rejectedDuplicate");
   throw new ProjectAlreadyExistsError(existingProjectId);
 }
 
@@ -353,4 +326,3 @@ private static async findExistingByKeys(
   return row?.ProjectID ?? null;
 }
 }
-

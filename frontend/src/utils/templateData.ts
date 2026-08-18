@@ -70,6 +70,7 @@ export interface TemplateExportDeviceOption {
   OptionLabel: string;
   OptionValue: string;
   DisplayOrder: number;
+  IsDefault: number;
 }
 
 export interface TemplateImportSummary {
@@ -220,8 +221,9 @@ export async function buildTemplateExportData(): Promise<{
       OptionLabel: string;
       OptionValue: string;
       DisplayOrder: number;
+      IsDefault: number;
     }>(
-      `SELECT DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder
+      `SELECT DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault
        FROM DeviceOptions WHERE TemplateID = ? AND IsActive = 1 ORDER BY FieldName, DisplayOrder`,
       [template.TemplateID]
     );
@@ -303,7 +305,7 @@ export async function pickAndParseTemplate(): Promise<
   const asset = result.assets[0];
   const fileUri = asset.uri;
   const fileName = asset.name ?? fileUri;
-  logger.info("[TemplateRestore] fileSelected=" + fileName);
+  logger.debug("[TemplateRestore] fileSelected=" + fileName);
   const content = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.UTF8,
   });
@@ -505,14 +507,14 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
           );
           if (existingOpt) {
             await db.runAsync(
-              `UPDATE DeviceOptions SET OptionValue = ?, DisplayOrder = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE OptionID = ?`,
-              [option.OptionValue, option.DisplayOrder, existingOpt.OptionID]
+              `UPDATE DeviceOptions SET OptionValue = ?, DisplayOrder = ?, IsDefault = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE OptionID = ?`,
+              [option.OptionValue, option.DisplayOrder, option.IsDefault ?? 0, existingOpt.OptionID]
             );
           } else {
             await db.runAsync(
-              `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsActive)
-               VALUES (?, ?, ?, ?, ?, ?, 1)`,
-              [templateId, option.DeviceType, option.FieldName, option.OptionLabel, option.OptionValue, option.DisplayOrder]
+              `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+              [templateId, option.DeviceType, option.FieldName, option.OptionLabel, option.OptionValue, option.DisplayOrder, option.IsDefault ?? 0]
             );
           }
         }

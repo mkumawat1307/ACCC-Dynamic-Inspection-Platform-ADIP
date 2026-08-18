@@ -34,3 +34,7 @@ declare module "expo-document-picker" {
 declare module "expo-file-system/legacy" {
   export function __resetFsState(): void;
 }
+
+declare module "expo-sqlite" {
+  export function __resetDbState(): void;
+}
