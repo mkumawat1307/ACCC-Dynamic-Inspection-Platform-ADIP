@@ -82,11 +82,21 @@ export default function SectionRenderer({
           )?.OptionValue;
         }
 
-        valueMap[field.FieldID] =
+        const resolved =
           saved?.FieldValue ??
           defaultOptionValue ??
           field.DefaultValue ??
           "";
+
+        if (!saved && resolved) {
+          await InspectionValueRepository.saveValue(
+            inspectionId,
+            field.FieldID,
+            resolved
+          );
+        }
+
+        valueMap[field.FieldID] = resolved;
       }
 
       setFields(sectionFields);
@@ -146,9 +156,11 @@ export default function SectionRenderer({
         (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_count" === field.FieldKey
       );
       if (deviceType) {
+        if (value === "") return;
+        const newCount = Number(value);
         setDeviceCounts((prev) => ({
           ...prev,
-          [deviceType]: Number(value || "0"),
+          [deviceType]: newCount,
         }));
       }
     }

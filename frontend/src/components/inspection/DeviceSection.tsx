@@ -1,14 +1,16 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
-import { Card, Text, TextInput } from "react-native-paper";
-import { Dropdown } from "react-native-element-dropdown";
+import { Card, Checkbox, Text, TextInput } from "react-native-paper";
+import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
 import DeviceFieldDefinitionsRepository, {
   DeviceFieldDefinition,
 } from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
-import DeviceRecordsRepository, {
-  DeviceRecord,
-} from "@/src/database/repositories/DeviceRecordsRepository";
+import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositories/DeviceRecordsRepository";
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
+import { sanitizeNumberInput } from "@/src/utils/fieldInput";
+import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
+import { autoScrollDropdown } from "./renderFieldInput";
+import { cancelPendingOpen } from "./dropdownScrollGate";
 
 interface Props {
   inspectionId: number;
@@ -21,6 +23,7 @@ interface Props {
 interface DropdownItem {
   label: string;
   value: string;
+  isDefault?: number;
 }
 
 export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false }: Props) {
@@ -28,15 +31,23 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   const [records, setRecords] = useState<DeviceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [opts, setOpts] = useState<Record<string, DropdownItem[]>>({});
-  const saveTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const persistedIds = useRef<Map<number, number>>(new Map());
+  const countRef = useRef(count);
+  countRef.current = count;
+  const countOpsRef = useRef(Promise.resolve());
+  const dropdownRefs = useRef<Record<string, View | null>>({});
+  const dropdownOpenRefs = useRef<Record<string, IDropdownRef | null>>({});
+  const { scrollViewRef, scrollOffsetRef } = useInspectionScroll();
 
   useEffect(() => {
     (async () => {
       setLoading(true);
+      persistedIds.current = new Map();
       const fieldDefs = await DeviceFieldDefinitionsRepository.getByDeviceType(deviceType, templateId);
-      setFields(fieldDefs);
+      const visibleFieldDefs = fieldDefs.filter((f) => f.IsVisible !== 0);
+      setFields(visibleFieldDefs);
 
-      const dropdownFields = fieldDefs.filter((f) => f.FieldType === "dropdown");
+      const dropdownFields = visibleFieldDefs.filter((f) => f.FieldType === "dropdown");
       const loaded: Record<string, DropdownItem[]> = {};
       for (const f of dropdownFields) {
         const dbOpts = await DeviceOptionsRepository.getDropdownData(deviceType, f.FieldName, templateId);
@@ -50,15 +61,27 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       if (list.length < count) {
         for (let i = list.length + 1; i <= count; i++) {
           const emptyData: Record<string, string | null> = {};
-          fieldDefs.forEach((f) => { emptyData[f.FieldName] = null; });
-          list.push({
+          fieldDefs.forEach((f) => {
+            if (f.FieldType === "dropdown") {
+              const fieldOpts = loaded[f.FieldName];
+              const defaultOpt = fieldOpts?.find((o) => o.isDefault === 1);
+              emptyData[f.FieldName] = defaultOpt?.value ?? null;
+            } else {
+              emptyData[f.FieldName] = null;
+            }
+          });
+          const newRec: DeviceRecord = {
             InspectionID: inspectionId,
             DeviceType: deviceType,
             DeviceNo: i,
             DeviceData: JSON.stringify(emptyData),
             DisplayOrder: i,
             IsActive: 1,
-          });
+          };
+          const newId = await DeviceRecordsRepository.save(newRec);
+          newRec.RecordID = newId;
+          persistedIds.current.set(i, newId);
+          list.push(newRec);
         }
       }
 
@@ -69,31 +92,97 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
 
   useEffect(() => {
     if (loading) return;
-    setRecords((prev) => {
-      if (prev.length === count) return prev;
-      if (prev.length > count) return prev.slice(0, count);
-      const next = [...prev];
-      const emptyData: Record<string, string | null> = {};
-      fields.forEach((f) => { emptyData[f.FieldName] = null; });
-      for (let i = prev.length + 1; i <= count; i++) {
-        next.push({
-          InspectionID: inspectionId,
-          DeviceType: deviceType,
-          DeviceNo: i,
-          DeviceData: JSON.stringify(emptyData),
-          DisplayOrder: i,
-          IsActive: 1,
-        });
+
+    if (count < records.length) {
+      for (const no of persistedIds.current.keys()) {
+        if (no > count) persistedIds.current.delete(no);
       }
-      return next;
-    });
-  }, [count, loading]);
+      setRecords((prev) => (prev.length > count ? prev.slice(0, count) : prev));
+
+      countOpsRef.current = countOpsRef.current.then(async () => {
+        await DeviceRecordsRepository.flushPendingDeviceSaves();
+        await DeviceRecordsRepository.deactivateBeyond(inspectionId, deviceType, count);
+      });
+
+      return;
+    }
+
+    if (count > records.length) {
+      const growCount = count;
+      countOpsRef.current = countOpsRef.current.then(async () => {
+        await DeviceRecordsRepository.flushPendingDeviceSaves();
+        const restored = await DeviceRecordsRepository.restorePendingDeactivatedRecords(
+          inspectionId, deviceType, growCount,
+        );
+        return restored;
+      }).then(async (restored) => {
+        const target = countRef.current;
+        if (target < growCount && restored.length > 0) {
+          await DeviceRecordsRepository.deactivateBeyond(inspectionId, deviceType, target);
+        }
+        const kept = restored.filter((r) => r.DeviceNo <= target);
+        for (const r of kept) {
+          if (r.RecordID) persistedIds.current.set(r.DeviceNo, r.RecordID);
+        }
+
+        const activeRecords = await DeviceRecordsRepository.getByInspection(inspectionId, deviceType);
+        const activeNos = new Set(activeRecords.map((r) => r.DeviceNo));
+        for (const r of activeRecords) {
+          if (r.RecordID) persistedIds.current.set(r.DeviceNo, r.RecordID);
+        }
+
+        const emptyData: Record<string, string | null> = {};
+        fields.forEach((f) => {
+          if (f.FieldType === "dropdown") {
+            const fieldOpts = opts[f.FieldName];
+            const defaultOpt = fieldOpts?.find((o) => o.isDefault === 1);
+            emptyData[f.FieldName] = defaultOpt?.value ?? null;
+          } else {
+            emptyData[f.FieldName] = null;
+          }
+        });
+
+        const persistedByNo = new Map<number, DeviceRecord>();
+        for (let i = 1; i <= target; i++) {
+          if (!activeNos.has(i)) {
+            const newRec: DeviceRecord = {
+              InspectionID: inspectionId,
+              DeviceType: deviceType,
+              DeviceNo: i,
+              DeviceData: JSON.stringify(emptyData),
+              DisplayOrder: i,
+              IsActive: 1,
+            };
+            const newId = await DeviceRecordsRepository.save(newRec);
+            newRec.RecordID = newId;
+            persistedIds.current.set(i, newId);
+            persistedByNo.set(i, newRec);
+          }
+        }
+
+        const restoredByNo = new Map(kept.map((r) => [r.DeviceNo, r]));
+        setRecords((prev) => {
+          if (prev.length >= target) return prev;
+          const next = [...prev];
+          for (let i = next.length + 1; i <= target; i++) {
+            const existing = restoredByNo.get(i) ?? persistedByNo.get(i);
+            if (existing) {
+              next.push({ ...existing, IsActive: 1 });
+            }
+          }
+          return next;
+        });
+      });
+      return;
+    }
+
+  }, [count, loading, records.length, fields, inspectionId, deviceType]);
 
   useEffect(() => {
     return () => {
-      saveTimers.current.forEach((timer) => clearTimeout(timer));
+      DeviceRecordsRepository.cancelPendingSaves(deviceType);
     };
-  }, []);
+  }, [deviceType]);
 
   function getData(record: DeviceRecord): Record<string, string | null> {
     if (!record.DeviceData) return {};
@@ -104,38 +193,28 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     }
   }
 
-  function debouncedSave(record: DeviceRecord) {
-    const key = record.RecordID ?? -record.DeviceNo;
-    const timer = saveTimers.current.get(key);
-    if (timer) clearTimeout(timer);
-
-    saveTimers.current.set(
-      key,
-      setTimeout(async () => {
-        const newId = await DeviceRecordsRepository.save(record);
-        if (newId && !record.RecordID) {
-          setRecords((prev) =>
-            prev.map((r) =>
-              r.DeviceNo === record.DeviceNo && !r.RecordID
-                ? { ...r, RecordID: newId }
-                : r
-            )
-          );
-        }
-        saveTimers.current.delete(key);
-      }, 500)
-    );
-  }
-
-  function updateField(index: number, fieldName: string, value: string | null) {
+  function updateField(index: number, fieldName: string, value: string): void {
     setRecords((prev) => {
       const updated = [...prev];
-      const record = { ...updated[index] };
+      const current = updated[index];
+      const record = {
+        ...current,
+        RecordID: current.RecordID ?? persistedIds.current.get(current.DeviceNo),
+      };
       const data = getData(record);
       data[fieldName] = value;
       record.DeviceData = JSON.stringify(data);
       updated[index] = record;
-      debouncedSave(record);
+      DeviceRecordsRepository.scheduleDeviceRecordSave(record, 500, (newId) => {
+        persistedIds.current.set(record.DeviceNo, newId);
+        setRecords((state) => {
+          const next = [...state];
+          const target = next[index];
+          if (!target) return state;
+          next[index] = { ...target, RecordID: newId };
+          return next;
+        });
+      });
       return updated;
     });
   }
@@ -156,21 +235,55 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     const data = getData(record);
     const value = data[field.FieldName] ?? null;
 
+    const isNumber = field.FieldType === "number";
+    const isCheckbox = field.FieldType === "checkbox";
+    const isMultiline = field.FieldType === "multiline";
+    const dropdownKey = `dev-${record.DeviceNo}-${field.FieldDefID}`;
     const input = field.FieldType === "dropdown" ? (
-      <View key={field.FieldDefID} style={styles.fieldHalf}>
+      <View
+        key={field.FieldDefID}
+        style={styles.fieldHalf}
+        ref={(node) => {
+          dropdownRefs.current[dropdownKey] = node;
+        }}
+      >
         <Text style={styles.fieldLabel}>{field.Label}{field.IsRequired ? " *" : ""}</Text>
         <Dropdown
+          ref={(node) => {
+            dropdownOpenRefs.current[dropdownKey] = node;
+          }}
           style={styles.dropdown}
           placeholderStyle={styles.placeholder}
           selectedTextStyle={styles.selectedText}
           data={opts[field.FieldName] ?? []}
           labelField="label"
           valueField="value"
-          placeholder={`Select ${field.Label}`}
+          placeholder={field.Placeholder ?? `Select ${field.Label}`}
           value={value}
           disable={locked}
+          onFocus={() =>
+            autoScrollDropdown(
+              { current: dropdownRefs.current[dropdownKey] ?? null },
+              { current: dropdownOpenRefs.current[dropdownKey] ?? null },
+              scrollViewRef,
+              scrollOffsetRef.current
+            )
+          }
           onChange={(item) => updateField(index, field.FieldName, item.value)}
+          onBlur={() => cancelPendingOpen()}
         />
+      </View>
+    ) : isCheckbox ? (
+      <View key={field.FieldDefID} style={styles.fieldHalf}>
+        <Pressable
+          disabled={locked}
+          onPress={() => updateField(index, field.FieldName, value === "1" ? "0" : "1")}
+        >
+          <View style={styles.checkboxRow}>
+            <Checkbox status={value === "1" ? "checked" : "unchecked"} disabled={locked} />
+            <Text style={styles.fieldLabel}>{field.Label}{field.IsRequired ? " *" : ""}</Text>
+          </View>
+        </Pressable>
       </View>
     ) : (
       <View key={field.FieldDefID} style={styles.fieldHalf}>
@@ -178,7 +291,17 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           mode="outlined"
           label={field.Label + (field.IsRequired ? " *" : "")}
           value={value ?? ""}
-          onChangeText={(text) => updateField(index, field.FieldName, text || null)}
+          placeholder={field.Placeholder ?? undefined}
+          keyboardType={isNumber ? "decimal-pad" : undefined}
+          multiline={isMultiline}
+          numberOfLines={isMultiline ? 3 : undefined}
+          onChangeText={(text) =>
+            updateField(
+              index,
+              field.FieldName,
+              isNumber ? sanitizeNumberInput(text) || "" : text || ""
+            )
+          }
           style={styles.input}
           dense
           editable={!locked}
@@ -217,7 +340,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       </View>
 
       {records.map((record, index) => (
-        <Card key={record.RecordID ?? `new-${record.DeviceNo}`} style={styles.card}>
+        <Card key={`dev-${record.DeviceNo}`} style={styles.card}>
           <Card.Title title={getDeviceLabel(record)} titleStyle={styles.cardTitle} />
           <Card.Content>
             {halfFields.map((pair, pairIdx) => (
@@ -242,6 +365,17 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 13, fontWeight: "500", color: "#444", marginBottom: 4 },
   row: { flexDirection: "row", gap: 8, marginBottom: 8 },
   fieldHalf: { flex: 1 },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CFCFCF",
+    paddingHorizontal: 8,
+    marginBottom: 8,
+    minHeight: 56,
+  },
   input: { marginBottom: 4, backgroundColor: "#FFFFFF" },
   dropdown: {
     height: 56,

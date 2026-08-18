@@ -1,6 +1,10 @@
 jest.mock("@/src/database/db");
 
 import { getDatabase } from "@/src/database/db";
+import {
+  CREATEABLE_FIELD_TYPES,
+  FIELD_TYPES,
+} from "@/src/database/repositories/FieldRepository";
 
 function createMockDb() {
   return {
@@ -43,6 +47,36 @@ describe("FieldRepository", () => {
     jest.clearAllMocks();
     mockDb = createMockDb();
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  describe("CREATEABLE_FIELD_TYPES", () => {
+    it("has exactly the 5 allowed new types in order", () => {
+      expect(CREATEABLE_FIELD_TYPES).toEqual([
+        { value: "text", label: "Text Input" },
+        { value: "number", label: "Numbers" },
+        { value: "multiline", label: "Multiline Text" },
+        { value: "dropdown", label: "Dropdown" },
+        { value: "checkbox", label: "Checkbox" },
+      ]);
+    });
+
+    it("is a strict subset of FIELD_TYPES", () => {
+      const legacyValues = FIELD_TYPES.map((t) => t.value);
+      const createableValues = CREATEABLE_FIELD_TYPES.map((t) => t.value);
+      for (const value of createableValues) {
+        expect(legacyValues).toContain(value);
+      }
+      expect(legacyValues.length).toBeGreaterThan(createableValues.length);
+    });
+
+    it("FIELD_TYPES still resolves legacy labels not in the createable list", () => {
+      const lookup = (type: string) =>
+        FIELD_TYPES.find((t) => t.value === type)?.label ?? type;
+      expect(lookup("GPS")).toBe("GPS");
+      expect(lookup("date_auto")).toBe("Date (Auto)");
+      expect(lookup("date")).toBe("Date");
+      expect(lookup("time")).toBe("Time");
+    });
   });
 
   describe("getBySection", () => {

@@ -58,6 +58,15 @@ export class FieldOptionRepository {
         data.IsDefault ?? 0,
       ]
     );
+
+    if ((data.IsDefault ?? 0) === 1) {
+      await db.runAsync(
+        `UPDATE FieldOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE FieldID = ? AND IsActive = 1 AND OptionID != ?`,
+        [data.FieldID, result.lastInsertRowId]
+      );
+    }
+
     return result.lastInsertRowId;
   }
 
@@ -88,6 +97,20 @@ export class FieldOptionRepository {
       `UPDATE FieldOptions SET ${fields.join(", ")} WHERE OptionID = ?`,
       values
     );
+
+    if (data.IsDefault === 1) {
+      const row = await db.getFirstAsync<{ FieldID: number }>(
+        `SELECT FieldID FROM FieldOptions WHERE OptionID = ?`,
+        [id]
+      );
+      if (row) {
+        await db.runAsync(
+          `UPDATE FieldOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+           WHERE FieldID = ? AND IsActive = 1 AND OptionID != ?`,
+          [row.FieldID, id]
+        );
+      }
+    }
   }
 
   static async delete(id: number): Promise<void> {
@@ -113,6 +136,20 @@ export class FieldOptionRepository {
         );
       }
     });
+  }
+
+  static async setDefault(fieldId: number, optionId: number): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(
+      `UPDATE FieldOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+       WHERE FieldID = ? AND IsActive = 1`,
+      [fieldId]
+    );
+    await db.runAsync(
+      `UPDATE FieldOptions SET IsDefault = 1, UpdatedAt = CURRENT_TIMESTAMP
+       WHERE OptionID = ?`,
+      [optionId]
+    );
   }
 
   static async deleteByField(fieldId: number): Promise<void> {

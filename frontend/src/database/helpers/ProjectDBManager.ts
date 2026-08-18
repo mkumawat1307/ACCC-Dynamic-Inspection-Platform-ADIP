@@ -8,6 +8,8 @@ import {
 } from "../db";
 import { logger } from "@/src/utils/logger";
 import { createProjectSchema, migrateProjectSchema } from "../schema";
+import { buildProjectFolderLabel } from "@/src/utils/folderNaming";
+import { buildIdentitySeed } from "../projectIdentity";
 import { seedInspectionTemplate } from "../seeds/inspection-template.seed";
 import { seedInspectionSections } from "../seeds/inspection-sections.seed";
 import { seedInspectionFields } from "../seeds/inspection-fields.seed";
@@ -20,6 +22,13 @@ import { seedDashboardCards } from "../seeds/dashboard-cards.seed";
 import { InspectionRepository } from "../repositories/InspectionRepository";
 
 const PROJECTS_FOLDER = "Projects";
+
+export class ProjectFolderExistsError extends Error {
+  constructor(path: string) {
+    super(`Project DB already exists at ${path}`);
+    this.name = "ProjectFolderExistsError";
+  }
+}
 
 const SETTINGS_TABLES = [
   "InspectionTemplates",
@@ -60,9 +69,23 @@ function getProjectsBasePath(): string {
   return `${FileSystem.documentDirectory}${PROJECTS_FOLDER}/`;
 }
 
-export function getProjectDbPath(projectName: string): string {
-  const safeName = projectName.replace(/[<>:"/\\|?*]/g, "_");
-  return `${getProjectsBasePath()}${safeName}/inspection.db`;
+const FNV1A_OFFSET_BASIS = 0x811c9dc5;
+const FNV1A_PRIME = 0x01000193;
+
+function folderIdentityHash(districtName: string, projectName: string): string {
+  const seed = buildIdentitySeed(districtName, projectName);
+  let hash = FNV1A_OFFSET_BASIS;
+  for (let i = 0; i < seed.length; i++) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, FNV1A_PRIME) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+export function getProjectDbPath(districtName: string, projectName: string): string {
+  const label = buildProjectFolderLabel(districtName, projectName);
+  const hash = folderIdentityHash(districtName, projectName);
+  return `${getProjectsBasePath()}${label}_${hash}/inspection.db`;
 }
 
 export async function createProjectDb(
@@ -70,9 +93,11 @@ export async function createProjectDb(
   projectDbPath: string,
   projectId: number
 ): Promise<void> {
-  logger.debug("[ProjectDBManager] createProjectDb — START");
-
   const folderPath = projectDbPath.replace(/inspection\.db$/, "");
+  const existing = await FileSystem.getInfoAsync(projectDbPath);
+  if (existing.exists) {
+    throw new ProjectFolderExistsError(projectDbPath);
+  }
   await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
 
   await setActiveProject(projectDbPath);
@@ -90,7 +115,7 @@ export async function createProjectDb(
   await seedDashboardCards(projectId);
 
   await clearActiveProject();
-  logger.info(`✅ [ProjectDBManager] Project created: ${projectName}`);
+  logger.debug(`✅ [ProjectDBManager] Project created: ${projectName}`);
 }
 
 export async function cloneProjectDb(
@@ -99,7 +124,6 @@ export async function cloneProjectDb(
   projectDbPath: string,
   newProjectId: number
 ): Promise<void> {
-  logger.debug("[ProjectDBManager] cloneProjectDb — START");
 
   const settings: Partial<
     Record<(typeof SETTINGS_TABLES)[number], SettingsRow[]>
@@ -134,6 +158,10 @@ export async function cloneProjectDb(
   }
 
   const folderPath = projectDbPath.replace(/inspection\.db$/, "");
+  const existing = await FileSystem.getInfoAsync(projectDbPath);
+  if (existing.exists) {
+    throw new ProjectFolderExistsError(projectDbPath);
+  }
   await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
 
   await setActiveProject(projectDbPath);
@@ -232,11 +260,10 @@ export async function cloneProjectDb(
   } finally {
     await clearActiveProject();
   }
-  logger.info(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
+  logger.debug(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
 }
 
 export async function openProjectDb(dbPath: string, projectId: number): Promise<void> {
-  logger.debug("[ProjectDBManager] openProjectDb — START");
   await setActiveProject(dbPath);
 
   const db = await getDatabase();
@@ -247,11 +274,8 @@ export async function openProjectDb(dbPath: string, projectId: number): Promise<
     await clearActiveProject();
     throw new Error(`Project database is empty or missing schema: ${dbPath}`);
   }
-  logger.debug("[ProjectDBManager] openProjectDb — valid");
 
   await migrateProjectSchema(projectId);
-  logger.debug("[ProjectDBManager] openProjectDb — migrations applied");
-  logger.info(`[ProjectDBManager] Project database opened: ${dbPath}`);
 }
 
 export async function updateProjectInspectorName(
@@ -264,37 +288,31 @@ export async function updateProjectInspectorName(
   } finally {
     await clearActiveProject();
   }
-  logger.info(`[ProjectDBManager] Inspector name synced to inspections: ${dbPath}`);
+  logger.debug(`[ProjectDBManager] Inspector name synced to inspections: ${dbPath}`);
 }
 
 export async function deleteProjectDb(dbPath: string): Promise<void> {
-  logger.debug("[ProjectDBManager] deleteProjectDb — START");
   if (dbPath) {
     const folderPath = dbPath.replace(/inspection\.db$/, "");
     await FileSystem.deleteAsync(folderPath);
   }
-  logger.debug("[ProjectDBManager] deleteProjectDb — END");
 }
 
 export async function listProjectFolders(): Promise<string[]> {
-  logger.debug("[ProjectDBManager] listProjectFolders — START");
-
   try {
     await FileSystem.makeDirectoryAsync(getProjectsBasePath(), { intermediates: true });
   } catch (e) {
-    logger.info("[ProjectDBManager] Ensuring projects folder (non-fatal):", e);
+    logger.debug("[ProjectDBManager] Ensuring projects folder (non-fatal):", e);
   }
 
   let items: string[];
   try {
     items = await FileSystem.readDirectoryAsync(getProjectsBasePath());
   } catch (e) {
-    logger.info("[ProjectDBManager] readDirectoryAsync failed:", e);
+    logger.debug("[ProjectDBManager] readDirectoryAsync failed:", e);
     return [];
   }
 
   const result = items.filter((item) => !item.startsWith("."));
-  logger.debug("[ProjectDBManager] Returning", result.length, "project folders");
-  logger.debug("[ProjectDBManager] listProjectFolders — END");
   return result;
 }

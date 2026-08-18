@@ -75,12 +75,24 @@ export default class PhotoRepository {
 
   }
 
-  static async updateFilePath(photoId: number, filePath: string): Promise<void> {
+  static async updateFilePathAndStoragePath(
+    photoId: number,
+    filePath: string,
+    storagePath: string
+  ): Promise<void> {
     const db = await getDatabase();
     await db.runAsync(
-      `UPDATE Photos SET FilePath = ? WHERE PhotoID = ?`,
-      [filePath, photoId]
+      `UPDATE Photos SET FilePath = ?, StoragePath = ? WHERE PhotoID = ?`,
+      [filePath, storagePath, photoId]
     );
+  }
+
+  static async updateStoragePath(photoId: number, storagePath: string): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(`UPDATE Photos SET StoragePath = ? WHERE PhotoID = ?`, [
+      storagePath,
+      photoId,
+    ]);
   }
 
   static async updateFileNameAndPath(photoId: number, fileName: string, filePath: string): Promise<void> {
@@ -89,19 +101,6 @@ export default class PhotoRepository {
       `UPDATE Photos SET FileName = ?, FilePath = ? WHERE PhotoID = ?`,
       [fileName, filePath, photoId]
     );
-  }
-
-  static async remapFilePaths(uriMap: Record<string, string>): Promise<number> {
-    const db = await getDatabase();
-    let updated = 0;
-    for (const [oldUri, newUri] of Object.entries(uriMap)) {
-      const result = await db.runAsync(
-        `UPDATE Photos SET FilePath = ? WHERE FilePath = ?`,
-        [newUri, oldUri]
-      );
-      updated += result.changes;
-    }
-    return updated;
   }
 
   static async delete(

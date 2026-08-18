@@ -6,13 +6,17 @@ export function sanitizeFolderName(name: string): string {
   return name.replace(ILLEGAL_CHARS, "_");
 }
 
-export function canonicalProjectLabel(project: Project): string {
-  const district = (project.DistrictName || "").trim();
-  const projectName = (project.ProjectName || "").trim();
-  if (district && projectName) {
-    return sanitizeFolderName(`${district}_${projectName}`);
+export function buildProjectFolderLabel(districtName: string, projectName: string): string {
+  const district = (districtName || "").trim();
+  const name = (projectName || "").trim();
+  if (district && name) {
+    return sanitizeFolderName(`${district}_${name}`);
   }
-  return sanitizeFolderName(district || projectName);
+  return sanitizeFolderName(district || name);
+}
+
+export function canonicalProjectLabel(project: Project): string {
+  return buildProjectFolderLabel(project.DistrictName ?? "", project.ProjectName ?? "");
 }
 
 export function legacyStrippedLabel(project: Project): string {

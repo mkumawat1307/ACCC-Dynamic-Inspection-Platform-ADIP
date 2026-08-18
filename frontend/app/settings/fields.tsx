@@ -1,13 +1,14 @@
 import React, { useState, useCallback } from "react";
-import { View, FlatList, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, FlatList, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-  Appbar, FAB, Card, Text, IconButton, Chip, Portal, Dialog,
-  Button, TextInput, Switch,
+  Appbar, Card, Text, IconButton, Chip, Portal, Button,
 } from "react-native-paper";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-import { FieldRepository, Field, FIELD_TYPES } from "../../src/database/repositories/FieldRepository";
+import { FieldRepository, Field, CREATEABLE_FIELD_TYPES, FIELD_TYPES } from "../../src/database/repositories/FieldRepository";
+import { FieldDialog } from "@/src/components/app/settings/components/DeviceTypeDialogs";
+import { styles as deviceTypeStyles } from "@/src/components/app/settings/device-types.styles";
 
 export default function FieldsScreen() {
   const router = useRouter();
@@ -25,8 +26,6 @@ export default function FieldsScreen() {
   const [fieldKey, setFieldKey] = useState("");
   const [fieldType, setFieldType] = useState("text");
   const [placeholder, setPlaceholder] = useState("");
-  const [defaultValue, setDefaultValue] = useState("");
-  const [helpText, setHelpText] = useState("");
   const [isRequired, setIsRequired] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
 
@@ -50,8 +49,6 @@ export default function FieldsScreen() {
     setFieldKey("");
     setFieldType("text");
     setPlaceholder("");
-    setDefaultValue("");
-    setHelpText("");
     setIsRequired(false);
     setIsVisible(true);
     setShowDialog(true);
@@ -63,8 +60,6 @@ export default function FieldsScreen() {
     setFieldKey(f.FieldKey);
     setFieldType(f.FieldType);
     setPlaceholder(f.Placeholder ?? "");
-    setDefaultValue(f.DefaultValue ?? "");
-    setHelpText(f.HelpText ?? "");
     setIsRequired(f.IsRequired === 1);
     setIsVisible(f.IsVisible === 1);
     setShowDialog(true);
@@ -83,8 +78,7 @@ export default function FieldsScreen() {
         FieldKey: key,
         FieldType: fieldType,
         Placeholder: placeholder.trim() || null,
-        DefaultValue: defaultValue.trim() || null,
-        HelpText: helpText.trim() || null,
+        DefaultValue: editing.DefaultValue ?? null,
         IsRequired: isRequired ? 1 : 0,
         IsVisible: isVisible ? 1 : 0,
       });
@@ -95,8 +89,7 @@ export default function FieldsScreen() {
         FieldKey: key,
         FieldType: fieldType,
         Placeholder: placeholder.trim() || null,
-        DefaultValue: defaultValue.trim() || null,
-        HelpText: helpText.trim() || null,
+        DefaultValue: null,
         IsRequired: isRequired ? 1 : 0,
         IsVisible: isVisible ? 1 : 0,
       });
@@ -140,8 +133,10 @@ export default function FieldsScreen() {
     setFields(updated);
   };
 
-  const getTypeLabel = (type: string) =>
-    FIELD_TYPES.find((t) => t.value === type)?.label ?? type;
+const getTypeLabel = (type: string) =>
+  CREATEABLE_FIELD_TYPES.find((t) => t.value === type)?.label ??
+  FIELD_TYPES.find((t) => t.value === type)?.label ??
+  type;
 
   const renderField = ({ item, index }: { item: Field; index: number }) => (
     <Card style={styles.card}>
@@ -202,6 +197,17 @@ export default function FieldsScreen() {
         <Appbar.Content title={sectionName ?? "Fields"} />
       </Appbar.Header>
 
+      <View style={styles.listHeader}>
+        <View style={deviceTypeStyles.headerRow}>
+          <Text variant="titleMedium" style={deviceTypeStyles.sectionTitle}>
+            Fields ({fields.length})
+          </Text>
+          <Button mode="contained" onPress={openCreateDialog}>
+            Add Field
+          </Button>
+        </View>
+      </View>
+
       <FlatList
         data={fields}
         keyExtractor={(item) => String(item.FieldID)}
@@ -209,54 +215,34 @@ export default function FieldsScreen() {
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>No fields yet. Tap + to add one.</Text>
+            <Text style={styles.emptyText}>No fields yet. Tap Add Field to add one.</Text>
           </View>
         }
       />
 
-      <FAB icon="plus" style={styles.fab} label="New Field" onPress={openCreateDialog} />
-
       <Portal>
-        <Dialog visible={showDialog} onDismiss={() => setShowDialog(false)}>
-          <Dialog.Title>{editing ? "Edit Field" : "New Field"}</Dialog.Title>
-          <Dialog.Content style={{ maxHeight: 400 }}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <TextInput label="Field Name *" defaultValue={fieldName} onChangeText={(text) => { setFieldName(text); setFieldKey(generateKey(text)); }} mode="outlined" style={styles.input} />
-
-              <Text variant="bodyMedium" style={styles.sectionLabel}>Field Type</Text>
-              <View style={styles.typeGrid}>
-                {FIELD_TYPES.map((t) => (
-                  <Chip
-                    key={t.value}
-                    selected={fieldType === t.value}
-                    onPress={() => setFieldType(t.value)}
-                    style={[styles.typeChipOption, fieldType === t.value && styles.typeChipSelected]}
-                    showSelectedOverlay
-                  >
-                    {t.label}
-                  </Chip>
-                ))}
-              </View>
-
-              <TextInput label="Placeholder" defaultValue={placeholder} onChangeText={setPlaceholder} mode="outlined" style={styles.input} />
-              <TextInput label="Default Value" defaultValue={defaultValue} onChangeText={setDefaultValue} mode="outlined" style={styles.input} />
-              <TextInput label="Help Text" defaultValue={helpText} onChangeText={setHelpText} mode="outlined" style={styles.input} />
-
-              <View style={styles.switchRow}>
-                <Text variant="bodyMedium">Required</Text>
-                <Switch value={isRequired} onValueChange={setIsRequired} />
-              </View>
-              <View style={styles.switchRow}>
-                <Text variant="bodyMedium">Visible</Text>
-                <Switch value={isVisible} onValueChange={setIsVisible} />
-              </View>
-            </ScrollView>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowDialog(false)}>Cancel</Button>
-            <Button onPress={handleSave}>Save</Button>
-          </Dialog.Actions>
-        </Dialog>
+        <FieldDialog
+          visible={showDialog}
+          editingField={editing !== null}
+          fieldLabel={fieldName}
+          fieldType={fieldType}
+          fieldRequired={isRequired}
+          onDismiss={() => setShowDialog(false)}
+          onFieldLabelChange={(text) => { setFieldName(text); setFieldKey(generateKey(text)); }}
+          onFieldTypeChange={setFieldType}
+          onFieldRequiredToggle={() => setIsRequired(!isRequired)}
+          onSave={handleSave}
+          typeChipStyle={deviceTypeStyles.typeChip}
+          typeChipSelectedStyle={deviceTypeStyles.typeChipSelected}
+          chipRowStyle={deviceTypeStyles.chipRow}
+          inputStyle={deviceTypeStyles.input}
+          fieldLabelText="Field Name *"
+          showExtraConfig
+          placeholder={placeholder}
+          isVisible={isVisible}
+          onPlaceholderChange={setPlaceholder}
+          onVisibleToggle={() => setIsVisible(!isVisible)}
+        />
       </Portal>
     </SafeAreaView>
   );
@@ -264,7 +250,8 @@ export default function FieldsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-  list: { padding: 16, paddingBottom: 100 },
+  listHeader: { paddingHorizontal: 16, paddingTop: 12 },
+  list: { padding: 16, paddingBottom: 30 },
   card: { marginBottom: 12 },
   cardRow: { flexDirection: "row", alignItems: "center" },
   orderButtons: { alignItems: "center", marginRight: 8 },
@@ -277,13 +264,6 @@ const styles = StyleSheet.create({
   typeChip: { height: 26, backgroundColor: "#E8EAF6" },
   cardActions: { flexDirection: "row" },
   cardActionsRow: { justifyContent: "flex-end" },
-  fab: { position: "absolute", right: 16, bottom: 32 },
   empty: { alignItems: "center", marginTop: 60 },
   emptyText: { color: "#999" },
-  input: { marginBottom: 12 },
-  sectionLabel: { fontWeight: "600", marginBottom: 8, marginTop: 4 },
-  typeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
-  typeChipOption: { marginBottom: 4 },
-  typeChipSelected: { backgroundColor: "#1565C0" },
-  switchRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
 });

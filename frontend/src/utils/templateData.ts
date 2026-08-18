@@ -60,6 +60,8 @@ export interface TemplateExportDeviceType {
   FieldType: string;
   IsRequired: number;
   DisplayOrder: number;
+  Placeholder?: string | null;
+  IsVisible?: number;
 }
 
 export interface TemplateExportDeviceOption {
@@ -68,6 +70,7 @@ export interface TemplateExportDeviceOption {
   OptionLabel: string;
   OptionValue: string;
   DisplayOrder: number;
+  IsDefault: number;
 }
 
 export interface TemplateImportSummary {
@@ -204,8 +207,10 @@ export async function buildTemplateExportData(): Promise<{
       FieldType: string;
       IsRequired: number;
       DisplayOrder: number;
+      Placeholder: string | null;
+      IsVisible: number;
     }>(
-      `SELECT DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder
+      `SELECT DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, Placeholder
        FROM DeviceFieldDefinitions WHERE TemplateID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
       [template.TemplateID]
     );
@@ -216,8 +221,9 @@ export async function buildTemplateExportData(): Promise<{
       OptionLabel: string;
       OptionValue: string;
       DisplayOrder: number;
+      IsDefault: number;
     }>(
-      `SELECT DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder
+      `SELECT DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault
        FROM DeviceOptions WHERE TemplateID = ? AND IsActive = 1 ORDER BY FieldName, DisplayOrder`,
       [template.TemplateID]
     );
@@ -299,7 +305,7 @@ export async function pickAndParseTemplate(): Promise<
   const asset = result.assets[0];
   const fileUri = asset.uri;
   const fileName = asset.name ?? fileUri;
-  logger.info("[TemplateRestore] fileSelected=" + fileName);
+  logger.debug("[TemplateRestore] fileSelected=" + fileName);
   const content = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.UTF8,
   });
@@ -481,14 +487,14 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
           );
           if (existingDef) {
             await db.runAsync(
-              `UPDATE DeviceFieldDefinitions SET Label = ?, FieldType = ?, IsRequired = ?, DisplayOrder = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldDefID = ?`,
-              [deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.DisplayOrder, existingDef.FieldDefID]
+              `UPDATE DeviceFieldDefinitions SET Label = ?, FieldType = ?, IsRequired = ?, IsVisible = ?, DisplayOrder = ?, Placeholder = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldDefID = ?`,
+              [deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.IsVisible ?? 1, deviceType.DisplayOrder, deviceType.Placeholder ?? null, existingDef.FieldDefID]
             );
           } else {
             await db.runAsync(
-              `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, DisplayOrder, IsActive)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-              [templateId, deviceType.DeviceType, deviceType.FieldName, deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.DisplayOrder]
+              `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, Placeholder, IsActive)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+              [templateId, deviceType.DeviceType, deviceType.FieldName, deviceType.Label, deviceType.FieldType, deviceType.IsRequired, deviceType.IsVisible ?? 1, deviceType.DisplayOrder, deviceType.Placeholder ?? null]
             );
           }
         }
@@ -501,14 +507,14 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
           );
           if (existingOpt) {
             await db.runAsync(
-              `UPDATE DeviceOptions SET OptionValue = ?, DisplayOrder = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE OptionID = ?`,
-              [option.OptionValue, option.DisplayOrder, existingOpt.OptionID]
+              `UPDATE DeviceOptions SET OptionValue = ?, DisplayOrder = ?, IsDefault = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE OptionID = ?`,
+              [option.OptionValue, option.DisplayOrder, option.IsDefault ?? 0, existingOpt.OptionID]
             );
           } else {
             await db.runAsync(
-              `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsActive)
-               VALUES (?, ?, ?, ?, ?, ?, 1)`,
-              [templateId, option.DeviceType, option.FieldName, option.OptionLabel, option.OptionValue, option.DisplayOrder]
+              `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+              [templateId, option.DeviceType, option.FieldName, option.OptionLabel, option.OptionValue, option.DisplayOrder, option.IsDefault ?? 0]
             );
           }
         }

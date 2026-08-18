@@ -8,21 +8,9 @@ export interface DeviceOption {
   OptionLabel: string;
   OptionValue: string;
   DisplayOrder: number;
+  IsDefault: number;
   IsActive: number;
 }
-
-export const DEVICE_FIELDS: Record<string, string> = {
-  CameraType: "Camera Type",
-  CameraStatus: "Camera Status",
-  CameraMake: "Camera Make",
-  CameraSI: "Camera SI",
-  SDCardCapacity: "SD Card Capacity",
-  SDCardStatus: "SD Card Status",
-  SwitchType: "Switch Type",
-  SwitchStatus: "Switch Status",
-  SwitchMake: "Switch Make",
-  SwitchSI: "Switch SI",
-};
 
 class DeviceOptionsRepository {
   async getAll(deviceType: string, templateId?: number): Promise<DeviceOption[]> {
@@ -69,17 +57,27 @@ class DeviceOptionsRepository {
     deviceType: string,
     fieldName: string,
     templateId?: number
-  ): Promise<{ label: string; value: string }[]> {
+  ): Promise<{ label: string; value: string; isDefault: number }[]> {
     const options = await this.getByField(deviceType, fieldName, templateId);
-    return options.map((o) => ({ label: o.OptionLabel, value: o.OptionValue }));
+    return options.map((o) => ({ label: o.OptionLabel, value: o.OptionValue, isDefault: o.IsDefault }));
+  }
+
+  async getDefaultOption(
+    deviceType: string,
+    fieldName: string,
+    templateId?: number
+  ): Promise<string | null> {
+    const options = await this.getByField(deviceType, fieldName, templateId);
+    const def = options.find((o) => o.IsDefault === 1);
+    return def?.OptionValue ?? null;
   }
 
   async add(option: DeviceOption, templateId?: number): Promise<number> {
     const db = await getDatabase();
     const tid = templateId ?? option.TemplateID ?? 1;
     const result = await db.runAsync(
-      `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         tid,
         option.DeviceType,
@@ -87,8 +85,18 @@ class DeviceOptionsRepository {
         option.OptionLabel,
         option.OptionValue,
         option.DisplayOrder,
+        option.IsDefault ?? 0,
       ]
     );
+
+    if ((option.IsDefault ?? 0) === 1) {
+      await db.runAsync(
+        `UPDATE DeviceOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1 AND OptionID != ?`,
+        [option.DeviceType, option.FieldName, tid, result.lastInsertRowId]
+      );
+    }
+
     return result.lastInsertRowId;
   }
 
@@ -96,9 +104,32 @@ class DeviceOptionsRepository {
     const db = await getDatabase();
     await db.runAsync(
       `UPDATE DeviceOptions
-       SET OptionLabel = ?, OptionValue = ?, DisplayOrder = ?, UpdatedAt = CURRENT_TIMESTAMP
+       SET OptionLabel = ?, OptionValue = ?, DisplayOrder = ?, IsDefault = ?, UpdatedAt = CURRENT_TIMESTAMP
        WHERE OptionID = ?`,
-      [option.OptionLabel, option.OptionValue, option.DisplayOrder, option.OptionID!]
+      [option.OptionLabel, option.OptionValue, option.DisplayOrder, option.IsDefault ?? 0, option.OptionID!]
+    );
+
+    if (option.IsDefault === 1) {
+      const tid = option.TemplateID ?? 1;
+      await db.runAsync(
+        `UPDATE DeviceOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1 AND OptionID != ?`,
+        [option.DeviceType, option.FieldName, tid, option.OptionID!]
+      );
+    }
+  }
+
+  async setDefault(deviceType: string, fieldName: string, optionId: number, templateId?: number): Promise<void> {
+    const db = await getDatabase();
+    const tid = templateId ?? 1;
+    await db.runAsync(
+      `UPDATE DeviceOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+       WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1`,
+      [deviceType, fieldName, tid]
+    );
+    await db.runAsync(
+      `UPDATE DeviceOptions SET IsDefault = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE OptionID = ?`,
+      [optionId]
     );
   }
 
@@ -174,8 +205,8 @@ class DeviceOptionsRepository {
     );
     for (const o of options) {
       await db.runAsync(
-        `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsActive)
-         VALUES (?, ?, ?, ?, ?, ?, 1)`,
+        `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 1)`,
         [targetTemplateId, o.DeviceType, o.FieldName, o.OptionLabel, o.OptionValue, o.DisplayOrder]
       );
     }

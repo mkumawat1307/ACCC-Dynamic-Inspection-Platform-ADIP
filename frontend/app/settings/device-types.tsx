@@ -25,6 +25,8 @@ export default function DeviceTypesScreen() {
   const [fieldLabel, setFieldLabel] = useState("");
   const [fieldType, setFieldType] = useState("text");
   const [fieldRequired, setFieldRequired] = useState(false);
+  const [fieldPlaceholder, setFieldPlaceholder] = useState("");
+  const [fieldVisible, setFieldVisible] = useState(true);
 
   const [typeDialogVisible, setTypeDialogVisible] = useState(false);
   const [newTypeName, setNewTypeName] = useState("");
@@ -192,6 +194,8 @@ export default function DeviceTypesScreen() {
     setFieldLabel("");
     setFieldType("text");
     setFieldRequired(false);
+    setFieldPlaceholder("");
+    setFieldVisible(true);
     setFieldDialogVisible(true);
   };
 
@@ -201,6 +205,8 @@ export default function DeviceTypesScreen() {
     setFieldLabel(field.Label);
     setFieldType(field.FieldType);
     setFieldRequired(field.IsRequired === 1);
+    setFieldPlaceholder(field.Placeholder ?? "");
+    setFieldVisible(field.IsVisible !== 0);
     setFieldDialogVisible(true);
   };
 
@@ -213,6 +219,8 @@ export default function DeviceTypesScreen() {
         Label: fieldLabel.trim(),
         FieldType: fieldType,
         IsRequired: fieldRequired ? 1 : 0,
+        IsVisible: fieldVisible ? 1 : 0,
+        Placeholder: fieldPlaceholder.trim() || null,
       });
     } else {
       const maxOrder = fields.length > 0
@@ -224,6 +232,8 @@ export default function DeviceTypesScreen() {
         Label: fieldLabel.trim(),
         FieldType: fieldType,
         IsRequired: fieldRequired ? 1 : 0,
+        IsVisible: fieldVisible ? 1 : 0,
+        Placeholder: fieldPlaceholder.trim() || null,
         DisplayOrder: maxOrder + 1,
         IsActive: 1,
       }, defaultTemplateId);
@@ -385,6 +395,10 @@ export default function DeviceTypesScreen() {
           typeChipSelectedStyle={styles.typeChipSelected}
           chipRowStyle={styles.chipRow}
           inputStyle={styles.input}
+          placeholder={fieldPlaceholder}
+          onPlaceholderChange={setFieldPlaceholder}
+          isVisible={fieldVisible}
+          onVisibleToggle={() => setFieldVisible(!fieldVisible)}
         />
         <AddTypeDialog
           visible={typeDialogVisible}

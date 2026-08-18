@@ -5,7 +5,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import { writePhoto } from "@/src/utils/storageManager";
+import { writePhoto, buildPhotoFolderDisplayPath } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import {
   buildRenderWatermarkScript,
@@ -167,6 +167,10 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => { clearWatchdog(); };
   }, []);
 
   function clearWatermarkState(photoId: number) {
@@ -463,7 +467,11 @@ function saveAndComplete(job: WatermarkJob, base64: string, saveTimings?: SaveSt
       logger.debug(`[Storage] WriteTime: ${safWriteMs.toFixed(1)} ms`);
 
       const tDb = perfNow();
-      await PhotoRepository.updateFilePath(job.photoId, contentUri);
+      await PhotoRepository.updateFilePathAndStoragePath(
+        job.photoId,
+        contentUri,
+        buildPhotoFolderDisplayPath(label)
+      );
       if (perfRef.current) perfStage(perfRef.current, "sqliteUpdate");
       else logger.debug(`[Perf] watermark photo=${job.photoId} sqliteUpdate: ${(perfNow() - tDb).toFixed(1)}ms`);
       const dbUpdateMs = perfNow() - tDb;

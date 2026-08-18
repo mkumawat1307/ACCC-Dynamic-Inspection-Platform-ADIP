@@ -164,7 +164,6 @@ export default function CaptureScreen() {
         if (project) {
           await ensureProjectFolder(canonicalProjectLabel(project));
         }
-        logger.info("[Storage] cameraFolderReady=true");
       } catch (e) {
         logger.error("[Storage] cameraFolderReady=false", e);
       }
@@ -235,7 +234,6 @@ export default function CaptureScreen() {
   }, [flow.phase]);
 
   useEffect(() => {
-    logger.debug(`[UI] saving=${flow.phase === "merging"}`);
   }, [flow.phase]);
 
   const cleanupPending = useCallback(async () => {
@@ -278,7 +276,6 @@ export default function CaptureScreen() {
 
   const handleCameraTouch = useCallback(
     (evt: { nativeEvent: { touches: { locationX: number; locationY: number }[] } }) => {
-      logger.info("[TAP] preview tapped");
       if (evt.nativeEvent.touches.length !== 1) return;
       const t = evt.nativeEvent.touches[0];
       const now = Date.now();
@@ -427,7 +424,6 @@ export default function CaptureScreen() {
             );
             if (locationField) {
               await InspectionValueRepository.saveValue(inspectionId, locationField.FieldID, fullAddress);
-              logger.debug(`[Capture] Saved full address to InspectionValues: ${fullAddress}`);
             } else {
               logger.warn("[Capture] Location field not found in InspectionFields");
             }

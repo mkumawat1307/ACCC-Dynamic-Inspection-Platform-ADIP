@@ -44,11 +44,77 @@ const SQL_COMMANDS = {
   SELECT_SQLITE_MASTER: /^\s*SELECT\s+name\s+FROM\s+sqlite_master/i,
 };
 
+function escapeRegexChar(ch: string): string {
+  return /[.*+?^${}()|[\]\\]/.test(ch) ? `\\${ch}` : ch;
+}
+
+function likeToRegExp(pattern: string, escapeChar: string): RegExp {
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (escapeChar && ch === escapeChar) {
+      const next = pattern[i + 1];
+      if (next !== undefined) {
+        out += escapeRegexChar(next);
+        i++;
+      } else {
+        out += escapeRegexChar(escapeChar);
+      }
+      continue;
+    }
+    if (ch === "%") {
+      out += ".*";
+      continue;
+    }
+    if (ch === "_") {
+      out += ".";
+      continue;
+    }
+    out += escapeRegexChar(ch);
+  }
+  return new RegExp(`^${out}$`, "i");
+}
+
+type WhereCond = { col: string; op?: string; value?: unknown; values?: unknown[]; like?: RegExp };
+
 function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boolean {
   const conditions = whereClause.split(/\s+AND\s+/i);
   let paramIdx = 0;
-  const compiled = conditions.map((cond) => {
-    const match = cond.match(/(?:\w+\.)?(\w+)\s*(!=|<>|=)\s*(?:\?|'([^']*)'|(\d+))/);
+  const compiled: (WhereCond | null)[] = conditions.map((cond) => {
+    const inMatch = cond.match(
+      /(?:\w+\.)?(\w+)\s+(NOT\s+)?IN\s*\(([\s\S]+)\)/i
+    );
+    if (inMatch) {
+      const col = inMatch[1];
+      const isNot = !!inMatch[2];
+      const inner = inMatch[3].trim();
+      if (/^\s*SELECT\s/i.test(inner)) {
+        return { col, op: isNot ? "NOT_IN_ALL" : "IN_NONE", values: [] };
+      }
+      const values = inner.split(",").map((v) => {
+        v = v.trim();
+        if (/^'.*'$/.test(v)) return v.slice(1, -1);
+        if (/^\d+$/.test(v)) return parseInt(v, 10);
+        return params[paramIdx++];
+      });
+      return { col, op: isNot ? "NOT_IN" : "IN", values };
+    }
+    const likeMatch = cond.match(
+      /(?:\w+\.)?(\w+)\s+LIKE\s+(?:\?|'([^']*)')(?:\s+ESCAPE\s+'([^']*)')?/i
+    );
+    if (likeMatch) {
+      const col = likeMatch[1];
+      let value: unknown;
+      if (likeMatch[2] !== undefined) {
+        value = likeMatch[2];
+      } else {
+        value = params[paramIdx++];
+      }
+      return { col, like: likeToRegExp(String(value), likeMatch[3] ?? "") };
+    }
+    const match = cond.match(
+      /(?:\w+\.)?(\w+)\s*(>=|<=|!=|<>|=|>|<)\s*(?:\?|'([^']*)'|(\d+))/
+    );
     if (!match) return null;
     const col = match[1];
     const op = match[2];
@@ -66,8 +132,16 @@ function parseWhere(whereClause: string, params: unknown[]): (row: Row) => boole
     return compiled.every((cond) => {
       if (!cond) return true;
       const actual = row[cond.col];
+      if (cond.like !== undefined) return cond.like.test(String(actual ?? ""));
       if (cond.op === "!=") return actual !== cond.value;
       if (cond.op === ">=") return (actual as number) >= (cond.value as number);
+      if (cond.op === "<=") return (actual as number) <= (cond.value as number);
+      if (cond.op === ">") return (actual as number) > (cond.value as number);
+      if (cond.op === "<") return (actual as number) < (cond.value as number);
+      if (cond.op === "IN") return cond.values?.includes(actual) ?? false;
+      if (cond.op === "NOT_IN") return !(cond.values?.includes(actual) ?? true);
+      if (cond.op === "NOT_IN_ALL") return false;
+      if (cond.op === "IN_NONE") return false;
       return actual === cond.value;
     });
   };
@@ -126,6 +200,9 @@ class MockDatabase {
       if (pk && !cols.includes(pk)) {
         row[pk] = id;
       }
+      if (tableName === "DeviceRecords" && !cols.includes("IsActive")) {
+        row.IsActive = 1;
+      }
       const table = this.tables.get(tableName) ?? [];
       table.push(row);
       this.tables.set(tableName, table);
@@ -148,11 +225,19 @@ class MockDatabase {
       for (const row of table) {
         if (filter(row)) {
           for (const part of setParts) {
-            const setMatch = part.match(/(\w+)\s*=\s*(?:\?|CURRENT_TIMESTAMP)/);
+            const setMatch = part.match(
+              /(\w+)\s*=\s*(?:\?|CURRENT_TIMESTAMP|'([^']*)'|([+-]?\d+(?:\.\d+)?)|NULL)/
+            );
             if (setMatch) {
               const col = setMatch[1];
               if (part.includes("CURRENT_TIMESTAMP")) {
                 row[col] = new Date().toISOString();
+              } else if (setMatch[2] !== undefined) {
+                row[col] = setMatch[2];
+              } else if (setMatch[3] !== undefined) {
+                row[col] = Number(setMatch[3]);
+              } else if (part.includes("NULL")) {
+                row[col] = null;
               } else {
                 row[col] = params[paramIdx++];
               }
@@ -235,7 +320,17 @@ class MockDatabase {
       }
 
       return results.map((row) => {
-        if (cols[0] === "*" || cols[0] === "") return row as T;
+        if (cols[0] === "*" || cols[0] === "") {
+          const allCols = Array.from(
+            new Set(table.flatMap((r) => Object.keys(r)))
+          );
+          if (allCols.length === 0) return row as T;
+          const fullRow: Row = {};
+          for (const col of allCols) {
+            fullRow[col] = row[col] ?? null;
+          }
+          return fullRow as T;
+        }
         const projected: Row = {};
         for (const col of cols) {
           const trimCol = col.trim();

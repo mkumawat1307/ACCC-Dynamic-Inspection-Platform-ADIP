@@ -28,9 +28,14 @@ describe("PhotoRepository", () => {
     expect(created?.FileName).toBe("pole_a.jpg");
     expect(created?.Latitude).toBe(34.05);
 
-    await PhotoRepository.updateFilePath(photoId, "content://mock/pole_a.jpg");
+    await PhotoRepository.updateFilePathAndStoragePath(
+      photoId,
+      "content://mock/pole_a.jpg",
+      "Download/ACCC Dynamic Inspection/ProjectX/"
+    );
     const updated = await PhotoRepository.getById(photoId);
     expect(updated?.FilePath).toBe("content://mock/pole_a.jpg");
+    expect(updated?.StoragePath).toBe("Download/ACCC Dynamic Inspection/ProjectX/");
 
     const list = await PhotoRepository.getByInspection(1);
     expect(list).toHaveLength(1);
@@ -46,75 +51,6 @@ describe("PhotoRepository", () => {
     await dbModule.setActiveProject(PROJECT);
     const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
     expect(await PhotoRepository.getById(999)).toBeNull();
-    await dbModule.clearActiveProject();
-  });
-
-  it("remaps file paths for multiple photos and persists the changes", async () => {
-    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
-    await dbModule.setActiveProject(PROJECT);
-    const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default as typeof import("@/src/database/repositories/PhotoRepository").default;
-
-    const photoA = {
-      InspectionID: 1,
-      PhotoType: "Pole",
-      FileName: "pole_a.jpg",
-      FilePath: "file:///tmp/pole_a.jpg",
-      Latitude: 34.05,
-      Longitude: -118.25,
-      CapturedAt: "2026-08-04T10:00:00.000Z",
-      Remarks: null,
-    };
-    const photoB = {
-      ...photoA,
-      FileName: "pole_b.jpg",
-      FilePath: "file:///tmp/pole_b.jpg",
-    };
-
-    await PhotoRepository.create(photoA);
-    await PhotoRepository.create(photoB);
-
-    const updated = await PhotoRepository.remapFilePaths({
-      "file:///tmp/pole_a.jpg": "content://mock/pole_a.jpg",
-      "file:///tmp/pole_b.jpg": "content://mock/pole_b.jpg",
-    });
-    expect(updated).toBe(2);
-
-    const list = await PhotoRepository.getByInspection(1);
-    const paths = list.map((p) => p.FilePath).sort();
-    expect(paths).toEqual(["content://mock/pole_a.jpg", "content://mock/pole_b.jpg"]);
-
-    await dbModule.clearActiveProject();
-  });
-
-  it("returns 0 when no photo matches the old path", async () => {
-    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
-    await dbModule.setActiveProject(PROJECT);
-    const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
-
-    await PhotoRepository.create({
-      InspectionID: 1,
-      PhotoType: "Pole",
-      FileName: "pole_c.jpg",
-      FilePath: "file:///tmp/pole_c.jpg",
-      Latitude: 34.05,
-      Longitude: -118.25,
-      CapturedAt: "2026-08-04T10:00:00.000Z",
-      Remarks: null,
-    });
-
-    const updated = await PhotoRepository.remapFilePaths({
-      "file:///tmp/nonexistent.jpg": "content://mock/moved.jpg",
-    });
-    expect(updated).toBe(0);
-
-    await dbModule.clearActiveProject();
-  });
-
-  it("returns 0 and does not error for an empty map", async () => {
-    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
-    await dbModule.setActiveProject(PROJECT);
-    const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
-    await expect(PhotoRepository.remapFilePaths({})).resolves.toBe(0);
     await dbModule.clearActiveProject();
   });
 
@@ -147,5 +83,65 @@ describe("PhotoRepository", () => {
     expect(updated?.CapturedAt).toBe("2026-08-04T10:00:00.000Z");
 
     await dbModule.clearActiveProject();
+  });
+
+  describe("PhotoRepository.updateFilePathAndStoragePath", () => {
+    it("updates FilePath and StoragePath for a photo", async () => {
+      const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+      await dbModule.setActiveProject(PROJECT);
+      const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
+
+      const id = await PhotoRepository.create({
+        InspectionID: 1,
+        PhotoType: "Pole",
+        FileName: "photo.jpg",
+        FilePath: "",
+        Latitude: null,
+        Longitude: null,
+        CapturedAt: null,
+        Remarks: null,
+      });
+
+      await PhotoRepository.updateFilePathAndStoragePath(
+        id,
+        "content://media/Download/ACCC Dynamic Inspection/Jaipur_AMC 2026/photo.jpg",
+        "Download/ACCC Dynamic Inspection/Jaipur_AMC 2026/"
+      );
+
+      const saved = await PhotoRepository.getById(id);
+      expect(saved!.FilePath).toBe(
+        "content://media/Download/ACCC Dynamic Inspection/Jaipur_AMC 2026/photo.jpg"
+      );
+      expect(saved!.StoragePath).toBe("Download/ACCC Dynamic Inspection/Jaipur_AMC 2026/");
+
+      await dbModule.clearActiveProject();
+    });
+  });
+
+  describe("PhotoRepository.updateStoragePath", () => {
+    it("updates only StoragePath", async () => {
+      const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+      await dbModule.setActiveProject(PROJECT);
+      const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
+
+      const id = await PhotoRepository.create({
+        InspectionID: 1,
+        PhotoType: "Pole",
+        FileName: "photo.jpg",
+        FilePath: "content://media/downloads/1",
+        Latitude: null,
+        Longitude: null,
+        CapturedAt: null,
+        Remarks: null,
+      });
+
+      await PhotoRepository.updateStoragePath(id, "Download/ACCC Dynamic Inspection/Jaipur_AMC 2026/");
+
+      const saved = await PhotoRepository.getById(id);
+      expect(saved!.StoragePath).toBe("Download/ACCC Dynamic Inspection/Jaipur_AMC 2026/");
+      expect(saved!.FilePath).toBe("content://media/downloads/1");
+
+      await dbModule.clearActiveProject();
+    });
   });
 });

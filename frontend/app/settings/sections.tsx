@@ -258,6 +258,11 @@ export default function SectionsScreen() {
               <Text variant="bodySmall" style={styles.cardSubtitle}>
                 {item.FieldCount} fields
               </Text>
+              {item.Description ? (
+                <Text variant="bodySmall" style={styles.cardDescription} numberOfLines={2}>
+                  {item.Description}
+                </Text>
+              ) : null}
               <View style={styles.chipRow}>
                 {isLocked ? (
                   <Chip compact style={[styles.chip, { backgroundColor: "#E0E0E0" }]}>Locked</Chip>
@@ -343,6 +348,7 @@ const styles = StyleSheet.create({
   cardTitleRow: { flexDirection: "row", alignItems: "center" },
   cardTitle: { fontWeight: "600", flex: 1 },
   cardSubtitle: { color: "#666", marginTop: 2 },
+  cardDescription: { color: "#666", marginTop: 2 },
   chipRow: { flexDirection: "row", marginTop: 4, gap: 4 },
   chip: { height: 26 },
   empty: { alignItems: "center", marginTop: 60 },

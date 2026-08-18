@@ -154,7 +154,6 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
         onClose={() => setPreviewPhoto(null)}
         contextPoleId={contextPoleId}
         block={block}
-        project={project}
       />
 
       <PhotoSectionHeader

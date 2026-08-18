@@ -3,7 +3,7 @@ import { View, FlatList, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Appbar, Card, Text, IconButton, Chip, Button, Portal,
-  Dialog, TextInput, Divider,
+  Dialog, TextInput, Divider, Switch,
 } from "react-native-paper";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -30,6 +30,7 @@ export default function DeviceOptionsScreen() {
   const [editingOption, setEditingOption] = useState<DeviceOption | null>(null);
   const [label, setLabel] = useState("");
   const [value, setValue] = useState("");
+  const [isDefault, setIsDefault] = useState(false);
 
   const dropdownFields = fields.filter((f) => f.FieldType === "dropdown");
 
@@ -77,6 +78,7 @@ export default function DeviceOptionsScreen() {
     setEditingOption(null);
     setLabel("");
     setValue("");
+    setIsDefault(false);
     setDialogVisible(true);
   };
 
@@ -84,6 +86,7 @@ export default function DeviceOptionsScreen() {
     setEditingOption(opt);
     setLabel(opt.OptionLabel);
     setValue(opt.OptionValue);
+    setIsDefault(opt.IsDefault === 1);
     setDialogVisible(true);
   };
 
@@ -95,6 +98,7 @@ export default function DeviceOptionsScreen() {
         ...editingOption,
         OptionLabel: label.trim(),
         OptionValue: value.trim(),
+        IsDefault: isDefault ? 1 : 0,
       });
     } else {
       const maxOrder = options.length > 0
@@ -106,8 +110,19 @@ export default function DeviceOptionsScreen() {
         OptionLabel: label.trim(),
         OptionValue: value.trim(),
         DisplayOrder: maxOrder + 1,
+        IsDefault: isDefault ? 1 : 0,
         IsActive: 1,
       }, defaultTemplateId);
+    }
+
+    if (isDefault) {
+      const savedOptions = await DeviceOptionsRepository.getByField(selectedType, selectedField, defaultTemplateId);
+      const match = savedOptions.find(
+        (o) => o.OptionLabel === label.trim() && o.OptionValue === value.trim()
+      );
+      if (match?.OptionID) {
+        await DeviceOptionsRepository.setDefault(selectedType, selectedField, match.OptionID, defaultTemplateId);
+      }
     }
 
     setDialogVisible(false);
@@ -135,7 +150,11 @@ export default function DeviceOptionsScreen() {
         <View style={styles.cardRow}>
           <View style={styles.cardInfo}>
             <Text variant="titleMedium">{item.OptionLabel}</Text>
-
+            {item.IsDefault === 1 && (
+              <Text variant="bodySmall" style={styles.defaultText}>
+                Default
+              </Text>
+            )}
           </View>
           <View style={styles.actions}>
             <IconButton icon="pencil" size={20} onPress={() => openEditDialog(item)} />
@@ -245,6 +264,10 @@ export default function DeviceOptionsScreen() {
               }}
               style={styles.input}
             />
+            <View style={styles.switchRow}>
+              <Text variant="bodyMedium">Default Selection</Text>
+              <Switch value={isDefault} onValueChange={setIsDefault} />
+            </View>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDialogVisible(false)}>Cancel</Button>
@@ -274,8 +297,15 @@ const styles = StyleSheet.create({
   cardRow: { flexDirection: "row", alignItems: "center" },
   cardInfo: { flex: 1 },
   subtitle: { color: "#666", marginTop: 2 },
+  defaultText: { color: "#2E7D32", marginTop: 2, fontWeight: "600" },
   actions: { flexDirection: "row" },
   input: { marginBottom: 12 },
+  switchRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
   empty: { alignItems: "center", marginTop: 40 },
   emptyText: { color: "#999" },
 });

@@ -1,22 +1,29 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
 import { StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Appbar, Divider, List, ActivityIndicator } from "react-native-paper";
-import { useRouter } from "expo-router";
+import { Appbar, Divider, List, ActivityIndicator, Banner } from "react-native-paper";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { backupNow, restoreBackupFromUri } from "@/src/database/helpers/BackupManager";
+import { getProjectDuplicates } from "@/src/database/DatabaseService";
+import type { ProjectDuplicateGroup } from "@/src/database/projectIdentity";
+import { buildProjectFolderLabel } from "@/src/utils/folderNaming";
 import { ensureRootFolder } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
 
 export default function DatabaseScreen() {
   const router = useRouter();
   const [busy, setBusy] = useState<"backup" | "restore" | null>(null);
+  const [duplicates, setDuplicates] = useState<ProjectDuplicateGroup[]>([]);
 
-  useEffect(() => {
-    ensureRootFolder().catch((e) =>
-      logger.error("[Storage] databaseScreen ensureRootFolder failed:", e)
-    );
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      ensureRootFolder().catch((e) =>
+        logger.error("[Storage] databaseScreen ensureRootFolder failed:", e)
+      );
+      setDuplicates(getProjectDuplicates());
+    }, [])
+  );
 
   const handleBackup = async () => {
     setBusy("backup");
@@ -74,6 +81,46 @@ export default function DatabaseScreen() {
         <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title="Database" />
       </Appbar.Header>
+
+      {duplicates.length > 0 && (
+        <Banner
+          visible
+          icon="alert-outline"
+          actions={[
+            {
+              label: "Dismiss",
+              onPress: () => setDuplicates([]),
+            },
+          ]}
+        >
+          Duplicate projects were found in the project database. Resolve them before enabling
+          full duplicate protection.
+        </Banner>
+      )}
+
+      {duplicates.length > 0 && (
+        <List.Section>
+          <List.Accordion
+            title={`Duplicate projects detected (${duplicates.length} group${duplicates.length === 1 ? "" : "s"})`}
+          >
+            {duplicates.map((group) => (
+              <List.Accordion
+                key={`${group.districtKey}\u0000${group.projectKey}`}
+                title={`${group.districtKey} / ${group.projectKey}`}
+              >
+                {group.members.map((member) => (
+                  <List.Item
+                    key={member.ProjectID}
+                    title={`${member.DistrictName} / ${member.ProjectName}`}
+                    description={`ID ${member.ProjectID}\nDB: ${member.DBPath ?? "n/a"}\nFolder: ${buildProjectFolderLabel(member.DistrictName, member.ProjectName)}`}
+                    left={(props) => <List.Icon {...props} icon="folder-alert" />}
+                  />
+                ))}
+              </List.Accordion>
+            ))}
+          </List.Accordion>
+        </List.Section>
+      )}
 
       <List.Section>
         <List.Item

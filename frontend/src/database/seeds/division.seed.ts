@@ -5,26 +5,16 @@ import { getGlobalDatabase } from "../db";
 import { logger } from "@/src/utils/logger";
 
 export async function seedDivisions() {
-    logger.info("ðŸŒ± [division.seed] seedDivisions() â€” START");
-
     const db = await getGlobalDatabase();
-    logger.info("[division.seed] Got DB handle");
 
-    logger.info("[division.seed] Checking if Divisions already seeded...");
     const existing = await db.getFirstAsync<{ Count: number }>(`
         SELECT COUNT(*) AS Count
         FROM Divisions;
     `);
 
-    logger.info(`[division.seed] Divisions count: ${existing?.Count ?? 0}`);
-
     if ((existing?.Count ?? 0) > 0) {
-        logger.info("âœ… [division.seed] Divisions already seeded, skipping.");
-        logger.info("[division.seed] seedDivisions() â€” END (skipped)");
         return;
     }
-
-    logger.info("ðŸŒ± [division.seed] Seeding Divisions & Districts...");
 
     const divisions = [
         {
@@ -108,8 +98,6 @@ export async function seedDivisions() {
     let totalDistricts = 0;
 
     for (const item of divisions) {
-        logger.info(`[division.seed] Inserting division: ${item.division}`);
-
         const result = await db.runAsync(
             `
             INSERT INTO Divisions (DivisionName)
@@ -119,7 +107,6 @@ export async function seedDivisions() {
         );
 
         const divisionId = result.lastInsertRowId;
-        logger.info(`[division.seed] Division ${item.division} inserted with ID ${divisionId}`);
 
         for (const district of item.districts) {
             await db.runAsync(
@@ -141,11 +128,7 @@ export async function seedDivisions() {
             );
             totalDistricts++;
         }
-
-        logger.info(`[division.seed] Inserted ${item.districts.length} districts for ${item.division}`);
     }
 
-    logger.info(`[division.seed] Total divisions: ${divisions.length}, Total districts: ${totalDistricts}`);
-    logger.info("âœ… [division.seed] seedDivisions() â€” END");
+    logger.debug(`[division.seed] Seeded ${divisions.length} divisions, ${totalDistricts} districts`);
 }
-

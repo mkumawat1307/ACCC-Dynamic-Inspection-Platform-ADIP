@@ -32,10 +32,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export async function getGlobalDbFilePath(): Promise<string> {
-  return `${FileSystem.documentDirectory}SQLite/${GLOBAL_DATABASE_NAME}`;
-}
-
 async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   const globalBase = `SQLite/${GLOBAL_DATABASE_NAME}`;
@@ -116,7 +112,6 @@ export async function validateBackupFile(
 }
 
 async function restoreEntries(entries: Record<string, Uint8Array>): Promise<void> {
-  logger.info("[Restore] closeAllDatabases");
   await closeAllDatabases();
 
   // Delete stale WAL/SHM sidecars for every restored database that the backup
@@ -152,9 +147,9 @@ async function restoreEntries(entries: Record<string, Uint8Array>): Promise<void
     const m = relPath.match(/^Projects\/([^/]+)\//);
     if (m) restoredFolders.add(m[1]);
     if (relPath === `SQLite/${GLOBAL_DATABASE_NAME}`) {
-      logger.info("[Restore] replaceGlobalDb");
+      logger.debug("[Restore] replaceGlobalDb");
     } else if (m && relPath.endsWith("inspection.db")) {
-      logger.info(`[Restore] replaceProjectDb=${m[1]}`);
+      logger.debug(`[Restore] replaceProjectDb=${m[1]}`);
     }
   }
 
@@ -179,7 +174,6 @@ function validateRestoreEntries(entries: Record<string, Uint8Array>): {
   }
 
   const hasGlobalDb = entryNames.includes(`SQLite/${GLOBAL_DATABASE_NAME}`);
-  logger.info(`[Restore] foundGlobalDb=${hasGlobalDb}`);
   if (!hasGlobalDb) {
     return {
       ok: false,
@@ -202,18 +196,15 @@ function validateRestoreEntries(entries: Record<string, Uint8Array>): {
     }
   }
   for (const folder of projectFolders) {
-    logger.info(`[Restore] projectDb=${folder}`);
+    logger.debug(`[Restore] projectDb=${folder}`);
   }
 
   return { ok: true };
 }
 
 async function reloadAfterRestore(): Promise<number> {
-  logger.info("[Restore] reopenGlobalDb");
   await getGlobalDatabase();
-  logger.info("[Restore] reloadProjectList");
   const projects = await ProjectRepository.getProjects();
-  logger.info(`[Restore] projectsAfterRestore=${projects.length}`);
   return projects.length;
 }
 
@@ -252,7 +243,7 @@ export async function restoreBackupFromUri(
   onConfirm: () => Promise<boolean>
 ): Promise<BackupResult> {
   try {
-    logger.info("[Import] selectedUri=" + selectedUri);
+    logger.debug("[Import] selectedUri=" + selectedUri);
 
     // Android's ZIP file picker returns content:// URIs that the legacy
     // FileSystem cannot always stat. Always copy them to a local temp file
@@ -264,26 +255,17 @@ export async function restoreBackupFromUri(
         await FileSystem.copyAsync({ from: selectedUri, to: sourceUri });
       } catch (e) {
         const message = `Failed to copy selected file: ${String(e)}`;
-        logger.info("[Import] restoreFailed=" + message);
-        logger.info("[Restore] failed=" + message);
         return { ok: false, message };
       }
-      logger.info("[Import] copiedToCache=" + sourceUri);
-      logger.info("[Restore] copyToTemp=" + sourceUri);
       const cacheInfo = await FileSystem.getInfoAsync(sourceUri);
-      logger.info("[Import] cacheExists=" + String(cacheInfo.exists));
       if (!cacheInfo.exists) {
         const message = "Failed to copy selected file to cache";
-        logger.info("[Import] restoreFailed=" + message);
-        logger.info("[Restore] failed=" + message);
         return { ok: false, message };
       }
     } else {
       const selectedInfo = await FileSystem.getInfoAsync(selectedUri);
       if (!selectedInfo.exists) {
         const message = "Selected file does not exist";
-        logger.info("[Import] restoreFailed=" + message);
-        logger.info("[Restore] failed=" + message);
         return { ok: false, message };
       }
     }
@@ -294,37 +276,26 @@ export async function restoreBackupFromUri(
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     if (!isZipBytes(bytes)) {
       const message = "Not a valid ACCC backup file";
-      logger.info("[Import] restoreFailed=" + message);
-      logger.info("[Restore] failed=" + message);
       return { ok: false, message };
     }
 
     const confirmed = await onConfirm();
     if (!confirmed) {
       const message = "Restore cancelled";
-      logger.info("[Import] restoreFailed=" + message);
-      logger.info("[Restore] failed=" + message);
       return { ok: false, message };
     }
 
-    logger.info("[Import] restoreStart");
-    logger.info("[Restore] unzipStart");
     const entries = await unzipBase64(b64);
-    logger.info(`[Restore] entries=${Object.keys(entries).length}`);
 
     const structure = validateRestoreEntries(entries);
     if (!structure.ok) {
       const message = structure.message ?? "Invalid backup";
-      logger.info("[Import] restoreFailed=" + message);
-      logger.info("[Restore] failed=" + message);
       return { ok: false, message };
     }
 
     await restoreEntries(entries);
     const count = await reloadAfterRestore();
 
-    logger.info("[Import] restoreSuccess");
-    logger.info("[Restore] success");
     return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
   } catch (e) {
     logger.info("[Import] restoreFailed=" + String(e));

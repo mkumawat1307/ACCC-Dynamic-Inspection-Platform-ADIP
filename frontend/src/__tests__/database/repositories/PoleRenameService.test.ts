@@ -20,7 +20,7 @@ describe("PoleRenameService", () => {
   let dbModule: typeof import("@/src/database/db");
   let db: MockDb;
   let PoleRenameService: { renamePoleId: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }) => Promise<{ renamedFiles: number; updatedRecords: number; missingFiles: number }> };
-  let logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock };
+  let logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock; debug: jest.Mock };
 
   async function seedInspection(poleId: string): Promise<number> {
     const result = await db.runAsync(
@@ -52,7 +52,7 @@ describe("PoleRenameService", () => {
     db = (await dbModule.getDatabase()) as MockDb;
     logger = require("@/src/utils/logger").logger;
     PoleRenameService = require("@/src/database/repositories/PoleRenameService").PoleRenameService;
-    jest.spyOn(logger, "info");
+    jest.spyOn(logger, "debug");
     jest.spyOn(logger, "warn");
     jest.spyOn(logger, "error");
     (downloadStorage.renameFile as jest.Mock).mockReset();
@@ -108,10 +108,10 @@ describe("PoleRenameService", () => {
     );
     expect(history).toEqual([{ OldPoleId: "SIK001", NewPoleId: "SIK101" }]);
 
-    expect(logger.info).toHaveBeenCalledWith("[PoleRename] start old=SIK001 new=SIK101");
-    expect(logger.info).toHaveBeenCalledWith("[PoleRename] photosFound=2");
-    expect(logger.info).toHaveBeenCalledWith("[PoleRename] dbUpdated=2");
-    expect(logger.info).toHaveBeenCalledWith("[PoleRename] success");
+    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] start old=SIK001 new=SIK101");
+    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] photosFound=2");
+    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] dbUpdated=2");
+    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] success");
   });
 
   it("skips missing photo files without failing the operation", async () => {

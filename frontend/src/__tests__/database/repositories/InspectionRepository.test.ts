@@ -10,7 +10,19 @@ import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import {
   InspectionRepository,
   INSPECTION_FINAL_STATUSES,
+  isFieldValueEmpty,
 } from "@/src/database/repositories/InspectionRepository";
+import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
+
+jest.mock("@/src/database/repositories/DeviceRecordsRepository", () => {
+  const getByInspectionAll = jest.fn().mockResolvedValue([]);
+  const flushPendingDeviceSaves = jest.fn().mockResolvedValue(undefined);
+  return {
+    __esModule: true,
+    default: { getByInspectionAll, flushPendingDeviceSaves },
+    DeviceRecordsRepository: { getByInspectionAll, flushPendingDeviceSaves },
+  };
+});
 
 function createMockDb() {
   return {
@@ -213,6 +225,56 @@ describe("InspectionRepository", () => {
     });
   });
 
+  describe("updatePoleIdDirectSave", () => {
+    it("writes the field value and Inspections.PoleID inside one transaction", async () => {
+      mockDb.withTransactionAsync.mockImplementation(
+        async (fn: () => Promise<unknown>) => fn()
+      );
+      mockDb.getFirstAsync
+        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
+        .mockResolvedValueOnce({ ValueID: 5 })
+        .mockResolvedValue({ ProjectID: 1 });
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+
+      await InspectionRepository.updatePoleIdDirectSave(42, 1, "SIK101");
+
+      expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(1);
+      expect(mockDb.runAsync).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE InspectionValues"),
+        expect.arrayContaining(["SIK101"])
+      );
+      expect(mockDb.runAsync).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE Inspections"),
+        ["SIK101", 42]
+      );
+    });
+
+    it("does not emit changed events when the transaction aborts", async () => {
+      mockDb.withTransactionAsync.mockRejectedValue(new Error("boom"));
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+      const { InspectionDataBus } = require("@/src/utils/InspectionDataBus");
+
+      await expect(
+        InspectionRepository.updatePoleIdDirectSave(42, 1, "SIK101")
+      ).rejects.toThrow("boom");
+
+      expect(InspectionDataBus.emitInspectionsChanged).not.toHaveBeenCalled();
+    });
+
+    it("rejects when a write inside the transaction fails", async () => {
+      mockDb.withTransactionAsync.mockImplementation(
+        async (fn: () => Promise<unknown>) => fn()
+      );
+      mockDb.getFirstAsync.mockResolvedValue({ hasInspection: 1, hasField: 1 });
+      mockDb.runAsync.mockRejectedValue(new Error("db failure"));
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+
+      await expect(
+        InspectionRepository.updatePoleIdDirectSave(42, 1, "SIK101")
+      ).rejects.toThrow("db failure");
+    });
+  });
+
   describe("updateInspectionStatus", () => {
     it("updates the status", async () => {
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
@@ -246,7 +308,7 @@ describe("InspectionRepository", () => {
   describe("validateInspection", () => {
     it("returns valid=true when all required fields are filled", async () => {
       mockDb.getAllAsync
-        .mockResolvedValueOnce([{ FieldKey: "voltage", FieldName: "Voltage", DefaultValue: null }])
+        .mockResolvedValueOnce([{ FieldKey: "voltage", FieldName: "Voltage", FieldType: "text", DefaultValue: null }])
         .mockResolvedValueOnce([{ FieldKey: "voltage", FieldValue: "11kV" }]);
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
       const result = await InspectionRepository.validateInspection(1);
@@ -256,7 +318,7 @@ describe("InspectionRepository", () => {
 
     it("returns missing fields when required fields are empty", async () => {
       mockDb.getAllAsync
-        .mockResolvedValueOnce([{ FieldKey: "voltage", FieldName: "Voltage", DefaultValue: null }])
+        .mockResolvedValueOnce([{ FieldKey: "voltage", FieldName: "Voltage", FieldType: "text", DefaultValue: null }])
         .mockResolvedValueOnce([{ FieldKey: "voltage", FieldValue: "" }]);
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
       const result = await InspectionRepository.validateInspection(1);
@@ -267,10 +329,33 @@ describe("InspectionRepository", () => {
     it("skips auto-filled fields (date, division, district)", async () => {
       mockDb.getAllAsync
         .mockResolvedValueOnce([
-          { FieldKey: "date", FieldName: "Date", DefaultValue: null },
-          { FieldKey: "voltage", FieldName: "Voltage", DefaultValue: null },
+          { FieldKey: "date", FieldName: "Date", FieldType: "date", DefaultValue: null },
+          { FieldKey: "voltage", FieldName: "Voltage", FieldType: "text", DefaultValue: null },
         ])
         .mockResolvedValueOnce([{ FieldKey: "voltage", FieldValue: "11kV" }]);
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+      const result = await InspectionRepository.validateInspection(1);
+      expect(result.valid).toBe(true);
+    });
+
+    it("treats a required checkbox stored as '0' as missing", async () => {
+      mockDb.getAllAsync
+        .mockResolvedValueOnce([
+          { FieldKey: "ready", FieldName: "Ready", FieldType: "checkbox", DefaultValue: null },
+        ])
+        .mockResolvedValueOnce([{ FieldKey: "ready", FieldValue: "0" }]);
+      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
+      const result = await InspectionRepository.validateInspection(1);
+      expect(result.valid).toBe(false);
+      expect(result.missingFields).toContain("Ready");
+    });
+
+    it("accepts a required checkbox stored as '1'", async () => {
+      mockDb.getAllAsync
+        .mockResolvedValueOnce([
+          { FieldKey: "ready", FieldName: "Ready", FieldType: "checkbox", DefaultValue: null },
+        ])
+        .mockResolvedValueOnce([{ FieldKey: "ready", FieldValue: "1" }]);
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
       const result = await InspectionRepository.validateInspection(1);
       expect(result.valid).toBe(true);
@@ -361,6 +446,13 @@ describe("InspectionRepository", () => {
   });
 });
 
+describe("INSPECTION_FINAL_STATUSES", () => {
+  it("includes Completed and Submitted but not Draft", () => {
+    expect(INSPECTION_FINAL_STATUSES).toEqual(["Completed", "Submitted"]);
+    expect(INSPECTION_FINAL_STATUSES).not.toContain("Draft");
+  });
+});
+
 describe("InspectionRepository auto-refresh emits", () => {
   let mockDb: ReturnType<typeof createMockDb>;
 
@@ -436,9 +528,233 @@ describe("InspectionRepository auto-refresh emits", () => {
   });
 });
 
-describe("INSPECTION_FINAL_STATUSES", () => {
-  it("includes Completed and Submitted but not Draft", () => {
-    expect(INSPECTION_FINAL_STATUSES).toEqual(["Completed", "Submitted"]);
-    expect(INSPECTION_FINAL_STATUSES).not.toContain("Draft");
+describe("isFieldValueEmpty", () => {
+  it("text field with whitespace is empty", () => {
+    expect(isFieldValueEmpty("text", "   ")).toBe(true);
+  });
+
+  it("text field with content is not empty", () => {
+    expect(isFieldValueEmpty("text", "Hello")).toBe(false);
+  });
+
+  it("number field with 0 is not empty", () => {
+    expect(isFieldValueEmpty("number", "0")).toBe(false);
+  });
+
+  it("number field with empty string is empty", () => {
+    expect(isFieldValueEmpty("number", "")).toBe(true);
+  });
+
+  it("checkbox field with 1 is not empty", () => {
+    expect(isFieldValueEmpty("checkbox", "1")).toBe(false);
+  });
+
+  it("checkbox field with 0 is empty", () => {
+    expect(isFieldValueEmpty("checkbox", "0")).toBe(true);
+  });
+
+  it("switch field with 1 is not empty", () => {
+    expect(isFieldValueEmpty("switch", "1")).toBe(false);
+  });
+
+  it("switch field with 0 is empty", () => {
+    expect(isFieldValueEmpty("switch", "0")).toBe(true);
+  });
+
+  it("dropdown field with content is not empty", () => {
+    expect(isFieldValueEmpty("dropdown", "PTZ")).toBe(false);
+  });
+
+  it("dropdown field with whitespace only is empty", () => {
+    expect(isFieldValueEmpty("dropdown", "  ")).toBe(true);
+  });
+
+  it("multiline field with whitespace is empty", () => {
+    expect(isFieldValueEmpty("multiline", "   ")).toBe(true);
+  });
+
+  it("multiline field with content is not empty", () => {
+    expect(isFieldValueEmpty("multiline", "Hello")).toBe(false);
+  });
+});
+
+describe("validateDeviceMandatory", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  function mockDeviceValidationQueries(options: {
+    requiredFields: Array<Record<string, unknown>>;
+    deviceTypes?: Array<Record<string, unknown>>;
+    countFields?: Array<Record<string, unknown>>;
+    values?: Array<Record<string, unknown>>;
+  }) {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(options.requiredFields)
+      .mockResolvedValueOnce(options.deviceTypes ?? [])
+      .mockResolvedValueOnce(options.countFields ?? [])
+      .mockResolvedValueOnce(options.values ?? []);
+  }
+
+  it("returns valid=true when all required device fields are filled", async () => {
+    mockDeviceValidationQueries({
+      requiredFields: [
+        { DeviceType: "Camera", FieldName: "CameraType", Label: "Camera Type", FieldType: "dropdown" },
+      ],
+      deviceTypes: [{ DeviceType: "Camera" }],
+      countFields: [{ FieldKey: "camera_count" }],
+      values: [{ FieldKey: "camera_count", FieldValue: "1" }],
+    });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([
+      { DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ CameraType: "PTZ" }) },
+    ]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("returns missing fields when required device fields are empty", async () => {
+    mockDeviceValidationQueries({
+      requiredFields: [
+        { DeviceType: "Camera", FieldName: "SerialNo", Label: "Serial No", FieldType: "text" },
+      ],
+      deviceTypes: [{ DeviceType: "Camera" }],
+      countFields: [{ FieldKey: "camera_count" }],
+      values: [{ FieldKey: "camera_count", FieldValue: "1" }],
+    });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([
+      { DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ SerialNo: "" }) },
+    ]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toContain("Camera — Serial No (Device 1)");
+  });
+
+  it("handles unparseable DeviceData JSON as all missing", async () => {
+    mockDeviceValidationQueries({
+      requiredFields: [
+        { DeviceType: "Camera", FieldName: "Voltage", Label: "Voltage", FieldType: "number" },
+      ],
+      deviceTypes: [{ DeviceType: "Camera" }],
+      countFields: [{ FieldKey: "camera_count" }],
+      values: [{ FieldKey: "camera_count", FieldValue: "1" }],
+    });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([
+      { DeviceType: "Camera", DeviceNo: 1, DeviceData: "not-valid-json" },
+    ]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(false);
+    expect(result.missingFields.length).toBeGreaterThan(0);
+  });
+
+  it("returns valid when no required device field definitions exist", async () => {
+    mockDeviceValidationQueries({ requiredFields: [] });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("timer-determinism: no advance needed after flush", async () => {
+    jest.useFakeTimers();
+    try {
+      mockDeviceValidationQueries({
+        requiredFields: [
+          { DeviceType: "Camera", FieldName: "Voltage", Label: "Voltage", FieldType: "number" },
+        ],
+        deviceTypes: [{ DeviceType: "Camera" }],
+        countFields: [{ FieldKey: "camera_count" }],
+        values: [{ FieldKey: "camera_count", FieldValue: "1" }],
+      });
+      (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([
+        { DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ Voltage: "12" }) },
+      ]);
+      const result = await InspectionRepository.validateDeviceMandatory(1);
+      expect(result.valid).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("flushes pending device saves before validating", async () => {
+    mockDeviceValidationQueries({ requiredFields: [] });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([]);
+    await InspectionRepository.validateDeviceMandatory(1);
+    expect(DeviceRecordsRepository.flushPendingDeviceSaves).toHaveBeenCalled();
+  });
+
+  it("flags untouched devices that were never persisted when count exceeds existing records", async () => {
+    mockDeviceValidationQueries({
+      requiredFields: [
+        { DeviceType: "Camera", FieldName: "Voltage", Label: "Voltage", FieldType: "number" },
+      ],
+      deviceTypes: [{ DeviceType: "Camera" }],
+      countFields: [{ FieldKey: "camera_count" }],
+      values: [{ FieldKey: "camera_count", FieldValue: "2" }],
+    });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([
+      { DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ Voltage: "12" }) },
+    ]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toContain("Camera — Voltage (Device 2)");
+    expect(result.missingFields).not.toContain("Camera — Voltage (Device 1)");
+  });
+
+  it("flags every expected device as missing when the type has a count but no records exist", async () => {
+    mockDeviceValidationQueries({
+      requiredFields: [
+        { DeviceType: "Camera", FieldName: "Voltage", Label: "Voltage", FieldType: "number" },
+      ],
+      deviceTypes: [{ DeviceType: "Camera" }],
+      countFields: [{ FieldKey: "camera_count" }],
+      values: [{ FieldKey: "camera_count", FieldValue: "2" }],
+    });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toEqual([
+      "Camera — Voltage (Device 1)",
+      "Camera — Voltage (Device 2)",
+    ]);
+  });
+
+  it("validates only types that have required field definitions", async () => {
+    mockDeviceValidationQueries({
+      requiredFields: [
+        { DeviceType: "Camera", FieldName: "Voltage", Label: "Voltage", FieldType: "number" },
+      ],
+      deviceTypes: [{ DeviceType: "Camera" }, { DeviceType: "Switch" }],
+      countFields: [{ FieldKey: "camera_count" }, { FieldKey: "switch_count" }],
+      values: [
+        { FieldKey: "camera_count", FieldValue: "1" },
+        { FieldKey: "switch_count", FieldValue: "2" },
+      ],
+    });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([
+      { DeviceType: "Camera", DeviceNo: 1, DeviceData: JSON.stringify({ Voltage: "12" }) },
+    ]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("ignores device types whose count is 0 even when required fields exist", async () => {
+    mockDeviceValidationQueries({
+      requiredFields: [
+        { DeviceType: "Camera", FieldName: "Voltage", Label: "Voltage", FieldType: "number" },
+      ],
+      deviceTypes: [{ DeviceType: "Camera" }],
+      countFields: [{ FieldKey: "camera_count" }],
+      values: [{ FieldKey: "camera_count", FieldValue: "0" }],
+    });
+    (DeviceRecordsRepository.getByInspectionAll as jest.Mock).mockResolvedValue([]);
+    const result = await InspectionRepository.validateDeviceMandatory(1);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
   });
 });

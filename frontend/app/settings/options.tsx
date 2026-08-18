@@ -2,15 +2,16 @@ import React, { useState, useCallback } from "react";
 import { View, FlatList, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-  Appbar, FAB, Card, Text, IconButton, Switch, Portal, Dialog,
+  Appbar, Card, Text, IconButton, Switch, Portal, Dialog,
   Button, TextInput,
 } from "react-native-paper";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   FieldOptionRepository, FieldOption,
 } from "../../src/database/repositories/FieldOptionRepository";
 export default function OptionsScreen() {
+  const router = useRouter();
   const { fieldId, fieldName } = useLocalSearchParams<{
     fieldId: string;
     fieldName: string;
@@ -171,9 +172,20 @@ export default function OptionsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
-        <Appbar.BackAction onPress={() => {}} />
+        <Appbar.BackAction onPress={() => router.back()} />
         <Appbar.Content title={fieldName ?? "Options"} />
       </Appbar.Header>
+
+      <View style={styles.listHeader}>
+        <View style={styles.headerRow}>
+          <Text variant="titleMedium" style={styles.headerTitle}>
+            Options ({options.length})
+          </Text>
+          <Button mode="contained" onPress={openCreateDialog}>
+            Add Option
+          </Button>
+        </View>
+      </View>
 
       <FlatList
         data={options}
@@ -188,8 +200,6 @@ export default function OptionsScreen() {
           </View>
         }
       />
-
-      <FAB icon="plus" style={styles.fab} onPress={openCreateDialog} label="New Option" />
 
       <Portal>
         <Dialog visible={showDialog} onDismiss={() => setShowDialog(false)}>
@@ -223,7 +233,15 @@ export default function OptionsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-  list: { padding: 16, paddingBottom: 100 },
+  listHeader: { paddingHorizontal: 16, paddingTop: 12 },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  headerTitle: { fontWeight: "600" },
+  list: { padding: 16, paddingBottom: 30 },
   card: { marginBottom: 12 },
   cardHeader: { flexDirection: "row", alignItems: "center" },
   orderButtons: { alignItems: "center", marginRight: 8 },
@@ -233,7 +251,6 @@ const styles = StyleSheet.create({
   cardSubtitle: { color: "#666", marginTop: 2 },
   defaultText: { color: "#2E7D32", marginTop: 2, fontWeight: "600" },
   cardActions: { flexDirection: "row" },
-  fab: { position: "absolute", right: 16, bottom: 32 },
   empty: { alignItems: "center", marginTop: 60 },
   emptyText: { color: "#999" },
   input: { marginBottom: 12 },

@@ -20,9 +20,11 @@ This architecture was chosen to avoid confirmed expo-sqlite v16 Android bugs:
 documentDirectory/
   accc_global.db              # Global DB: Projects, Divisions, Districts, Blocks
   Projects/
-    <ProjectName>/
+    <District>_<ProjectName>_<8-hex>/   # New projects (district-qualified + identity hash)
       inspection.db           # Project DB: template, sections, fields, inspections, photos, devices
 ```
+
+New project DB folders are district-qualified and suffixed with an 8-hex FNV-1a hash of the normalized identity (`normalizeKey(district)\0normalizeKey(project)`), so `A_B` + `C` vs `A` + `B_C` never share a folder and case/whitespace variants map deterministically. **Existing project folders keep their stored `DBPath`** — no rename/migration of legacy folders; `updateProject` never rewrites `DBPath`, so edits/clones never move folders.
 
 Photos are stored separately via the Storage Access Framework under `DCIM/ACCC Inspection/<District>_<ProjectName>/` (see `src/utils/storageManager.ts`); the SAF tree URI is cached in AsyncStorage per device and the project folder is created on demand. Existing legacy photo folders (project-name-only or old alphanumeric-stripped labels) are migrated lazily to the canonical folder on project open (see `src/utils/folderManager.ts`).
 
@@ -32,7 +34,13 @@ Tables:
 - **Divisions** — reference data (shared lookup)
 - **Districts** — reference data (shared lookup)
 - **Blocks** — reference data (shared lookup)
-- **Projects** — project list with `DBPath` pointing to project DB file
+- **Projects** — project list with `DBPath` pointing to project DB file, plus denormalized `DistrictKey`/`ProjectKey` (`trim().toLowerCase()` of District name + Project name) used for uniqueness.
+
+## Project Uniqueness
+
+- **Definition**: a project is unique per **District + Project Name**, compared on normalized keys (`trim().toLowerCase()`), so `SIKAR/AMC 2026` and `sikar/amc 2026` are duplicates.
+- **Enforcement**: `ProjectRepository.createProject/updateProject/cloneProject` pre-check `findExistingByKeys` and throw `ProjectAlreadyExistsError` before any resource is created; a `UNIQUE(DistrictKey, ProjectKey)` index (`uq_projects_district_project`) is the DB-level backstop (constraint errors are converted to `ProjectAlreadyExistsError`).
+- **Migration** (`migrateProjectUniqueness`, runs at app start after seeding): backfills `DistrictKey`/`ProjectKey` for legacy rows, then either creates the unique index (no duplicates) or returns the duplicate groups without creating it. When duplicates exist the app stays fully usable and shows a non-destructive warning report on the Database screen (`getProjectDuplicates()`); the index is created on a later start once the user resolves them. Duplicates are **never** deleted/merged/renamed automatically.
 
 ## Project Database (`inspection.db`)
 
@@ -123,7 +131,7 @@ deleteProjectDb(dbPath: string): Promise<void>
 deleteProjectFolder(projectName: string): Promise<void>
 
 // Helpers
-getProjectDbPath(projectName: string): string
+getProjectDbPath(districtName: string, projectName: string): string
 getProjectFolderPath(projectName: string): string
 listProjectFolders(): Promise<string[]>
 ```

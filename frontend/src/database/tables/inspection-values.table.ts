@@ -1,4 +1,4 @@
-// frontend\src\database\tables\divisions.table.ts
+// src/database/tables/inspection-values.table.ts
 export const createInspectionValuesTable = `
 CREATE TABLE IF NOT EXISTS InspectionValues (
 

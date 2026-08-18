@@ -2,9 +2,9 @@
 
 # Architecture Decision Records (ADR)
 
-Version: 1.8
+Version: 1.9
 
-Last Updated: 2026-08-12
+Last Updated: 2026-08-15
 
 Status: Active
 
@@ -1611,4 +1611,123 @@ Negative:
 - The manifest permission set (`WRITE_EXTERNAL_STORAGE` + `requestLegacyExternalStorage`) is now only meaningful on API < 29.
 
 ---
+
+# ADR-028
+
+## Title
+
+Project Uniqueness Enforced on Normalized District + Project Name
+
+## Status
+
+Accepted
+
+## Date
+
+15 August 2026
+
+## Context
+
+The Projects table had no uniqueness constraint, so two projects with the same District and Project Name could be created. Project DB folders were derived from ProjectName alone, so same-named projects across districts collided on one folder, and the folder label was built by concatenating District and Project without a separator, making `A_B` + `C` ambiguous against `A` + `B_C`. Case and whitespace variants of the same name were treated as distinct.
+
+## Decision
+
+Enforce uniqueness on normalized keys at both the repository and SQLite level:
+
+- Denormalized key columns `Projects.DistrictKey` / `ProjectKey` (`trim().toLowerCase()` of the district name and project name). Original values are never rewritten.
+- `ProjectRepository.createProject/updateProject/cloneProject` pre-check `findExistingByKeys` and throw `ProjectAlreadyExistsError` (with the colliding project id) before any resource is created; `ProjectCreateService` orchestrates create so a failed attempt cleans up only its own row/folder.
+- DB-level backstop: `CREATE UNIQUE INDEX uq_projects_district_project ON Projects(DistrictKey, ProjectKey)`. UNIQUE constraint errors are converted to `ProjectAlreadyExistsError`.
+- `migrateProjectUniqueness()` (runs at app start after seeding) backfills keys for legacy rows and then either creates the index (no duplicates) or returns the duplicate groups WITHOUT creating it. Duplicates are never deleted/merged/renamed; the Database screen shows a non-destructive report (`getProjectDuplicates()`) and the index is created on a later start once the user resolves them.
+- New project DB folders are district-qualified with an 8-hex FNV-1a suffix of the normalized identity: `Projects/<District>_<ProjectName>_<hash>/inspection.db`. Existing project folders keep their stored `DBPath` — no folder migration/rename; edits never move folders.
+
+## Consequences
+
+Positive:
+- Same District + Name (case/whitespace-insensitive) is impossible; different districts with the same name are fully independent.
+- Folder collisions (`A_B` + `C` vs `A` + `B_C`, case variants) are structurally impossible for new projects.
+- Duplicate resolution is a safe, user-driven migration decision surfaced in the app; nothing destructive is automated.
+
+Negative:
+- Legacy duplicate projects must be resolved manually before the unique index is active.
+- A deterministic 32-bit hash is embedded in new DB folder names; a 2⁻³² FNV-1a collision between two allowed projects would make the second creation abort with `ProjectFolderExistsError` before creating its row or touching the existing folder — the pre-existing project's data and folder are never opened, written, or deleted by the failing attempt (`createProjectDb`/`cloneProjectDb` pre-check the target DB file; callers delete only the failing attempt's own row).
+
+---
+
+# ADR-029
+
+## Title
+
+Project Edit Renames the Download Photo Folder with a Persisted Crash-Recovery Marker
+
+## Status
+
+Accepted
+
+## Date
+
+15 August 2026
+
+## Context
+
+Photo storage moved to `Download/ACCC Dynamic Inspection/<District>_<ProjectName>/` (ADR-027). When a project was edited (rename, or district/name change), the on-disk photo folder kept its old label while the DB labels changed, so the saved location no longer matched the project. The previous implementation only renamed metadata (or skipped folder moves entirely per ADR-028), and photos captured after an edit landed in a folder named after the old identity. Renaming a folder that already exists, or failing partway through a large move, would silently desync `Photo.FilePath` from reality. The photo preview UI also showed raw `FilePath`/GPS text instead of a human-readable saved location.
+
+## Decision
+
+- **Photo folder follows the identity.** `ProjectEditService.updateProjectFlow` computes the old/new labels (`canonicalProjectLabel`), and when they differ it moves `Download/ACCC Dynamic Inspection/<old>` → `Download/ACCC Dynamic Inspection/<new>` via `downloadStorage.moveFilesInFolder` (a new native `DownloadStorageModule.moveFilesInFolder`: per-file `MediaStore` `RELATIVE_PATH` update on API ≥ 29 with the content URI and `_id` preserved; legacy `File.renameTo` otherwise; per-row `try/catch` reports `{oldUri, newUri, moved}`). If the identity is unchanged, or the old folder has no files, the move is skipped silently.
+- **Collision rejection.** If the destination folder already contains files, the edit is aborted with `PhotoFolderConflictError` (UI alert "Photo Folder Already Exists"). No merge, no overwrite, no deletion.
+- **Legacy path remap.** After a successful move, legacy `file://` rows (`FilePath LIKE '%/<oldLabel>/%'`) are remapped to the new label using the per-row results of `moveFilesInFolder` — `content://` rows are untouched because MediaStore keeps their URI stable. `Photo.FilePath` remains the single source of truth for display and opening.
+- **Persisted crash-recovery marker.** Before the move, a `PendingPhotoFolderRename` JSON marker (new nullable `TEXT` column on the global `Projects` table, written via `setPendingPhotoFolderRename`) records `{from, to, projectName, districtId, block?, client?, description?, inspectorName?, uriMap?}`; the marker is rewritten with `uriMap` after the move and cleared after `updateProject` succeeds. On every app start, `recoverPendingPhotoFolderRenames()` (after `migrateProjectUniqueness` in `DatabaseService.initializeDatabase`) idempotently completes any marker: parse-fail/missing-target/identity-already-applied rows are cleared; otherwise it forwards the move (safe because `moveFilesInFolder` is idempotent per row), rebuilds the legacy `uriMap` from the DB (marker `uriMap` is persisted but not replayed), and calls `updateProject`. A failed move keeps the marker so the next launch retries forward completion.
+- **Photo preview shows Saved Location.** `PhotoPreviewModal` replaces the raw GPS/`FilePath` text with two lines: `Saved Location: <District>_<ProjectName>` and `File Name: <photo FileName>`, both display-only; the image still opens from `Photo.FilePath`.
+
+## Consequences
+
+Positive:
+- A project rename/move always leaves the photo folder and every `Photo.FilePath` consistent with the new identity, even across a crash mid-move.
+- Idempotent forward-completion recovery needs no per-phase state machine: every crash window (before/after move, before/after `updateProject`) converges to the same end state.
+- `content://` (API ≥ 29) rows are never rewritten; the photo architecture is unchanged.
+
+Negative:
+- `content://` rows whose backing file moved still resolve via the content URI (stable), so no remap is needed — but legacy `file://` rows that no longer match the LIKE pattern after a partial move are completed by the forward path, not repaired backwards.
+- The recovery forward-completes whenever the old folder still has files; if a user independently recreates an identically named old folder during the crash window (unlikely), its files would be moved in. Theoretical, documented, accepted.
+- Projects with a `null` `DBPath` (ancient rows) skip the legacy remap; stale legacy rows would need manual cleanup.
+- The new column requires the ALTER migration for existing global DBs.
+
+## Revision (15 August 2026) — Code Review Fixes
+
+- **Collision check runs before the empty-old-folder shortcut.** `updateProjectFlow` now checks `hasProjectFolderFiles(newLabel)` (→ `PhotoFolderConflictError`) before considering whether the old folder is empty, so a leftover `Download/...` folder from a previously deleted project can never be silently adopted by a rename. Rename-back (A→B→A) is unaffected because the old folder holds the photos in that flow.
+- **LIKE wildcards are escaped in the legacy remap.** Labels contain `_` (district/name separator) and spaces, so `getFilePathsLike` used unescaped `_` as a single-character wildcard and could remap a similarly named sibling folder's rows. The pattern is now `%/<label>/%` with `escapeLikeWildcards` and `WHERE FilePath LIKE ? ESCAPE '\'`, restricting remap to exact folder segments.
+
+# ADR-030
+
+## Title
+
+Immutable photo storage — drop photo-folder-rename on project edit
+
+## Status
+
+Accepted
+
+## Date
+
+15 August 2026
+
+## Context
+
+Project edits used to move photo folders (ADR-029) and reverse-move on failure. This failed on-device (MediaProvider `RELATIVE_PATH` update into a non-materialized destination returns 0 rows on API ≥ 29), and the rename/recovery architecture added risk to a core inspection flow. The previous revision also added a persisted crash-recovery marker and collision rejection, each increasing the surface that could desync inspection evidence from reality.
+
+## Decision
+
+- New photos set both `FilePath` (the real URI) and `StoragePath` (the human-readable `Download/ACCC Dynamic Inspection/<label>/` folder) at save time.
+- Project edits never move, rename, or rewrite photos. `updateProjectFlow` is a pure identity + uniqueness check then `updateProject`.
+- Photo preview "Saved Location" reads `StoragePath` only. Missing values are lazily backfilled: derived from legacy `file://` paths, or queried from MediaStore `RELATIVE_PATH` for modern `content://` URIs. Lookup failure yields null — never an invented location.
+- The `PendingPhotoFolderRename` column remains; markers are drained once, non-destructively, at startup. No new markers are written.
+
+## Consequences
+
+- Photos are immutable; project renames cannot corrupt inspection evidence.
+- Legacy photos are never migrated by moving files; display-only backfill reflects the real on-disk location.
+
+## Revision (15 August 2026) — Clone reference-sharing
+
+- **`cloneProjectDb` copies `Photos.StoragePath` verbatim with `FilePath`.** A cloned project shares the source project's photo rows (content URIs and folder labels), matching the pre-existing `FilePath` clone semantics: the clone's preview shows the source's "Saved Location" label, and deleting a clone photo deletes the shared MediaStore file. This is intentional reference-sharing, not an isolation breach; a clone-specific regression test asserts the behavior is deliberate (see `cloneProjectDb.test.ts`).
 

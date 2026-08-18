@@ -16,7 +16,7 @@ jest.mock("expo-file-system/legacy", () => ({
   EncodingType: { UTF8: "utf8", Base64: "base64" },
   writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
   readAsStringAsync: jest.fn().mockResolvedValue(""),
-  getInfoAsync: jest.fn().mockResolvedValue({ exists: true, isDirectory: false, size: 100 }),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: false, isDirectory: false }),
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   readDirectoryAsync: jest.fn(),
@@ -49,16 +49,34 @@ describe("ProjectDBManager", () => {
   });
 
   describe("getProjectDbPath", () => {
-    it("returns the correct DB path for a project", () => {
+    it("returns a district-qualified DB path for a project", () => {
       const { getProjectDbPath } = require("@/src/database/helpers/ProjectDBManager");
-      const path = getProjectDbPath("MyProject");
-      expect(path).toContain("Projects/MyProject/inspection.db");
+      const path = getProjectDbPath("Jaipur", "AMC 2026");
+      expect(path).toContain("Projects/Jaipur_AMC 2026_");
+      expect(path).toMatch(/inspection\.db$/);
+    });
+
+    it("is deterministic and distinct across districts with the same project name", () => {
+      const { getProjectDbPath } = require("@/src/database/helpers/ProjectDBManager");
+      const sikar = getProjectDbPath("SIKAR", "XYZ");
+      const jaipur = getProjectDbPath("JAIPUR", "XYZ");
+      expect(sikar).toBe(getProjectDbPath("SIKAR", "XYZ"));
+      expect(sikar).not.toBe(jaipur);
+      expect(jaipur).toContain("Projects/JAIPUR_XYZ_");
+    });
+
+    it("uses the same identity hash for case/whitespace variants", () => {
+      const { getProjectDbPath } = require("@/src/database/helpers/ProjectDBManager");
+      const a = getProjectDbPath(" SIKAR ", "AMC 2026");
+      const b = getProjectDbPath("sikar", "amc 2026");
+      const hashOf = (p: string) => p.match(/_([0-9a-f]{8})\/inspection\.db$/)![1];
+      expect(hashOf(a)).toBe(hashOf(b));
     });
 
     it("sanitizes special characters in project name", () => {
       const { getProjectDbPath } = require("@/src/database/helpers/ProjectDBManager");
-      const path = getProjectDbPath("My:Project/1");
-      expect(path).toContain("My_Project_1");
+      const path = getProjectDbPath("District", "My:Project/1");
+      expect(path).toContain("Projects/District_My_Project_1_");
     });
   });
 
@@ -73,6 +91,21 @@ describe("ProjectDBManager", () => {
       expect(createProjectSchema).toHaveBeenCalled();
       expect(seedDashboardCards).toHaveBeenCalledWith(2);
       expect(clearActiveProject).toHaveBeenCalled();
+    });
+
+    it("throws ProjectFolderExistsError and creates nothing when the target DB file already exists", async () => {
+      (FileSystem.getInfoAsync as jest.Mock).mockResolvedValueOnce({
+        exists: true,
+        isDirectory: false,
+      });
+      const { createProjectDb, ProjectFolderExistsError } = require("@/src/database/helpers/ProjectDBManager");
+
+      await expect(
+        createProjectDb("TestProject", "/mock/documents/Projects/TestProject/inspection.db", 2)
+      ).rejects.toBeInstanceOf(ProjectFolderExistsError);
+
+      expect(FileSystem.makeDirectoryAsync).not.toHaveBeenCalled();
+      expect(setActiveProject).not.toHaveBeenCalled();
     });
   });
 

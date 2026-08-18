@@ -141,6 +141,29 @@ export function cleanPoleToken(pole: string): string {
   return (pole || "NA").replace(/[^a-zA-Z0-9]/g, "").substring(0, 20);
 }
 
+export type PoleIdChangeDecision =
+  | { type: "blocked" }
+  | { type: "direct-save" }
+  | { type: "dialog"; photoCount: number };
+
+export function decidePoleIdChange(
+  photos: Photo[],
+  states: Record<number, WatermarkState>
+): PoleIdChangeDecision {
+  for (const photo of photos) {
+    const state = photo.PhotoID != null ? states[photo.PhotoID] : undefined;
+    if (state === "pending" || state === "processing" || state === "failed") {
+      return { type: "blocked" };
+    }
+  }
+
+  if (photos.length === 0) {
+    return { type: "direct-save" };
+  }
+
+  return { type: "dialog", photoCount: photos.length };
+}
+
 export function renamePoleTokenInFileName(
   fileName: string,
   oldPoleId: string,

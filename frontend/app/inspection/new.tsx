@@ -1,4 +1,4 @@
-﻿//frontend\app\inspection\new.tsx
+//frontend\app\inspection\new.tsx
 import React, {
   useEffect,
   useRef,
@@ -24,13 +24,30 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
 import { usePhotosProcessing } from "@/src/context/PhotoStatesContext";
+import { InspectionScrollProvider } from "@/src/context/InspectionScrollContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
 import SectionRenderer from "@/src/components/inspection/SectionRenderer";
 import GeneralInformation from "@/src/components/inspection/GeneralInformation";
+import {
+  measureSectionInWindow,
+} from "@/src/components/inspection/sectionAutoScroll";
+import { SectionScrollCoordinator } from "@/src/components/inspection/sectionScrollCoordinator";
+import {
+  handleScrollEvent,
+  handleScrollBeginDrag,
+  pressSection,
+  ScrollOrchestrationHandlers,
+} from "@/src/components/inspection/scrollOrchestration";
 
 import { logger } from "@/src/utils/logger";
+import {
+  cancelPendingOpen,
+  notifyScrollOffset,
+  SCROLL_TOLERANCE,
+} from "@/src/components/inspection/dropdownScrollGate";
 import { getDatabase } from "@/src/database/db";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
 import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
 import { validatePhotosForSave } from "@/src/components/inspection/photoUtils";
 
@@ -41,36 +58,116 @@ export default function NewInspectionScreen({
 }) {
   const router = useRouter();
   const initDoneRef = useRef(false);
-const { projectId, inspectionId: routeInspectionId, projectData: projectDataJson } =
+  const backInFlightRef = useRef(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const scrollViewTopRef = useRef(0);
+  const scrollViewHeightRef = useRef(0);
+  const sectionRefs = useRef<Map<number, View>>(new Map());
+  const expandedSectionsRef = useRef<number[]>([1]);
+  const sectionScrollCoordinatorRef = useRef<SectionScrollCoordinator | null>(null);
+  if (!sectionScrollCoordinatorRef.current) {
+    sectionScrollCoordinatorRef.current = new SectionScrollCoordinator({
+      isExpanded: (sectionId) => expandedSectionsRef.current.includes(sectionId),
+      measureSection: (sectionId, generation, onMeasured) => {
+        const ref = sectionRefs.current.get(sectionId);
+        if (!ref || !scrollViewRef.current) {
+          return;
+        }
+        measureSectionInWindow(
+          ref,
+          scrollViewRef,
+          scrollViewTopRef.current,
+          scrollViewHeightRef.current,
+          scrollOffsetRef.current,
+          undefined,
+          onMeasured
+        );
+      },
+      scrollToSection: (sectionId, target) => {
+        scrollViewRef.current?.scrollTo({ x: 0, y: target, animated: true });
+      },
+    });
+  }
+  const scrollOrchestrationRef = useRef<ScrollOrchestrationHandlers | null>(null);
+  if (!scrollOrchestrationRef.current) {
+    scrollOrchestrationRef.current = {
+      coordinator: sectionScrollCoordinatorRef.current,
+      cancelPendingOpen,
+      notifyScrollOffset,
+      tolerance: SCROLL_TOLERANCE,
+    };
+  }
+  const { projectId, inspectionId: routeInspectionId, projectData: projectDataJson } =
   useLocalSearchParams<{
     projectId: string;
     inspectionId?: string;
     projectData?: string;
   }>();
 
-const {
-  project: contextProject,
-  setProject,
-  setInspectionDate,
-  setInspectionId,
-  inspectionId,
-  setPoleId,
-  getPhotoStates,
-} = useInspection();
+  const {
+    project: contextProject,
+    setProject,
+    setInspectionDate,
+    setInspectionId,
+    inspectionId,
+    setPoleId,
+    getPhotoStates,
+  } = useInspection();
 
-const photosProcessing = usePhotosProcessing();
+  const photosProcessing = usePhotosProcessing();
 
-const [sections, setSections] = useState<InspectionSection[]>([]);
-const [expandedSections, setExpandedSections] = useState<number[]>([1]);
-const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
+  const [sections, setSections] = useState<InspectionSection[]>([]);
+  const [expandedSections, setExpandedSections] = useState<number[]>([1]);
+  const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
+
+  useEffect(() => {
+    expandedSectionsRef.current = expandedSections;
+  }, [expandedSections]);
+
+  useEffect(() => {
+    return () => {
+      cancelPendingOpen();
+      sectionScrollCoordinatorRef.current?.cancel();
+    };
+  }, []);
+
+  function handleSectionPress(sectionId: number) {
+    const coordinator = sectionScrollCoordinatorRef.current;
+    pressSection(coordinator, cancelPendingOpen, sectionId);
+    const isExpanding = !expandedSectionsRef.current.includes(sectionId);
+    const next = isExpanding
+      ? [...expandedSectionsRef.current, sectionId]
+      : expandedSectionsRef.current.filter((id) => id !== sectionId);
+    expandedSectionsRef.current = next;
+    setExpandedSections(next);
+  }
+
+const validateSectionsAndDevices = async (): Promise<{
+  valid: boolean;
+  missingFields: string[];
+}> => {
+  if (!inspectionId) return { valid: true, missingFields: [] };
+
+  // 1. Flush pending device saves (cancel timers, write latest rows) -- no timer wait
+  await DeviceRecordsRepository.flushPendingDeviceSaves();
+
+  // 2. Validate sections, then devices against the flushed rows
+  const sectionResult =
+    await InspectionRepository.validateInspection(inspectionId);
+  const deviceResult =
+    await InspectionRepository.validateDeviceMandatory(inspectionId);
+
+  return {
+    valid: sectionResult.valid && deviceResult.valid,
+    missingFields: [...sectionResult.missingFields, ...deviceResult.missingFields],
+  };
+};
 
 const validateBeforeExit = async (): Promise<boolean> => {
   if (!inspectionId) return true;
 
-  const result =
-    await InspectionRepository.validateInspection(
-      inspectionId
-    );
+  const result = await validateSectionsAndDevices();
 
   if (!result.valid) {
     Alert.alert(
@@ -110,11 +207,17 @@ useEffect(() => {
   const subscription = BackHandler.addEventListener(
     "hardwareBackPress",
     () => {
-      validateBeforeExit().then((ok) => {
-        if (ok) {
-          router.back();
-        }
-      });
+      if (backInFlightRef.current) return true;
+      backInFlightRef.current = true;
+      validateBeforeExit()
+        .then((ok) => {
+          if (ok) {
+            router.back();
+          }
+        })
+        .finally(() => {
+          backInFlightRef.current = false;
+        });
 
       return true;
     }
@@ -212,10 +315,7 @@ const handleBack = async () => {
 const handleSave = async () => {
   if (!inspectionId) return;
 
-  const result =
-    await InspectionRepository.validateInspection(
-      inspectionId
-    );
+  const result = await validateSectionsAndDevices();
 
   if (!result.valid) {
     Alert.alert(
@@ -331,9 +431,30 @@ return (
     <Appbar.BackAction onPress={handleBack} />
     <Appbar.Content title={title} />
   </Appbar.Header>
+  <InspectionScrollProvider scrollViewRef={scrollViewRef} scrollOffsetRef={scrollOffsetRef}>
     <ScrollView
+      ref={scrollViewRef}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      onLayout={(event) => {
+        scrollViewTopRef.current = event.nativeEvent.layout.y;
+        scrollViewHeightRef.current = event.nativeEvent.layout.height;
+      }}
+      onScroll={(event) => {
+        const offset = event.nativeEvent.contentOffset.y;
+        scrollOffsetRef.current = offset;
+        const orchestration = scrollOrchestrationRef.current;
+        if (orchestration) {
+          handleScrollEvent(orchestration, offset);
+        }
+      }}
+      onScrollBeginDrag={(event) => {
+        const orchestration = scrollOrchestrationRef.current;
+        if (orchestration) {
+          handleScrollBeginDrag(orchestration, event.nativeEvent.contentOffset.y);
+        }
+      }}
+      scrollEventThrottle={16}
     >
       <Text variant="headlineMedium" style={styles.title}>
         {title}
@@ -344,21 +465,20 @@ return (
     key={section.SectionID}
     style={styles.card}
   >
-    <List.Accordion
-      title={section.SectionName}
-      expanded={expandedSections.includes(section.SectionID)}
-      onPress={() => {
-        setExpandedSections((prev) => {
-          if (prev.includes(section.SectionID)) {
-            return prev.filter((id) => id !== section.SectionID);
-          }
-
-          return [...prev, section.SectionID];
-        });
+    <View
+      ref={(ref) => { if (ref) sectionRefs.current.set(section.SectionID, ref); }}
+      onLayout={(event) => {
+        const coordinator = sectionScrollCoordinatorRef.current;
+        coordinator?.notifyLayout(section.SectionID);
       }}
-      titleStyle={styles.sectionTitle}
     >
-      <Card.Content>
+      <List.Accordion
+        title={section.SectionName}
+        expanded={expandedSections.includes(section.SectionID)}
+        onPress={() => handleSectionPress(section.SectionID)}
+        titleStyle={styles.sectionTitle}
+      >
+        <Card.Content>
     {section.SectionKey === "general_information" ? (
       <GeneralInformation />
     ) : (
@@ -369,8 +489,9 @@ return (
         templateId={defaultTemplateId}
       />
     )}
-      </Card.Content>
-    </List.Accordion>
+        </Card.Content>
+      </List.Accordion>
+    </View>
   </Card>
 ))}
 
@@ -409,7 +530,8 @@ return (
   </Button>
 
 </View>
-    </ScrollView>
+      </ScrollView>
+    </InspectionScrollProvider>
   </SafeAreaView>
 );
 

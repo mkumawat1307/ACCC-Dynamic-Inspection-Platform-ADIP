@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS Photos (
 
     Remarks TEXT,
 
+    StoragePath TEXT,
+
     CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (InspectionID)
