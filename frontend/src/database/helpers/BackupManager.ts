@@ -32,10 +32,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export async function getGlobalDbFilePath(): Promise<string> {
-  return `${FileSystem.documentDirectory}SQLite/${GLOBAL_DATABASE_NAME}`;
-}
-
 async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   const globalBase = `SQLite/${GLOBAL_DATABASE_NAME}`;

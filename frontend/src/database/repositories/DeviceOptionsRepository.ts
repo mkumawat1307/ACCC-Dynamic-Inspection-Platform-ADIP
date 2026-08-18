@@ -12,19 +12,6 @@ export interface DeviceOption {
   IsActive: number;
 }
 
-export const DEVICE_FIELDS: Record<string, string> = {
-  CameraType: "Camera Type",
-  CameraStatus: "Camera Status",
-  CameraMake: "Camera Make",
-  CameraSI: "Camera SI",
-  SDCardCapacity: "SD Card Capacity",
-  SDCardStatus: "SD Card Status",
-  SwitchType: "Switch Type",
-  SwitchStatus: "Switch Status",
-  SwitchMake: "Switch Make",
-  SwitchSI: "Switch SI",
-};
-
 class DeviceOptionsRepository {
   async getAll(deviceType: string, templateId?: number): Promise<DeviceOption[]> {
     const db = await getDatabase();

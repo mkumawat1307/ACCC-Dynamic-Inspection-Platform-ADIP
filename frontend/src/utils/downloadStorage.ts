@@ -2,8 +2,6 @@ import { Platform } from "react-native";
 import { getDownloadStorageNative, DownloadStorageNative } from "@/modules/download-storage/src";
 import { logger } from "@/src/utils/logger";
 
-export const ROOT_DIR_NAME = "ACCC Dynamic Inspection";
-
 const native = getDownloadStorageNative();
 
 function requireNative(): DownloadStorageNative {

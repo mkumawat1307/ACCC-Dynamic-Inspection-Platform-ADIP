@@ -6,9 +6,6 @@ jest.mock("@/src/database/tables/divisions.table", () => ({
 jest.mock("@/src/database/tables/districts.table", () => ({
   createDistrictsTable: "CREATE TABLE Districts...",
 }));
-jest.mock("@/src/database/tables/blocks.table", () => ({
-  createBlocksTable: "CREATE TABLE Blocks...",
-}));
 jest.mock("@/src/database/tables/inspection-templates.table", () => ({
   createInspectionTemplatesTable: "CREATE TABLE InspectionTemplates...",
 }));

@@ -4,7 +4,6 @@ import { getDatabase, getGlobalDatabase } from "./db";
 
 import { createDivisionsTable } from "./tables/divisions.table";
 import { createDistrictsTable } from "./tables/districts.table";
-import { createBlocksTable } from "./tables/blocks.table";
 import { createInspectionTemplatesTable } from "./tables/inspection-templates.table";
 import { createInspectionSectionsTable } from "./tables/inspection-sections.table";
 import { createInspectionFieldsTable } from "./tables/inspection-fields.table";
@@ -34,7 +33,6 @@ export async function createGlobalSchema() {
 
     await db.execAsync(createDivisionsTable);
     await db.execAsync(createDistrictsTable);
-    await db.execAsync(createBlocksTable);
     await db.execAsync(`
         CREATE TABLE IF NOT EXISTS Projects (
             ProjectID INTEGER PRIMARY KEY AUTOINCREMENT,
