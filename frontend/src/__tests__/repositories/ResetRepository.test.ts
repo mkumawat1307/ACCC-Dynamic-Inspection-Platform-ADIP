@@ -138,7 +138,7 @@ describe("ResetRepository.performReset", () => {
     const calls = mockDb.runAsync.mock.calls.map((c: [string, unknown[]]) => ({ sql: String(c[0]), params: c[1] }));
     const doUpdate = calls.find((c) => c.sql.includes("UPDATE DeviceOptions") && c.sql.includes("OptionLabel = ?"));
     expect(doUpdate).toBeTruthy();
-    expect(doUpdate!.params).toContain("Bullet");
+    expect(doUpdate!.params).toContain("4K");
     expect(doUpdate!.params).toContain("Camera");
     expect(doUpdate!.params).toContain("CameraType");
   });
@@ -455,7 +455,7 @@ describe("ResetRepository.performReset", () => {
       String(c[0]).includes("DisplayOrder")
     );
 
-    expect(deviceOptionUpdates.length).toBe(43);
+    expect(deviceOptionUpdates.length).toBe(50);
 
     for (const call of deviceOptionUpdates) {
       const sql = String(call[0]);
@@ -486,7 +486,7 @@ describe("ResetRepository.performReset", () => {
     const bulletParams = bulletUpdate![1] as unknown[];
     expect(bulletParams[0]).toBe("Bullet");
     expect(bulletParams[1]).toBe("Bullet");
-    expect(bulletParams[2]).toBe(1);
+    expect(bulletParams[2]).toBe(4);
   });
 
   it("34. repeated DeviceOptions reset produces identical IsDefault=0 for all options", async () => {

@@ -420,4 +420,265 @@ export async function migrateProjectSchema(projectId: number) {
     } catch {
         // column already exists
     }
+
+    // Phase 13 — Canonical template migration
+    // Section rename: Junction Box and Cabling → Junction Box and Power Cable
+    try {
+        await db.runAsync(
+            `UPDATE InspectionSections SET SectionName = 'Junction Box and Power Cable',
+             Description = 'JB Details and Power Cable Details',
+             UpdatedAt = CURRENT_TIMESTAMP
+             WHERE SectionName = 'Junction Box and Cabling'`
+        );
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — junction box section rename failed (non-fatal):", e);
+    }
+
+    // Field key rename: cable_length → power_cable_length + type change to number
+    try {
+        const cableField = await db.getFirstAsync<{ FieldID: number; FieldType: string }>(
+            `SELECT FieldID, FieldType FROM InspectionFields WHERE FieldKey = 'cable_length' LIMIT 1`
+        );
+        if (cableField) {
+            if (cableField.FieldType !== "number") {
+                await db.runAsync(
+                    `UPDATE InspectionFields SET FieldType = 'number', UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'cable_length'`
+                );
+            }
+            await db.runAsync(
+                `UPDATE InspectionFields SET FieldKey = 'power_cable_length', UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'cable_length'`
+            );
+        }
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — cable_length rename failed (non-fatal):", e);
+    }
+
+    // earthing_voltage type change to number
+    try {
+        const voltageField = await db.getFirstAsync<{ FieldType: string }>(
+            `SELECT FieldType FROM InspectionFields WHERE FieldKey = 'earthing_voltage' AND FieldType != 'number' LIMIT 1`
+        );
+        if (voltageField) {
+            await db.runAsync(
+                `UPDATE InspectionFields SET FieldType = 'number', UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'earthing_voltage'`
+            );
+        }
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — earthing_voltage type migration failed (non-fatal):", e);
+    }
+
+    // pole_avail option labels: Yes→Installed, No→Not Installed
+    try {
+        const poleAvailField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_avail' LIMIT 1`
+        );
+        if (poleAvailField) {
+            await db.runAsync(
+                `UPDATE FieldOptions SET OptionLabel = 'Installed', UpdatedAt = CURRENT_TIMESTAMP
+                 WHERE FieldID = ? AND OptionValue = 'Yes' AND OptionLabel != 'Installed'`,
+                [poleAvailField.FieldID]
+            );
+            await db.runAsync(
+                `UPDATE FieldOptions SET OptionLabel = 'Not Installed', UpdatedAt = CURRENT_TIMESTAMP
+                 WHERE FieldID = ? AND OptionValue = 'No' AND OptionLabel != 'Not Installed'`,
+                [poleAvailField.FieldID]
+            );
+        }
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — pole_avail label migration failed (non-fatal):", e);
+    }
+
+    // pole_status option labels and order update
+    try {
+        const poleStatusField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_status' LIMIT 1`
+        );
+        if (poleStatusField) {
+            const poleStatusUpdates: Array<[string, string, string, number]> = [
+                ["VMS", "VMS Live", "VMS", 1],
+                ["Local", "Local Live", "Local", 2],
+                ["Non-Live", "Non-Live", "Non-Live", 3],
+                ["Not Verified", "Not Verified", "Not Verified", 4],
+                ["In Stock", "Stock", "In Stock", 5],
+                ["Dismantled", "Dismantled", "Dismantled", 6],
+            ];
+            for (const [oldLabel, newLabel, value, order] of poleStatusUpdates) {
+                await db.runAsync(
+                    `UPDATE FieldOptions SET OptionLabel = ?, DisplayOrder = ?, UpdatedAt = CURRENT_TIMESTAMP
+                     WHERE FieldID = ? AND OptionValue = ? AND OptionLabel = ?`,
+                    [newLabel, order, poleStatusField.FieldID, value, oldLabel]
+                );
+            }
+        }
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — pole_status option migration failed (non-fatal):", e);
+    }
+
+    // Add missing field options: cable_status +Damage, meter_power_status +Tapping, foundation_cond +Not Installed
+    try {
+        // cable_status: add Damage option
+        const cableStatusField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'cable_status' LIMIT 1`
+        );
+        if (cableStatusField) {
+            const existingDamage = await db.getFirstAsync<{ c: number }>(
+                `SELECT COUNT(*) as c FROM FieldOptions WHERE FieldID = ? AND OptionValue = 'Damage'`,
+                [cableStatusField.FieldID]
+            );
+            if (existingDamage && existingDamage.c === 0) {
+                await db.runAsync(
+                    `INSERT INTO FieldOptions (FieldID, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
+                     VALUES (?, 'Damage', 'Damage', 5, 0, 1)`,
+                    [cableStatusField.FieldID]
+                );
+            }
+        }
+
+        // meter_power_status: add Tapping option
+        const meterPowerField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'meter_power_status' LIMIT 1`
+        );
+        if (meterPowerField) {
+            const existingTapping = await db.getFirstAsync<{ c: number }>(
+                `SELECT COUNT(*) as c FROM FieldOptions WHERE FieldID = ? AND OptionValue = 'Tapping'`,
+                [meterPowerField.FieldID]
+            );
+            if (existingTapping && existingTapping.c === 0) {
+                await db.runAsync(
+                    `INSERT INTO FieldOptions (FieldID, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
+                     VALUES (?, 'Tapping', 'Tapping', 3, 0, 1)`,
+                    [meterPowerField.FieldID]
+                );
+            }
+        }
+
+        // foundation_cond: add Not Installed option
+        const foundationField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'foundation_cond' LIMIT 1`
+        );
+        if (foundationField) {
+            const existingNotInstalled = await db.getFirstAsync<{ c: number }>(
+                `SELECT COUNT(*) as c FROM FieldOptions WHERE FieldID = ? AND OptionValue = 'Not Installed'`,
+                [foundationField.FieldID]
+            );
+            if (existingNotInstalled && existingNotInstalled.c === 0) {
+                await db.runAsync(
+                    `INSERT INTO FieldOptions (FieldID, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
+                     VALUES (?, 'Not Installed', 'Not Installed', 5, 0, 1)`,
+                    [foundationField.FieldID]
+                );
+            }
+        }
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — add missing field options failed (non-fatal):", e);
+    }
+
+    // Remove connectivity_type "Local" option (deactivate, don't delete historical data)
+    try {
+        const connectivityField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'connectivity_type' LIMIT 1`
+        );
+        if (connectivityField) {
+            await db.runAsync(
+                `UPDATE FieldOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
+                 WHERE FieldID = ? AND OptionValue = 'Local' AND IsActive = 1`,
+                [connectivityField.FieldID]
+            );
+        }
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — remove connectivity Local failed (non-fatal):", e);
+    }
+
+    // Device options: add missing options for existing installs
+    try {
+        // CameraType: add 4K, Box Reliance, Dome, PCR Camera
+        const cameraTypeOptions = [
+            { Label: "4K", Value: "4K", Order: 1 },
+            { Label: "Box Reliance", Value: "Box Reliance", Order: 3 },
+            { Label: "Dome", Value: "Dome", Order: 5 },
+            { Label: "PCR Camera", Value: "PCR Camera", Order: 7 },
+        ];
+        for (const opt of cameraTypeOptions) {
+            const exists = await db.getFirstAsync<{ c: number }>(
+                `SELECT COUNT(*) as c FROM DeviceOptions WHERE DeviceType = 'Camera' AND FieldName = 'CameraType' AND OptionValue = ?`,
+                [opt.Value]
+            );
+            if (exists && exists.c === 0) {
+                await db.runAsync(
+                    `INSERT INTO DeviceOptions (DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsActive)
+                     VALUES ('Camera', 'CameraType', ?, ?, ?, 1)`,
+                    [opt.Label, opt.Value, opt.Order]
+                );
+            }
+        }
+
+        // CameraMake: add Hikvision/Reliance, Others
+        const cameraMakeOptions = [
+            { Label: "Hikvision/Reliance", Value: "Hikvision/Reliance", Order: 3 },
+            { Label: "Others", Value: "Others", Order: 7 },
+        ];
+        for (const opt of cameraMakeOptions) {
+            const exists = await db.getFirstAsync<{ c: number }>(
+                `SELECT COUNT(*) as c FROM DeviceOptions WHERE DeviceType = 'Camera' AND FieldName = 'CameraMake' AND OptionValue = ?`,
+                [opt.Value]
+            );
+            if (exists && exists.c === 0) {
+                await db.runAsync(
+                    `INSERT INTO DeviceOptions (DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsActive)
+                     VALUES ('Camera', 'CameraMake', ?, ?, ?, 1)`,
+                    [opt.Label, opt.Value, opt.Order]
+                );
+            }
+        }
+
+        // SDCardCapacity: add Not Installed
+        const sdExists = await db.getFirstAsync<{ c: number }>(
+            `SELECT COUNT(*) as c FROM DeviceOptions WHERE DeviceType = 'Camera' AND FieldName = 'SDCardCapacity' AND OptionValue = 'Not Installed'`
+        );
+        if (sdExists && sdExists.c === 0) {
+            await db.runAsync(
+                `INSERT INTO DeviceOptions (DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsActive)
+                 VALUES ('Camera', 'SDCardCapacity', 'Not Installed', 'Not Installed', 4, 1)`
+            );
+        }
+
+        // SwitchType: add 16-Port
+        const switchTypeExists = await db.getFirstAsync<{ c: number }>(
+            `SELECT COUNT(*) as c FROM DeviceOptions WHERE DeviceType = 'Switch' AND FieldName = 'SwitchType' AND OptionValue = '16-Port'`
+        );
+        if (switchTypeExists && switchTypeExists.c === 0) {
+            await db.runAsync(
+                `INSERT INTO DeviceOptions (DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsActive)
+                 VALUES ('Switch', 'SwitchType', '16-Port', '16-Port', 3, 1)`
+            );
+        }
+
+        // CameraStatus: update labels VMS→VMS Live, Local→Local Live
+        await db.runAsync(
+            `UPDATE DeviceOptions SET OptionLabel = 'VMS Live', UpdatedAt = CURRENT_TIMESTAMP
+             WHERE DeviceType = 'Camera' AND FieldName = 'CameraStatus' AND OptionLabel = 'VMS' AND OptionValue = 'VMS'`
+        );
+        await db.runAsync(
+            `UPDATE DeviceOptions SET OptionLabel = 'Local Live', UpdatedAt = CURRENT_TIMESTAMP
+             WHERE DeviceType = 'Camera' AND FieldName = 'CameraStatus' AND OptionLabel = 'Local' AND OptionValue = 'Local'`
+        );
+
+        // SwitchStatus: update labels VMS→VMS Live, Local→Local Live
+        await db.runAsync(
+            `UPDATE DeviceOptions SET OptionLabel = 'VMS Live', UpdatedAt = CURRENT_TIMESTAMP
+             WHERE DeviceType = 'Switch' AND FieldName = 'SwitchStatus' AND OptionLabel = 'VMS' AND OptionValue = 'VMS'`
+        );
+        await db.runAsync(
+            `UPDATE DeviceOptions SET OptionLabel = 'Local Live', UpdatedAt = CURRENT_TIMESTAMP
+             WHERE DeviceType = 'Switch' AND FieldName = 'SwitchStatus' AND OptionLabel = 'Local' AND OptionValue = 'Local'`
+        );
+
+        // SwitchMake: update Allied → Allied Telesis (label only)
+        await db.runAsync(
+            `UPDATE DeviceOptions SET OptionLabel = 'Allied Telesis', UpdatedAt = CURRENT_TIMESTAMP
+             WHERE DeviceType = 'Switch' AND FieldName = 'SwitchMake' AND OptionValue = 'Allied'`
+        );
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — device options migration failed (non-fatal):", e);
+    }
 }

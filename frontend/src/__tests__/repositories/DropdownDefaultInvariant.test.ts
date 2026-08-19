@@ -544,7 +544,7 @@ describe("Dropdown default invariant: COUNT(IsDefault=1) <= 1 per dropdown", () 
         String(c[0]).includes("IsDefault") &&
         String(c[0]).includes("OptionLabel")
       );
-      expect(deviceOptionUpdates.length).toBe(43);
+      expect(deviceOptionUpdates.length).toBe(50);
       for (const call of deviceOptionUpdates) {
         expect(String(call[0])).toContain("IsDefault = 0");
       }

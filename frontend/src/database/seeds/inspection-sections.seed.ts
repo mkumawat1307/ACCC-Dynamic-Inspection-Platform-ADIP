@@ -43,8 +43,8 @@ export async function seedInspectionSections() {
         },
         {
             key: "junction_box",
-            name: "Junction Box and Cabling",
-            description: "JB Details",
+            name: "Junction Box and Power Cable",
+            description: "JB Details and Power Cable Details",
             icon: "cube",
             repeatable: 0,
         },

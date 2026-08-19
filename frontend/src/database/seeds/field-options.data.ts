@@ -36,6 +36,12 @@ export const fieldOptions: FieldOptionSeed[] = [
     OptionValue: "Not Visible",
     DisplayOrder: 4,
   },
+  {
+    FieldKey: "foundation_cond",
+    OptionLabel: "Not Installed",
+    OptionValue: "Not Installed",
+    DisplayOrder: 5,
+  },
 
   // =====================================================
   // Pole Availability (pole_avail)
@@ -43,13 +49,13 @@ export const fieldOptions: FieldOptionSeed[] = [
 
   {
     FieldKey: "pole_avail",
-    OptionLabel: "Yes",
+    OptionLabel: "Installed",
     OptionValue: "Yes",
     DisplayOrder: 1,
   },
   {
     FieldKey: "pole_avail",
-    OptionLabel: "No",
+    OptionLabel: "Not Installed",
     OptionValue: "No",
     DisplayOrder: 2,
   },
@@ -95,38 +101,38 @@ export const fieldOptions: FieldOptionSeed[] = [
 
   {
     FieldKey: "pole_status",
-    OptionLabel: "VMS",
+    OptionLabel: "VMS Live",
     OptionValue: "VMS",
     DisplayOrder: 1,
   },
   {
     FieldKey: "pole_status",
-    OptionLabel: "Local",
+    OptionLabel: "Local Live",
     OptionValue: "Local",
     DisplayOrder: 2,
   },
   {
     FieldKey: "pole_status",
-    OptionLabel: "In Stock",
-    OptionValue: "In Stock",
-    DisplayOrder: 3,
-  },
-  {
-    FieldKey: "pole_status",
-    OptionLabel: "Dismantled",
-    OptionValue: "Dismantled",
-    DisplayOrder: 4,
-  },
-  {
-    FieldKey: "pole_status",
     OptionLabel: "Non-Live",
     OptionValue: "Non-Live",
-    DisplayOrder: 5,
+    DisplayOrder: 3,
   },
   {
     FieldKey: "pole_status",
     OptionLabel: "Not Verified",
     OptionValue: "Not Verified",
+    DisplayOrder: 4,
+  },
+  {
+    FieldKey: "pole_status",
+    OptionLabel: "Stock",
+    OptionValue: "In Stock",
+    DisplayOrder: 5,
+  },
+  {
+    FieldKey: "pole_status",
+    OptionLabel: "Dismantled",
+    OptionValue: "Dismantled",
     DisplayOrder: 6,
   },
 
@@ -203,6 +209,12 @@ export const fieldOptions: FieldOptionSeed[] = [
     OptionLabel: "Not Verified",
     OptionValue: "Not Verified",
     DisplayOrder: 4,
+  },
+  {
+    FieldKey: "cable_status",
+    OptionLabel: "Damage",
+    OptionValue: "Damage",
+    DisplayOrder: 5,
   },
 
   // =====================================================
@@ -372,6 +384,12 @@ export const fieldOptions: FieldOptionSeed[] = [
     OptionValue: "Non-Powered",
     DisplayOrder: 2,
   },
+  {
+    FieldKey: "meter_power_status",
+    OptionLabel: "Tapping",
+    OptionValue: "Tapping",
+    DisplayOrder: 3,
+  },
 
   // =====================================================
   // Connectivity Type (connectivity_type)
@@ -388,12 +406,6 @@ export const fieldOptions: FieldOptionSeed[] = [
     OptionLabel: "RF",
     OptionValue: "RF",
     DisplayOrder: 2,
-  },
-  {
-    FieldKey: "connectivity_type",
-    OptionLabel: "Local",
-    OptionValue: "Local",
-    DisplayOrder: 3,
   },
   {
     FieldKey: "connectivity_type",
