@@ -20,10 +20,6 @@ export interface CreateProjectInput {
 }
 
 export async function createProjectFlow(input: CreateProjectInput): Promise<number> {
-  logger.info(
-    `[ProjectCreate] start district=${input.districtName} project=${input.projectName}`
-  );
-
   const dbPath = getProjectDbPath(input.districtName, input.projectName);
 
   let newId: number | null = null;
@@ -47,10 +43,6 @@ export async function createProjectFlow(input: CreateProjectInput): Promise<numb
     return newId;
   } catch (error) {
     if (error instanceof ProjectAlreadyExistsError) {
-      logger.info(
-        `[ProjectCreate] duplicateDetected projectId=${error.existingProjectId ?? "unknown"}`
-      );
-      logger.info("[ProjectCreate] rejectedDuplicate");
       throw error;
     }
 

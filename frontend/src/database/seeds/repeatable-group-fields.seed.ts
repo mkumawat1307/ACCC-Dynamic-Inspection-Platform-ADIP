@@ -2,8 +2,6 @@
 
 import { getDatabase } from "../db";
 
-import { logger } from "@/src/utils/logger";
-
 export async function seedRepeatableGroupFields() {
 
     const db = await getDatabase();
@@ -14,7 +12,6 @@ export async function seedRepeatableGroupFields() {
     `);
 
     if ((existing?.Count ?? 0) > 0) {
-        logger.info("âœ… Repeatable Group Fields already seeded.");
         return;
     }
 
@@ -203,8 +200,6 @@ export async function seedRepeatableGroupFields() {
         },
     ];
 
-    logger.info("ðŸŒ± Seeding Repeatable Group Fields...");
-
     for (const field of fields) {
 
         const groupID = groupMap.get(field.group);
@@ -251,7 +246,5 @@ export async function seedRepeatableGroupFields() {
         );
 
     }
-
-    logger.info("âœ… Repeatable Group Fields Seeded.");
 
 }

@@ -1,6 +1,5 @@
 import { Platform } from "react-native";
 import { getDownloadStorageNative, DownloadStorageNative } from "@/modules/download-storage/src";
-import { logger } from "@/src/utils/logger";
 
 const native = getDownloadStorageNative();
 
@@ -31,7 +30,6 @@ export const downloadStorage = {
     base64: string
   ): Promise<string> {
     const uri = await requireNative().writeBase64(relativePath, fileName, mimeType, base64);
-    logger.info(`[Storage] fileSaved path=${uri}`);
     return uri;
   },
 
@@ -42,7 +40,6 @@ export const downloadStorage = {
     text: string
   ): Promise<string> {
     const uri = await requireNative().writeUtf8(relativePath, fileName, mimeType, text);
-    logger.info(`[Storage] fileSaved path=${uri}`);
     return uri;
   },
 
@@ -60,7 +57,6 @@ export const downloadStorage = {
 
   async renameFile(uri: string, newFileName: string): Promise<string | null> {
     const renamedUri = await requireNative().renameFile(uri, newFileName);
-    logger.info(`[Storage] fileRenamed old=${uri} new=${renamedUri ?? "missing"}`);
     return renamedUri;
   },
 

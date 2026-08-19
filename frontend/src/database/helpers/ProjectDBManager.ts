@@ -6,7 +6,6 @@ import {
   clearActiveProject,
   getDatabase,
 } from "../db";
-import { logger } from "@/src/utils/logger";
 import { createProjectSchema, migrateProjectSchema } from "../schema";
 import { buildProjectFolderLabel } from "@/src/utils/folderNaming";
 import { buildIdentitySeed } from "../projectIdentity";
@@ -115,7 +114,6 @@ export async function createProjectDb(
   await seedDashboardCards(projectId);
 
   await clearActiveProject();
-  logger.debug(`✅ [ProjectDBManager] Project created: ${projectName}`);
 }
 
 export async function cloneProjectDb(
@@ -260,7 +258,6 @@ export async function cloneProjectDb(
   } finally {
     await clearActiveProject();
   }
-  logger.debug(`✅ [ProjectDBManager] Project cloned: ${projectName}`);
 }
 
 export async function openProjectDb(dbPath: string, projectId: number): Promise<void> {
@@ -288,7 +285,6 @@ export async function updateProjectInspectorName(
   } finally {
     await clearActiveProject();
   }
-  logger.debug(`[ProjectDBManager] Inspector name synced to inspections: ${dbPath}`);
 }
 
 export async function deleteProjectDb(dbPath: string): Promise<void> {
@@ -301,15 +297,13 @@ export async function deleteProjectDb(dbPath: string): Promise<void> {
 export async function listProjectFolders(): Promise<string[]> {
   try {
     await FileSystem.makeDirectoryAsync(getProjectsBasePath(), { intermediates: true });
-  } catch (e) {
-    logger.debug("[ProjectDBManager] Ensuring projects folder (non-fatal):", e);
+  } catch {
   }
 
   let items: string[];
   try {
     items = await FileSystem.readDirectoryAsync(getProjectsBasePath());
-  } catch (e) {
-    logger.debug("[ProjectDBManager] readDirectoryAsync failed:", e);
+  } catch {
     return [];
   }
 

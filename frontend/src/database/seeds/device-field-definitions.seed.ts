@@ -1,6 +1,5 @@
 import { getDatabase } from "../db";
 
-import { logger } from "@/src/utils/logger";
 export async function seedDeviceFieldDefinitions() {
   const db = await getDatabase();
 
@@ -37,7 +36,5 @@ export async function seedDeviceFieldDefinitions() {
       );
     }
   });
-
-  logger.info("✅ Seeded DeviceFieldDefinitions");
 }
 

@@ -33,10 +33,8 @@ export class PoleRenameService {
     newPoleId: string,
     options: PoleRenameOptions
   ): Promise<PoleRenameResult> {
-    logger.debug(`[PoleRename] start old=${oldPoleId} new=${newPoleId}`);
 
     const photos = await PhotoRepository.getByInspection(inspectionId);
-    logger.debug(`[PoleRename] photosFound=${photos.length}`);
 
     const renames: PendingRename[] = [];
     let missingFiles = 0;
@@ -59,7 +57,6 @@ export class PoleRenameService {
             continue;
           }
           renames.push({ photo, newFileName, newFilePath });
-          logger.debug(`[PoleRename] fileRenamed old=${photo.FileName} new=${newFileName}`);
         } catch (error) {
           logger.error(`[PoleRename] renameFailed photo=${photo.PhotoID} old=${photo.FileName}:`, error);
         }
@@ -119,10 +116,6 @@ export class PoleRenameService {
       }
       throw error;
     }
-
-    logger.debug(`[PoleRename] dbUpdated=${renames.length}`);
-    logger.debug("[PoleRename] historyInserted");
-    logger.debug("[PoleRename] success");
 
     InspectionDataBus.emitInspectionsChanged(projectId ?? 0);
 

@@ -2,8 +2,6 @@
 
 import { getDatabase } from "../db";
 
-import { logger } from "@/src/utils/logger";
-
 export async function seedInspectionSections() {
 
     const db = await getDatabase();
@@ -14,7 +12,6 @@ export async function seedInspectionSections() {
     `);
 
     if ((existing?.Count ?? 0) > 0) {
-        logger.info("âœ… Inspection Sections already seeded.");
         return;
     }
 
@@ -28,8 +25,6 @@ export async function seedInspectionSections() {
     if (!template) {
         throw new Error("Default Inspection Template not found.");
     }
-
-    logger.info("ðŸŒ± Seeding Inspection Sections...");
 
     const sections = [
         {
@@ -140,8 +135,6 @@ export async function seedInspectionSections() {
         );
 
     }
-
-    logger.info("âœ… Inspection Sections Seeded.");
 
 }
 

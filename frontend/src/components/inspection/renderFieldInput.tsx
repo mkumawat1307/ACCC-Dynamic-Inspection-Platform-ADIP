@@ -249,17 +249,15 @@ export const FieldInput: React.FC<FieldInputProps> = ({
             ]}
             placeholderStyle={styles.placeholderStyle}
             selectedTextStyle={styles.selectedTextStyle}
-            inputSearchStyle={styles.searchInputStyle}
             iconStyle={styles.iconStyle}
             data={options}
-            search
+            search={false}
             maxHeight={350}
             labelField="label"
             valueField="value"
             placeholder={
               placeholder || "Select"
             }
-            searchPlaceholder="Search..."
             value={value}
             disable={!editable}
             onFocus={handleDropdownFocus}

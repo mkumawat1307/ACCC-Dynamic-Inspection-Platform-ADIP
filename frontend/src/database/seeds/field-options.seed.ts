@@ -2,8 +2,6 @@
 
 import { getDatabase } from "../db";
 
-import { logger } from "@/src/utils/logger";
-
 import { fieldOptions } from "./field-options.data";
 
 export async function seedFieldOptions() {
@@ -15,11 +13,8 @@ export async function seedFieldOptions() {
   `);
 
   if ((existing?.Count ?? 0) > 0) {
-    logger.info("âœ… Field Options already seeded.");
     return;
   }
-
-  logger.info("ðŸŒ± Seeding Field Options...");
 
   await db.withTransactionAsync(async () => {
     for (const option of fieldOptions) {
@@ -36,6 +31,4 @@ export async function seedFieldOptions() {
       }
     }
   });
-
-  logger.info("âœ… Field Options Seeded.");
 }

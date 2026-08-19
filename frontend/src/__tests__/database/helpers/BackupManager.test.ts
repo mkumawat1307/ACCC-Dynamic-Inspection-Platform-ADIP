@@ -187,7 +187,6 @@ describe("BackupManager backupNow", () => {
   it("writes the backup zip straight to Download/ACCC Dynamic Inspection without a folder picker", async () => {
     seedGlobalDb("GLOBAL");
     seedSidecar("Projects/Alpha/inspection.db", "ALPHA-DB");
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await BackupManager.backupNow();
 
@@ -199,9 +198,6 @@ describe("BackupManager backupNow", () => {
       expect.any(String)
     );
     expect(downloadStorage.ensureFolder).toHaveBeenCalledWith("");
-    expect(logSpy).toHaveBeenCalledWith("[Backup] start");
-    expect(logSpy).toHaveBeenCalledWith("[Backup] success");
-    logSpy.mockRestore();
   });
 
   it("includes global DB sidecars when present", async () => {
@@ -417,21 +413,16 @@ describe("BackupManager restoreBackupFromUri", () => {
   });
 
   it("fails when a picked file:// URI does not exist", async () => {
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     const missingUri = "file:///mock/downloads/missing.zip";
 
     const result = await BackupManager.restoreBackupFromUri(missingUri, async () => true);
 
     expect(result.ok).toBe(false);
     expect(result.message).toContain("does not exist");
-    expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + missingUri);
     expect(FileSystem.copyAsync).not.toHaveBeenCalled();
-    logSpy.mockRestore();
   });
 
   it("fails when a content:// pick cannot be copied to temp", async () => {
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
-
     const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
 
     expect(result.ok).toBe(false);
@@ -440,7 +431,6 @@ describe("BackupManager restoreBackupFromUri", () => {
       from: CONTENT_URI,
       to: CACHE_URI,
     });
-    logSpy.mockRestore();
   });
 
   it("copies a content:// pick to cache, validates, and restores", async () => {
@@ -448,7 +438,6 @@ describe("BackupManager restoreBackupFromUri", () => {
       "SQLite/accc_global.db": [1, 2, 3, 4],
       "Projects/Alpha/inspection.db": [9, 8, 7],
     });
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     const dbModule = require("@/src/database/db");
 
     const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
@@ -459,10 +448,6 @@ describe("BackupManager restoreBackupFromUri", () => {
       to: CACHE_URI,
     });
     expect(dbModule.closeAllDatabases).toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + CONTENT_URI);
-    expect(logSpy).toHaveBeenCalledWith("[Restore] projectDb=Alpha");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] replaceGlobalDb");
-    expect(logSpy).toHaveBeenCalledWith("[Restore] replaceProjectDb=Alpha");
 
     const globalB64 = await FileSystem.readAsStringAsync(`${DOC}SQLite/accc_global.db`, {
       encoding: FileSystem.EncodingType.Base64,
@@ -470,7 +455,6 @@ describe("BackupManager restoreBackupFromUri", () => {
     expect(Uint8Array.from(atob(globalB64), (c) => c.charCodeAt(0))).toEqual(
       new Uint8Array([1, 2, 3, 4])
     );
-    logSpy.mockRestore();
   });
 
   it("restores directly from a file:// URI without copying", async () => {
@@ -480,14 +464,11 @@ describe("BackupManager restoreBackupFromUri", () => {
       type: "file",
       content: await zipBase64({ "SQLite/accc_global.db": Uint8Array.from([7, 7]) }),
     });
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await BackupManager.restoreBackupFromUri(localUri, async () => true);
 
     expect(result.ok).toBe(true);
     expect(FileSystem.copyAsync).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith("[Import] selectedUri=" + localUri);
-    logSpy.mockRestore();
   });
 
   it("rejects a picked file that is not a zip", async () => {

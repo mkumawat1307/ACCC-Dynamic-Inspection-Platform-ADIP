@@ -1,6 +1,5 @@
 import { getDatabase } from "../db";
 import { CardModeValue } from "@/src/models/DashboardCard";
-import { logger } from "@/src/utils/logger";
 
 export interface DashboardCardSeed {
   CardKey: string;
@@ -52,11 +51,8 @@ export async function seedDashboardCards(projectId: number): Promise<void> {
 
   const missing = DEFAULT_SECTIONED_CARDS.filter((c) => !existingKeys.has(c.CardKey));
   if (missing.length === 0) {
-    logger.info("✅ Dashboard cards already seeded.");
     return;
   }
-
-  logger.info(`🌱 Seeding ${missing.length} default dashboard cards...`);
 
   await db.withTransactionAsync(async () => {
     for (const card of missing) {
@@ -85,6 +81,4 @@ export async function seedDashboardCards(projectId: number): Promise<void> {
       );
     }
   });
-
-  logger.info("✅ Default dashboard cards seeded.");
 }

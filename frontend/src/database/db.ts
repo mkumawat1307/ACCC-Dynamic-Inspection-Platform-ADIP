@@ -21,8 +21,7 @@ async function closeCurrentDb(): Promise<void> {
   currentDbTarget = null;
   try {
     await old.closeAsync();
-  } catch (e) {
-    logger.debug(`[db.ts] closeCurrentDb — closeAsync failed (non-fatal):`, e);
+  } catch {
   }
 }
 
@@ -40,8 +39,7 @@ async function ensureGlobalDb(): Promise<SQLite.SQLiteDatabase> {
     await database.execAsync(`PRAGMA journal_mode = DELETE;`);
     await database.execAsync(`PRAGMA foreign_keys = ON;`);
     await database.execAsync(`PRAGMA synchronous = NORMAL;`);
-  } catch (e) {
-    logger.debug(`[db.ts] ensureGlobalDb — PRAGMA failed (non-fatal):`, e);
+  } catch {
   }
   return database;
 }
@@ -68,7 +66,6 @@ async function migrateLegacyProjectDb(dbPath: string): Promise<void> {
     for (const f of dbFiles) {
       await FileSystem.moveAsync({ from: `${legacyDir}/${f}`, to: `${targetDir}/${f}` });
     }
-    logger.debug(`[db.ts] Migrated legacy project DB to ${cleaned}`);
   } catch {
     // legacy migration skipped — non-fatal
   }
@@ -87,8 +84,7 @@ async function ensureProjectDb(dbPath: string): Promise<SQLite.SQLiteDatabase> {
     await database.execAsync(`PRAGMA journal_mode = WAL;`);
     await database.execAsync(`PRAGMA foreign_keys = ON;`);
     await database.execAsync(`PRAGMA synchronous = NORMAL;`);
-  } catch (e) {
-    logger.debug(`[db.ts] ensureProjectDb — PRAGMA failed (non-fatal):`, e);
+  } catch {
   }
   return database;
 }

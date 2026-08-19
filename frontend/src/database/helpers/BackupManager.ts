@@ -71,14 +71,10 @@ async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
 
 export async function backupNow(): Promise<BackupResult> {
   try {
-    logger.info("[Backup] start");
     await ensureRootFolder();
     const files = await collectDbFiles();
     const zip = await zipBase64(files);
-    const fileUri = await downloadStorage.writeBase64("", BACKUP_FILE_NAME, "application/zip", zip);
-    logger.info("[Storage:backup] path=" + fileUri);
-    logger.info(`[BackupManager] Backup created at ${buildBackupDisplayPath()}`);
-    logger.info("[Backup] success");
+    await downloadStorage.writeBase64("", BACKUP_FILE_NAME, "application/zip", zip);
     return { ok: true, message: "Backup created", path: buildBackupDisplayPath() };
   } catch (e) {
     logger.error("[BackupManager] backupNow failed:", e);
@@ -146,11 +142,6 @@ async function restoreEntries(entries: Record<string, Uint8Array>): Promise<void
     });
     const m = relPath.match(/^Projects\/([^/]+)\//);
     if (m) restoredFolders.add(m[1]);
-    if (relPath === `SQLite/${GLOBAL_DATABASE_NAME}`) {
-      logger.debug("[Restore] replaceGlobalDb");
-    } else if (m && relPath.endsWith("inspection.db")) {
-      logger.debug(`[Restore] replaceProjectDb=${m[1]}`);
-    }
   }
 
   const onDisk = await listProjectFolders();
@@ -195,9 +186,6 @@ function validateRestoreEntries(entries: Record<string, Uint8Array>): {
       };
     }
   }
-  for (const folder of projectFolders) {
-    logger.debug(`[Restore] projectDb=${folder}`);
-  }
 
   return { ok: true };
 }
@@ -230,7 +218,6 @@ export async function restoreBackup(
     await restoreEntries(entries);
     const count = await reloadAfterRestore();
 
-    logger.info("[BackupManager] Restore completed.");
     return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
   } catch (e) {
     logger.error("[BackupManager] restoreBackup failed:", e);
@@ -243,8 +230,6 @@ export async function restoreBackupFromUri(
   onConfirm: () => Promise<boolean>
 ): Promise<BackupResult> {
   try {
-    logger.debug("[Import] selectedUri=" + selectedUri);
-
     // Android's ZIP file picker returns content:// URIs that the legacy
     // FileSystem cannot always stat. Always copy them to a local temp file
     // first, then validate the temp file (a reliable file:// path).
@@ -298,8 +283,6 @@ export async function restoreBackupFromUri(
 
     return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
   } catch (e) {
-    logger.info("[Import] restoreFailed=" + String(e));
-    logger.info("[Restore] failed=" + String(e));
     return { ok: false, message: String(e) };
   }
 }

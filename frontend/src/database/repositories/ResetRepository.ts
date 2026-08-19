@@ -1,5 +1,4 @@
 import { getDatabase } from "../db";
-import { logger } from "@/src/utils/logger";
 import { poleInspectionFields } from "../seeds/pole-inspection-data";
 import { fieldOptions } from "../seeds/field-options.data";
 
@@ -213,7 +212,5 @@ export class ResetRepository {
         );
       }
     });
-
-    logger.info("Reset to Default completed successfully");
   }
 }

@@ -60,9 +60,6 @@ describe("createProjectFlow", () => {
       5
     );
     expect(mockEnsureProjectFolder).toHaveBeenCalledWith("Jaipur_AMC 2026");
-    expect(logger.info).toHaveBeenCalledWith(
-      "[ProjectCreate] start district=Jaipur project=AMC 2026"
-    );
   });
 
   it("logs rejectedDuplicate and creates nothing on a duplicate", async () => {
@@ -75,8 +72,6 @@ describe("createProjectFlow", () => {
     expect(mockCreateProjectDb).not.toHaveBeenCalled();
     expect(mockEnsureProjectFolder).not.toHaveBeenCalled();
     expect(mockDeleteProjectDb).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith("[ProjectCreate] duplicateDetected projectId=3");
-    expect(logger.info).toHaveBeenCalledWith("[ProjectCreate] rejectedDuplicate");
   });
 
   it("cleans up only the failed attempt's own resources on createProjectDb failure", async () => {

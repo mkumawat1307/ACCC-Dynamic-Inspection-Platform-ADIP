@@ -107,11 +107,6 @@ describe("PoleRenameService", () => {
       [inspectionId]
     );
     expect(history).toEqual([{ OldPoleId: "SIK001", NewPoleId: "SIK101" }]);
-
-    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] start old=SIK001 new=SIK101");
-    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] photosFound=2");
-    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] dbUpdated=2");
-    expect(logger.debug).toHaveBeenCalledWith("[PoleRename] success");
   });
 
   it("skips missing photo files without failing the operation", async () => {
