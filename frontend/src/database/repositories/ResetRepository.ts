@@ -103,10 +103,12 @@ export class ResetRepository {
     const db = await getDatabase();
 
     await db.withTransactionAsync(async () => {
+      // 1. Deactivate all non-default sections
       await db.runAsync(
         `UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE IsDefault = 0`
       );
 
+      // 2. Deactivate all fields not in canonical list
       const defaultFieldKeys = poleInspectionFields.map((f) => f.FieldKey);
       const fieldPlaceholders = defaultFieldKeys.map(() => "?").join(",");
       await db.runAsync(
@@ -114,21 +116,80 @@ export class ResetRepository {
         defaultFieldKeys
       );
 
+      // 3. Deactivate non-default device types/options
       await db.runAsync(
         `UPDATE DeviceFieldDefinitions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE DeviceType NOT IN (?, ?)`,
         DEFAULT_DEVICE_TYPES
       );
-
       await db.runAsync(
         `UPDATE DeviceOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE DeviceType NOT IN (?, ?)`,
         DEFAULT_DEVICE_TYPES
       );
-
       await db.runAsync(
         `DELETE FROM ProjectDeviceTypes WHERE DeviceType NOT IN (?, ?)`,
         DEFAULT_DEVICE_TYPES
       );
 
+      // 4. Reconcile duplicate sections: consolidate to one canonical row per SectionKey
+      //    For each canonical SectionKey, find all rows (active or inactive) and keep only one.
+      for (const key of DEFAULT_SECTION_KEYS) {
+        const allSections = await db.getAllAsync<{ SectionID: number; IsDefault: number }>(
+          `SELECT SectionID, IsDefault FROM InspectionSections WHERE SectionKey = ? ORDER BY IsDefault DESC, SectionID ASC`,
+          [key]
+        );
+
+        if (allSections.length <= 1) continue;
+
+        const canonical = allSections[0];
+        const duplicates = allSections.slice(1);
+
+        for (const dup of duplicates) {
+          // Move any fields from duplicate section to canonical
+          await db.runAsync(
+            `UPDATE InspectionFields SET SectionID = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionID = ?`,
+            [canonical.SectionID, dup.SectionID]
+          );
+          // Delete duplicate section
+          await db.runAsync(
+            `DELETE FROM InspectionSections WHERE SectionID = ?`,
+            [dup.SectionID]
+          );
+        }
+      }
+
+      // 5. Reconcile duplicate fields: consolidate to one canonical row per FieldKey
+      //    Remap InspectionValues from duplicate FieldIDs to canonical, then delete duplicates.
+      for (const field of poleInspectionFields) {
+        const allFields = await db.getAllAsync<{ FieldID: number; SectionID: number; IsActive: number }>(
+          `SELECT FieldID, SectionID, IsActive FROM InspectionFields WHERE FieldKey = ? ORDER BY IsActive DESC, FieldID ASC`,
+          [field.FieldKey]
+        );
+
+        if (allFields.length <= 1) continue;
+
+        const canonical = allFields[0];
+        const duplicates = allFields.slice(1);
+
+        for (const dup of duplicates) {
+          // Remap InspectionValues referencing duplicate to canonical
+          await db.runAsync(
+            `UPDATE InspectionValues SET FieldID = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldID = ?`,
+            [canonical.FieldID, dup.FieldID]
+          );
+          // Delete duplicate FieldOptions
+          await db.runAsync(
+            `DELETE FROM FieldOptions WHERE FieldID = ?`,
+            [dup.FieldID]
+          );
+          // Delete duplicate field
+          await db.runAsync(
+            `DELETE FROM InspectionFields WHERE FieldID = ?`,
+            [dup.FieldID]
+          );
+        }
+      }
+
+      // 6. Reactivate and update canonical sections
       for (const key of DEFAULT_SECTION_KEYS) {
         const props = DEFAULT_SECTION_PROPS[key];
         await db.runAsync(
@@ -145,6 +206,7 @@ export class ResetRepository {
       );
       const sectionIdMap = new Map(sectionKeyToId.map((r) => [r.SectionKey, r.SectionID]));
 
+      // 7. Reactivate and update canonical fields
       for (const field of poleInspectionFields) {
         const sectionId = sectionIdMap.get(field.SectionKey);
         if (!sectionId) continue;

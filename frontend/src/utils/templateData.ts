@@ -426,49 +426,118 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
         templateIdByName.set(template.TemplateName, templateId);
 
         for (const section of template.sections) {
-          const sectionResult = await db.runAsync(
-            `INSERT INTO InspectionSections
-             (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1)`,
-            [
-              templateId,
-              section.SectionName,
-              section.SectionKey,
-              section.Description ?? null,
-              section.Icon ?? null,
-              section.DisplayOrder,
-              section.IsRepeatable,
-              section.IsVisible ?? 1,
-            ]
+          const existingSection = await db.getFirstAsync<{ SectionID: number }>(
+            `SELECT SectionID FROM InspectionSections WHERE TemplateID = ? AND SectionKey = ?`,
+            [templateId, section.SectionKey]
           );
-          const sectionId = sectionResult.lastInsertRowId;
 
-          for (const field of section.fields) {
-            const fieldResult = await db.runAsync(
-              `INSERT INTO InspectionFields
-               (SectionID, FieldName, FieldKey, FieldType, Placeholder, DefaultValue,
-                HelpText, ValidationRule, DisplayOrder, IsRequired, IsVisible, IsReadOnly,
-                IsSystemField, Width, IsActive)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+          let sectionId: number;
+          if (existingSection) {
+            sectionId = existingSection.SectionID;
+            await db.runAsync(
+              `UPDATE InspectionSections
+               SET SectionName = ?, Description = ?, Icon = ?, DisplayOrder = ?,
+                   IsRepeatable = ?, IsVisible = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
+               WHERE SectionID = ?`,
               [
+                section.SectionName,
+                section.Description ?? null,
+                section.Icon ?? null,
+                section.DisplayOrder,
+                section.IsRepeatable,
+                section.IsVisible ?? 1,
                 sectionId,
-                field.FieldName,
-                field.FieldKey,
-                normalizeFieldType(field.FieldType),
-                field.Placeholder ?? null,
-                field.DefaultValue ?? null,
-                field.HelpText ?? null,
-                field.ValidationRule ?? null,
-                field.DisplayOrder,
-                field.IsRequired,
-                field.IsVisible,
-                field.IsReadOnly,
-                field.IsSystemField ?? 0,
-                field.Width ?? 12,
               ]
             );
-            const fieldId = fieldResult.lastInsertRowId;
+          } else {
+            const sectionResult = await db.runAsync(
+              `INSERT INTO InspectionSections
+               (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1)`,
+              [
+                templateId,
+                section.SectionName,
+                section.SectionKey,
+                section.Description ?? null,
+                section.Icon ?? null,
+                section.DisplayOrder,
+                section.IsRepeatable,
+                section.IsVisible ?? 1,
+              ]
+            );
+            sectionId = sectionResult.lastInsertRowId;
+          }
 
+          const importedFieldKeys = section.fields.map((f) => f.FieldKey);
+          if (importedFieldKeys.length > 0) {
+            const fkPlaceholders = importedFieldKeys.map(() => "?").join(",");
+            await db.runAsync(
+              `UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
+               WHERE SectionID = ? AND FieldKey NOT IN (${fkPlaceholders})`,
+              [sectionId, ...importedFieldKeys]
+            );
+          }
+
+          for (const field of section.fields) {
+            const existingField = await db.getFirstAsync<{ FieldID: number }>(
+              `SELECT FieldID FROM InspectionFields WHERE SectionID = ? AND FieldKey = ?`,
+              [sectionId, field.FieldKey]
+            );
+
+            let fieldId: number;
+            if (existingField) {
+              fieldId = existingField.FieldID;
+              await db.runAsync(
+                `UPDATE InspectionFields
+                 SET FieldName = ?, FieldType = ?, Placeholder = ?, DefaultValue = ?,
+                     HelpText = ?, ValidationRule = ?, DisplayOrder = ?, IsRequired = ?,
+                     IsVisible = ?, IsReadOnly = ?, IsSystemField = ?, Width = ?,
+                     IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
+                 WHERE FieldID = ?`,
+                [
+                  field.FieldName,
+                  normalizeFieldType(field.FieldType),
+                  field.Placeholder ?? null,
+                  field.DefaultValue ?? null,
+                  field.HelpText ?? null,
+                  field.ValidationRule ?? null,
+                  field.DisplayOrder,
+                  field.IsRequired,
+                  field.IsVisible,
+                  field.IsReadOnly,
+                  field.IsSystemField ?? 0,
+                  field.Width ?? 12,
+                  fieldId,
+                ]
+              );
+            } else {
+              const fieldResult = await db.runAsync(
+                `INSERT INTO InspectionFields
+                 (SectionID, FieldName, FieldKey, FieldType, Placeholder, DefaultValue,
+                  HelpText, ValidationRule, DisplayOrder, IsRequired, IsVisible, IsReadOnly,
+                  IsSystemField, Width, IsActive)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                [
+                  sectionId,
+                  field.FieldName,
+                  field.FieldKey,
+                  normalizeFieldType(field.FieldType),
+                  field.Placeholder ?? null,
+                  field.DefaultValue ?? null,
+                  field.HelpText ?? null,
+                  field.ValidationRule ?? null,
+                  field.DisplayOrder,
+                  field.IsRequired,
+                  field.IsVisible,
+                  field.IsReadOnly,
+                  field.IsSystemField ?? 0,
+                  field.Width ?? 12,
+                ]
+              );
+              fieldId = fieldResult.lastInsertRowId;
+            }
+
+            await db.runAsync(`DELETE FROM FieldOptions WHERE FieldID = ?`, [fieldId]);
             for (const option of field.options) {
               await db.runAsync(
                 `INSERT INTO FieldOptions (FieldID, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
