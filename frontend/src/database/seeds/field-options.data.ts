@@ -165,13 +165,13 @@ export const fieldOptions: FieldOptionSeed[] = [
 
   {
     FieldKey: "power_cable",
-    OptionLabel: "Yes",
+    OptionLabel: "Installed",
     OptionValue: "Yes",
     DisplayOrder: 1,
   },
   {
     FieldKey: "power_cable",
-    OptionLabel: "No",
+    OptionLabel: "Not Installed",
     OptionValue: "No",
     DisplayOrder: 2,
   },

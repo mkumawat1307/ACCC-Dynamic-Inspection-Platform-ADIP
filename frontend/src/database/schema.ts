@@ -488,6 +488,27 @@ export async function migrateProjectSchema(projectId: number) {
         logger.warn("[schema] migrateProjectSchema — pole_avail label migration failed (non-fatal):", e);
     }
 
+    // power_cable option labels: Yes→Installed, No→Not Installed
+    try {
+        const powerCableField = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'power_cable' LIMIT 1`
+        );
+        if (powerCableField) {
+            await db.runAsync(
+                `UPDATE FieldOptions SET OptionLabel = 'Installed', UpdatedAt = CURRENT_TIMESTAMP
+                 WHERE FieldID = ? AND OptionValue = 'Yes' AND OptionLabel != 'Installed'`,
+                [powerCableField.FieldID]
+            );
+            await db.runAsync(
+                `UPDATE FieldOptions SET OptionLabel = 'Not Installed', UpdatedAt = CURRENT_TIMESTAMP
+                 WHERE FieldID = ? AND OptionValue = 'No' AND OptionLabel != 'Not Installed'`,
+                [powerCableField.FieldID]
+            );
+        }
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — power_cable label migration failed (non-fatal):", e);
+    }
+
     // pole_status option labels and order update
     try {
         const poleStatusField = await db.getFirstAsync<{ FieldID: number }>(
