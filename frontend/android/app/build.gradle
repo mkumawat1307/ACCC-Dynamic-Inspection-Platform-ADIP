@@ -113,7 +113,7 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file(keystoreProperties['storeFile'] ?: 'debug.keystore')
+            storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile'] ?: 'debug.keystore'}")
             storePassword keystoreProperties['storePassword'] ?: ''
             keyAlias keystoreProperties['keyAlias'] ?: ''
             keyPassword keystoreProperties['keyPassword'] ?: ''
