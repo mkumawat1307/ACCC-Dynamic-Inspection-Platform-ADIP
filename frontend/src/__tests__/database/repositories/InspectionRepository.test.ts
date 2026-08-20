@@ -122,15 +122,6 @@ describe("InspectionRepository", () => {
     });
   });
 
-  describe("getAllSections", () => {
-    it("returns sections including non-default ones", async () => {
-      mockDb.getAllAsync.mockResolvedValue([sampleSection]);
-      const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
-      const sections = await InspectionRepository.getAllSections(1);
-      expect(sections).toHaveLength(1);
-    });
-  });
-
   describe("getFieldsBySection", () => {
     it("returns visible active fields ordered by DisplayOrder", async () => {
       mockDb.getAllAsync.mockResolvedValue([sampleField]);

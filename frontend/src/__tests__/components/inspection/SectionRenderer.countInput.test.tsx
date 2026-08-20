@@ -34,6 +34,7 @@ jest.mock("@/src/database/repositories/InspectionFieldRepository", () => ({
   default: {
     getFieldsBySection: jest.fn().mockResolvedValue([countField]),
     getFieldOptions: jest.fn().mockResolvedValue([]),
+    getFieldOptionsBySection: jest.fn().mockResolvedValue(new Map()),
   },
 }));
 
@@ -42,6 +43,7 @@ jest.mock("@/src/database/repositories/InspectionValueRepository", () => ({
   default: {
     saveValue: jest.fn().mockResolvedValue(undefined),
     getValue: jest.fn().mockResolvedValue(null),
+    getValuesByInspection: jest.fn().mockResolvedValue(new Map()),
   },
 }));
 

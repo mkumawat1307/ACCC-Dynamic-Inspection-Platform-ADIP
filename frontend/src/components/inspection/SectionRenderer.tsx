@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -6,8 +7,13 @@ import React, {
 import {
   ActivityIndicator,
   StyleSheet,
+  Text,
   View,
 } from "react-native";
+
+import {
+  Button,
+} from "react-native-paper";
 
 import FieldRenderer from "./FieldRenderer";
 
@@ -40,6 +46,7 @@ export default function SectionRenderer({
 }: Props) {
   const { poleId: contextPoleId } = useInspection();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<InspectionField[]>([]);
   const [values, setValues] = useState<Record<number, string>>({});
   const [options, setOptions] = useState<Record<number, any[]>>({});
@@ -51,28 +58,34 @@ export default function SectionRenderer({
     loadSection();
   }, [sectionId, inspectionId]);
 
-  async function loadSection() {
+  const loadSection = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
 
       const sectionFields =
         await InspectionFieldRepository.getFieldsBySection(sectionId);
+
+      const [savedValues, allOptions] = await Promise.all([
+        InspectionValueRepository.getValuesByInspection(inspectionId),
+        InspectionFieldRepository.getFieldOptionsBySection(sectionId),
+      ]);
+
+      const savedMap = new Map<number, string>();
+      for (const sv of savedValues) {
+        savedMap.set(sv.FieldID, sv.FieldValue ?? "");
+      }
 
       const valueMap: Record<number, string> = {};
       const optionMap: Record<number, any[]> = {};
 
       for (const field of sectionFields) {
-        const saved =
-          await InspectionValueRepository.getValue(
-            inspectionId,
-            field.FieldID
-          );
+        const saved = savedMap.get(field.FieldID);
 
         const type = field.FieldType.toUpperCase();
         let defaultOptionValue: string | undefined;
         if (type === "DROPDOWN" || type === "PROJECT_DROPDOWN") {
-          const raw =
-            await InspectionFieldRepository.getFieldOptions(field.FieldID);
+          const raw = allOptions.get(field.FieldID) ?? [];
           optionMap[field.FieldID] = raw.map((o) => ({
             label: o.OptionLabel,
             value: o.OptionValue,
@@ -83,7 +96,7 @@ export default function SectionRenderer({
         }
 
         const resolved =
-          saved?.FieldValue ??
+          saved ??
           defaultOptionValue ??
           field.DefaultValue ??
           "";
@@ -127,10 +140,11 @@ export default function SectionRenderer({
       setDeviceCounts(counts);
     } catch (e) {
       logger.error("Error loading section:", e);
+      setError("Failed to load inspection data. Please try again.");
     } finally {
       setLoading(false);
     }
-  }
+  }, [sectionId, inspectionId, templateId]);
 
   const isFormLocked = !contextPoleId.trim();
 
@@ -170,6 +184,17 @@ export default function SectionRenderer({
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>{error}</Text>
+        <Button mode="outlined" onPress={loadSection} style={styles.retryButton}>
+          Retry
+        </Button>
       </View>
     );
   }
@@ -235,6 +260,22 @@ const styles = StyleSheet.create({
     paddingVertical: 30,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  errorContainer: {
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+
+  errorText: {
+    color: "#d32f2f",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+
+  retryButton: {
+    alignSelf: "center",
   },
 
   dynamicContainer: {

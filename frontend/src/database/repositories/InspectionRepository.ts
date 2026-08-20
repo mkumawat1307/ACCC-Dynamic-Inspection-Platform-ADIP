@@ -70,31 +70,6 @@ static async getSections(templateId?: number): Promise<InspectionSection[]> {
     return row?.Count ?? 0;
   }
 
-  static async getAllSections(templateId?: number): Promise<InspectionSection[]> {
-    const db = await getDatabase();
-
-    if (!templateId) {
-      const defaultTpl = await db.getFirstAsync<{ TemplateID: number }>(
-        `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
-      );
-      templateId = defaultTpl?.TemplateID;
-    }
-
-    if (templateId) {
-      return await db.getAllAsync<InspectionSection>(`
-        SELECT
-          SectionID,
-          SectionName,
-          SectionKey,
-          DisplayOrder
-        FROM InspectionSections
-        WHERE IsActive = 1 AND TemplateID = ?
-        ORDER BY CASE WHEN SectionKey = 'photos' THEN 2 WHEN SectionKey = 'remarks' THEN 1 ELSE 0 END, DisplayOrder;
-      `, [templateId]);
-    }
-    return [];
-  }
-
 static async getFieldsBySection(
   sectionId: number
 ): Promise<InspectionField[]> {

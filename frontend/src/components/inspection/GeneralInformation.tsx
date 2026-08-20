@@ -32,6 +32,7 @@ const [fields, setFields] = useState<InspectionField[]>([]);
 const router = useRouter();
 const [values, setValues] = useState<Record<string, string>>({});
 const [formUnlocked, setFormUnlocked] = useState(false);
+const [initError, setInitError] = useState<string | null>(null);
 const [checkingPoleId, setCheckingPoleId] = useState(false);
 const [locationResolving, setLocationResolving] = useState(false);
 const [pendingRename, setPendingRename] = useState<{
@@ -63,6 +64,7 @@ useEffect(() => {
 
 async function init() {
   try {
+    setInitError(null);
     let projectData = contextProject;
 
     // If contextProject hasn't propagated yet, wait briefly for React to flush
@@ -114,6 +116,7 @@ async function init() {
     }
   } catch (error) {
     logger.error("Init Error:", error);
+    setInitError("Failed to load inspection form. Please try again.");
   }
 }
 
@@ -297,6 +300,16 @@ useImperativeHandle(ref, () => ({
 
 return (
   <View>
+    {initError && (
+      <View style={{ padding: 16, alignItems: "center" }}>
+        <Text style={{ color: "#d32f2f", textAlign: "center", marginBottom: 12 }}>
+          {initError}
+        </Text>
+        <Button mode="outlined" onPress={() => init()}>
+          Retry
+        </Button>
+      </View>
+    )}
     {fields.map((field) => (
       <React.Fragment key={field.FieldID}>
         <FieldRenderer

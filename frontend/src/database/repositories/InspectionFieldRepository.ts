@@ -89,6 +89,28 @@ export default class InspectionFieldRepository {
     );
   }
 
+  static async getFieldOptionsBySection(sectionId: number): Promise<Map<number, FieldOption[]>> {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<FieldOption>(
+      `SELECT fo.OptionID, fo.FieldID, fo.OptionLabel, fo.OptionValue, fo.DisplayOrder, fo.IsDefault
+       FROM FieldOptions fo
+       INNER JOIN InspectionFields f ON fo.FieldID = f.FieldID
+       WHERE f.SectionID = ? AND f.IsActive = 1
+       ORDER BY fo.DisplayOrder;`,
+      [sectionId]
+    );
+    const map = new Map<number, FieldOption[]>();
+    for (const row of rows) {
+      const existing = map.get(row.FieldID);
+      if (existing) {
+        existing.push(row);
+      } else {
+        map.set(row.FieldID, [row]);
+      }
+    }
+    return map;
+  }
+
   static async getActiveTemplateFields(): Promise<{ FieldKey: string; FieldName: string }[]> {
     const db = await getDatabase();
     return await db.getAllAsync<{ FieldKey: string; FieldName: string }>(

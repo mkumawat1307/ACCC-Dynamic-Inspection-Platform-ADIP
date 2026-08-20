@@ -22,6 +22,7 @@ jest.mock("@/src/database/repositories/InspectionFieldRepository", () => ({
   default: {
     getFieldsBySection: jest.fn().mockResolvedValue([]),
     getFieldOptions: jest.fn().mockResolvedValue([]),
+    getFieldOptionsBySection: jest.fn().mockResolvedValue(new Map()),
   },
 }));
 
@@ -30,6 +31,7 @@ jest.mock("@/src/database/repositories/InspectionValueRepository", () => ({
   default: {
     saveValue: jest.fn().mockResolvedValue(undefined),
     getValue: jest.fn().mockResolvedValue(null),
+    getValuesByInspection: jest.fn().mockResolvedValue(new Map()),
   },
 }));
 
@@ -132,12 +134,15 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
     jest.clearAllMocks();
     valueRepo.saveValue.mockResolvedValue(undefined);
     valueRepo.getValue.mockResolvedValue(null);
+    valueRepo.getValuesByInspection.mockResolvedValue([]);
     fieldRepo.getFieldOptions.mockResolvedValue([]);
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map());
   });
 
   it("1. NEW dropdown field + IsDefault: saveValue called with default", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
     fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
 
     await act(async () => {
       TestRenderer.create(
@@ -163,6 +168,7 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
   it("3. EXISTING saved value wins over IsDefault", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
     fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
     valueRepo.getValue.mockResolvedValue({
       ValueID: 1,
       InspectionID: 42,
@@ -171,6 +177,14 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
       CreatedAt: "",
       UpdatedAt: "",
     });
+    valueRepo.getValuesByInspection.mockResolvedValue([{
+      ValueID: 1,
+      InspectionID: 42,
+      FieldID: 10,
+      FieldValue: "Overhead",
+      CreatedAt: "",
+      UpdatedAt: "",
+    }]);
 
     await act(async () => {
       TestRenderer.create(
@@ -191,6 +205,14 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
       CreatedAt: "",
       UpdatedAt: "",
     });
+    valueRepo.getValuesByInspection.mockResolvedValue([{
+      ValueID: 2,
+      InspectionID: 42,
+      FieldID: 12,
+      FieldValue: "Custom value",
+      CreatedAt: "",
+      UpdatedAt: "",
+    }]);
 
     await act(async () => {
       TestRenderer.create(
@@ -203,10 +225,12 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
 
   it("5. No default and no saved value: no saveValue called (empty string)", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
-    fieldRepo.getFieldOptions.mockResolvedValue([
+    const noDefaultOptions = [
       { OptionID: 7, FieldID: 10, OptionLabel: "A", OptionValue: "A", IsDefault: 0, DisplayOrder: 1 },
       { OptionID: 8, FieldID: 10, OptionLabel: "B", OptionValue: "B", IsDefault: 0, DisplayOrder: 2 },
-    ]);
+    ];
+    fieldRepo.getFieldOptions.mockResolvedValue(noDefaultOptions);
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, noDefaultOptions]]));
 
     await act(async () => {
       TestRenderer.create(
@@ -236,6 +260,10 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
       if (fieldId === 13) return createCableTypeOptions();
       return [];
     });
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([
+      [10, createDropdownOptions()],
+      [13, createCableTypeOptions()],
+    ]));
 
     await act(async () => {
       TestRenderer.create(
@@ -250,6 +278,7 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
   it("8. Default for Field A does not affect Field B", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField, textField]);
     fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
 
     await act(async () => {
       TestRenderer.create(
@@ -264,6 +293,7 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
   it("9. saveValue not called repeatedly on re-render", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
     fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
 
     let tree!: ReturnType<typeof TestRenderer.create>;
     await act(async () => {
@@ -286,6 +316,7 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
   it("10. Existing value after default change: existing value is preserved", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
     fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
     valueRepo.getValue.mockResolvedValue({
       ValueID: 1,
       InspectionID: 42,
@@ -294,6 +325,14 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
       CreatedAt: "",
       UpdatedAt: "",
     });
+    valueRepo.getValuesByInspection.mockResolvedValue([{
+      ValueID: 1,
+      InspectionID: 42,
+      FieldID: 10,
+      FieldValue: "Overhead",
+      CreatedAt: "",
+      UpdatedAt: "",
+    }]);
 
     await act(async () => {
       TestRenderer.create(
@@ -307,6 +346,7 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
   it("11. saveValue receives correct inspectionId and fieldId", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
     fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
 
     await act(async () => {
       TestRenderer.create(
@@ -320,6 +360,7 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
   it("12. Multiple new inspections: each gets its own defaults", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
     fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
 
     await act(async () => {
       TestRenderer.create(
@@ -342,10 +383,12 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
 
   it("13. Value precedence: saved > IsDefault > DefaultValue > empty", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownWithDefault]);
-    fieldRepo.getFieldOptions.mockResolvedValue([
+    const cableTypeOptions = [
       { OptionID: 9, FieldID: 13, OptionLabel: "Copper", OptionValue: "Copper", IsDefault: 0, DisplayOrder: 1 },
       { OptionID: 10, FieldID: 13, OptionLabel: "Aluminum", OptionValue: "Aluminum", IsDefault: 1, DisplayOrder: 2 },
-    ]);
+    ];
+    fieldRepo.getFieldOptions.mockResolvedValue(cableTypeOptions);
+    fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[13, cableTypeOptions]]));
 
     await act(async () => {
       TestRenderer.create(
