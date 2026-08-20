@@ -92,7 +92,6 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
 
 jest.mock("@/src/components/inspection/renderFieldInput", () => ({
   ...jest.requireActual("@/src/components/inspection/renderFieldInput"),
-  autoScrollDropdown: jest.fn(),
 }));
 
 jest.mock("@/src/database/repositories/DeviceFieldDefinitionsRepository", () => ({
@@ -246,30 +245,6 @@ describe("DeviceSection dropdown auto-scroll", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     cancelPendingOpen();
-  });
-
-  it("dropdown onFocus routes to the shared auto-scroll helper with the ScrollView ref and current offset", async () => {
-    const mockAutoScrollDropdown = jest.requireMock(
-      "@/src/components/inspection/renderFieldInput"
-    ).autoScrollDropdown as jest.Mock;
-    mockAutoScrollDropdown.mockClear();
-
-    const tree = await renderDevice();
-    const dd = tree.root.findAll(
-      (n) => (n as { type?: unknown }).type === "Dropdown"
-    )[0] as unknown as { props: { onFocus?: () => void } };
-
-    act(() => {
-      dd.props.onFocus?.();
-    });
-
-    expect(mockAutoScrollDropdown).toHaveBeenCalledTimes(1);
-    const [viewRefArg, openRefArg, scrollViewArg, offsetArg] =
-      mockAutoScrollDropdown.mock.calls[0] as [unknown, unknown, unknown, number];
-    expect(viewRefArg).toHaveProperty("current");
-    expect(openRefArg).toHaveProperty("current");
-    expect(scrollViewArg).toBe(mockScrollRef);
-    expect(offsetArg).toBe(0);
   });
 
   it("dropdown onBlur cancels any pending scroll-gated open", async () => {

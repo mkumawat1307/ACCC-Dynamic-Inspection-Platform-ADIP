@@ -8,8 +8,6 @@ import DeviceFieldDefinitionsRepository, {
 import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositories/DeviceRecordsRepository";
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
 import { sanitizeNumberInput } from "@/src/utils/fieldInput";
-import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
-import { autoScrollDropdown } from "./renderFieldInput";
 import { cancelPendingOpen } from "./dropdownScrollGate";
 
 interface Props {
@@ -37,7 +35,6 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   const countOpsRef = useRef(Promise.resolve());
   const dropdownRefs = useRef<Record<string, View | null>>({});
   const dropdownOpenRefs = useRef<Record<string, IDropdownRef | null>>({});
-  const { scrollViewRef, scrollOffsetRef } = useInspectionScroll();
 
   useEffect(() => {
     (async () => {
@@ -261,14 +258,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           placeholder={field.Placeholder ?? `Select ${field.Label}`}
           value={value}
           disable={locked}
-          onFocus={() =>
-            autoScrollDropdown(
-              { current: dropdownRefs.current[dropdownKey] ?? null },
-              { current: dropdownOpenRefs.current[dropdownKey] ?? null },
-              scrollViewRef,
-              scrollOffsetRef.current
-            )
-          }
+          onFocus={() => {}}
           onChange={(item) => updateField(index, field.FieldName, item.value)}
           onBlur={() => cancelPendingOpen()}
         />

@@ -1,10 +1,9 @@
 import React, { useRef } from "react";
-import { StyleSheet, View, Dimensions, StatusBar } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Checkbox, Switch, Text, TextInput } from "react-native-paper";
 import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
 import { sanitizeNumberInput } from "../../utils/fieldInput";
-import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
-import { cancelPendingOpen, registerPendingOpen } from "./dropdownScrollGate";
+import { cancelPendingOpen } from "./dropdownScrollGate";
 
 export interface DropdownOption {
   label: string;
@@ -27,69 +26,6 @@ export interface FieldInputProps {
   setDropdownFocus: (focused: boolean) => void;
 }
 
-const DROPDOWN_MAX_HEIGHT = 350;
-const SCROLL_PADDING = 16;
-const DROPDOWN_BOTTOM_GAP = 2;
-
-type MeasureCallback = (x: number, y: number, width: number, height: number) => void;
-
-let scrollReentryInProgress = false;
-
-export function autoScrollDropdown(
-  dropdownViewRef: { current: { measureInWindow?: (cb: MeasureCallback) => void } | null },
-  dropdownOpenRef: { current: { open?: () => void } | null },
-  scrollViewRef: {
-    current: {
-      scrollTo: (opts: { x: number; y: number; animated: boolean }) => void;
-    } | null;
-  },
-  currentOffset: number
-): void {
-  if (scrollReentryInProgress) return;
-  cancelPendingOpen();
-  if (dropdownViewRef.current && scrollViewRef.current) {
-    dropdownViewRef.current.measureInWindow?.((x, y, width, height) => {
-      if (!scrollViewRef.current) return;
-
-      const screenHeight = Dimensions.get("window").height;
-
-      const dropdownBottom = y + height;
-
-      const availableSpace = screenHeight - dropdownBottom;
-
-      const statusBarHeight = StatusBar.currentHeight ?? 0;
-
-      const requiredSpace =
-        DROPDOWN_MAX_HEIGHT + DROPDOWN_BOTTOM_GAP + statusBarHeight + SCROLL_PADDING;
-
-      if (availableSpace < requiredSpace) {
-        const scrollNeeded = requiredSpace - availableSpace;
-        const target = currentOffset + scrollNeeded;
-
-        scrollViewRef.current.scrollTo({
-          x: 0,
-          y: target,
-          animated: false,
-        });
-
-        registerPendingOpen(target, () => {
-          if (!dropdownViewRef.current || !scrollViewRef.current) {
-            return;
-          }
-          dropdownViewRef.current.measureInWindow?.(() => {
-            scrollReentryInProgress = true;
-            try {
-              dropdownOpenRef.current?.open?.();
-            } finally {
-              scrollReentryInProgress = false;
-            }
-          });
-        });
-      }
-    });
-  }
-}
-
 export const FieldInput: React.FC<FieldInputProps> = ({
   fieldType, label, value, editable, placeholder, error, options, fieldKey,
   onCameraCountChange, onSwitchCountChange, onChange,
@@ -99,11 +35,9 @@ export const FieldInput: React.FC<FieldInputProps> = ({
   const isSwitchCount = fieldKey === "switch_count";
   const dropdownViewRef = useRef<View>(null);
   const dropdownOpenRef = useRef<IDropdownRef | null>(null);
-  const { scrollViewRef, scrollOffsetRef } = useInspectionScroll();
 
   const handleDropdownFocus = () => {
     setDropdownFocus(true);
-    autoScrollDropdown(dropdownViewRef, dropdownOpenRef, scrollViewRef, scrollOffsetRef.current);
   };
 
   function updateNumber(text: string) {

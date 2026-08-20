@@ -64,7 +64,7 @@ jest.mock("@/src/components/inspection/PhotoSection", () => {
 
 jest.mock("@/src/components/inspection/renderFieldInput", () => {
   const actual = jest.requireActual("@/src/components/inspection/renderFieldInput");
-  return { ...actual, autoScrollDropdown: jest.fn() };
+  return { ...actual };
 });
 
 jest.mock("@/src/components/inspection/FieldRenderer", () => {

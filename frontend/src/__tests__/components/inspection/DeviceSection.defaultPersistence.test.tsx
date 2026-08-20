@@ -51,7 +51,6 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
 
 jest.mock("@/src/components/inspection/renderFieldInput", () => ({
   ...jest.requireActual("@/src/components/inspection/renderFieldInput"),
-  autoScrollDropdown: jest.fn(),
 }));
 
 jest.mock("@/src/database/repositories/DeviceFieldDefinitionsRepository", () => ({
