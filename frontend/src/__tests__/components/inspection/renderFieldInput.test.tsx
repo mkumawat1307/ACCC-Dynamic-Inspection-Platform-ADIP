@@ -30,6 +30,7 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
   useInspectionScroll: () => ({
     scrollViewRef: { current: null },
     scrollOffsetRef: { current: 0 },
+    setDropdownOpen: jest.fn(),
   }),
   InspectionScrollProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -57,7 +58,7 @@ function renderNumber(params: Partial<React.ComponentProps<typeof FieldInput>> =
   let tree!: ReturnType<typeof TestRenderer.create>;
   act(() => {
     tree = TestRenderer.create(
-      <InspectionScrollProvider>
+      <InspectionScrollProvider setDropdownOpen={jest.fn()}>
         <FieldInput {...props} />
       </InspectionScrollProvider>
     );

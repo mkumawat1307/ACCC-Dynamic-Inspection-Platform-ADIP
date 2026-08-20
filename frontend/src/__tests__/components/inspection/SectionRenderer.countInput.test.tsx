@@ -60,6 +60,7 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
   useInspectionScroll: () => ({
     scrollViewRef: { current: { scrollTo: jest.fn() } },
     scrollOffsetRef: { current: 0 },
+    setDropdownOpen: jest.fn(),
   }),
   InspectionScrollProvider: ({ children }: { children: React.ReactNode }) => children,
 }));

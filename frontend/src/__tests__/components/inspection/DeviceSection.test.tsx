@@ -4,7 +4,6 @@ import DeviceSection from "@/src/components/inspection/DeviceSection";
 import DeviceFieldDefinitionsRepository from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositories/DeviceRecordsRepository";
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
-import { cancelPendingOpen, hasPendingOpen } from "@/src/components/inspection/dropdownScrollGate";
 
 const numberField = {
   FieldDefID: 1,
@@ -86,6 +85,7 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
   useInspectionScroll: () => ({
     scrollViewRef: mockScrollRef,
     scrollOffsetRef: { current: 0 },
+    setDropdownOpen: jest.fn(),
   }),
   InspectionScrollProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -244,20 +244,15 @@ describe("DeviceSection number fields", () => {
 describe("DeviceSection dropdown auto-scroll", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    cancelPendingOpen();
   });
 
-  it("dropdown onBlur cancels any pending scroll-gated open", async () => {
+  it("dropdown onBlur is defined", async () => {
     const tree = await renderDevice();
     const dd = tree.root.findAll(
       (n) => (n as { type?: unknown }).type === "Dropdown"
     )[0] as unknown as { props: { onBlur?: () => void } };
 
     expect(typeof dd.props.onBlur).toBe("function");
-    act(() => {
-      dd.props.onBlur?.();
-    });
-    expect(hasPendingOpen()).toBe(false);
   });
 });
 

@@ -3,7 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { Checkbox, Switch, Text, TextInput } from "react-native-paper";
 import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
 import { sanitizeNumberInput } from "../../utils/fieldInput";
-import { cancelPendingOpen } from "./dropdownScrollGate";
+import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
 
 export interface DropdownOption {
   label: string;
@@ -35,9 +35,11 @@ export const FieldInput: React.FC<FieldInputProps> = ({
   const isSwitchCount = fieldKey === "switch_count";
   const dropdownViewRef = useRef<View>(null);
   const dropdownOpenRef = useRef<IDropdownRef | null>(null);
+  const { setDropdownOpen } = useInspectionScroll();
 
   const handleDropdownFocus = () => {
     setDropdownFocus(true);
+    setDropdownOpen(true);
   };
 
   function updateNumber(text: string) {
@@ -187,6 +189,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
             data={options}
             search={false}
             maxHeight={350}
+            keyboardAvoiding={false}
             labelField="label"
             valueField="value"
             placeholder={
@@ -197,10 +200,11 @@ export const FieldInput: React.FC<FieldInputProps> = ({
             onFocus={handleDropdownFocus}
             onBlur={() => {
               setDropdownFocus(false);
-              cancelPendingOpen();
+              setDropdownOpen(false);
             }}
             onChange={(item) => {
               setDropdownFocus(false);
+              setDropdownOpen(false);
               onChange?.(item.value);
             }}
           />

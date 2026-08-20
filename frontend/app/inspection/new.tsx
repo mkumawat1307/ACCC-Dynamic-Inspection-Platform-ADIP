@@ -120,6 +120,7 @@ export default function NewInspectionScreen({
   const [sections, setSections] = useState<InspectionSection[]>([]);
   const [expandedSections, setExpandedSections] = useState<number[]>([1]);
   const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   useEffect(() => {
     expandedSectionsRef.current = expandedSections;
@@ -431,11 +432,12 @@ return (
     <Appbar.BackAction onPress={handleBack} />
     <Appbar.Content title={title} />
   </Appbar.Header>
-  <InspectionScrollProvider scrollViewRef={scrollViewRef} scrollOffsetRef={scrollOffsetRef}>
+  <InspectionScrollProvider scrollViewRef={scrollViewRef} scrollOffsetRef={scrollOffsetRef} setDropdownOpen={setDropdownOpen}>
     <ScrollView
       ref={scrollViewRef}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      scrollEnabled={!dropdownOpen}
       onLayout={(event) => {
         scrollViewTopRef.current = event.nativeEvent.layout.y;
         scrollViewHeightRef.current = event.nativeEvent.layout.height;
