@@ -1,5 +1,4 @@
 import * as Location from "expo-location";
-import { logger } from "@/src/utils/logger";
 
 export function haversineMeters(
   lat1: number,
@@ -82,11 +81,6 @@ function buildCompactAddressLines(address: GeocodedAddress): string[] {
 export function formatAddressLines(address: GeocodedAddress | null): string[] {
   if (!address) return [];
   const lines = buildCompactAddressLines(address);
-  if (__DEV__) {
-    logger.debug(
-      `[Geo:format] raw district=${address.district} subregion=${address.subregion} city=${address.city} region=${address.region} => lines=${JSON.stringify(lines)}`
-    );
-  }
   return lines;
 }
 
@@ -99,10 +93,6 @@ export async function reverseGeocode(
     if (!results || results.length === 0) return null;
     const address = results[0];
     const formatted = buildFullFormattedAddress(address);
-    if (__DEV__) {
-      logger.debug(`[Geo:reverse] lat=${latitude} lon=${longitude}`);
-      logger.debug(`[Geo:reverse] address=${formatted}`);
-    }
     return { address, formatted };
   } catch {
     return null;
@@ -111,8 +101,5 @@ export async function reverseGeocode(
 
 function buildFullFormattedAddress(address: GeocodedAddress): string {
   const result = buildCompactAddressLines(address).join("\n");
-  if (__DEV__) {
-    logger.debug(`[Geo:reverse] cleaned=${result}`);
-  }
 return result;
 }

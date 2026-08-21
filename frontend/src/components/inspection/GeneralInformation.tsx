@@ -255,7 +255,6 @@ async function handlePoleIdSave(
     }
 
     if (decision.type === "direct-save") {
-      logger.debug("[PoleRename] directSaveNoPhotos");
       try {
         await InspectionRepository.updatePoleIdDirectSave(
           inspectionId,
@@ -273,7 +272,6 @@ async function handlePoleIdSave(
       return;
     }
 
-    logger.debug(`[PoleRename] dialogShown photoCount=${decision.photoCount}`);
     setPendingRename({
       oldPoleId: current,
       newPoleId: trimmed,
@@ -484,7 +482,6 @@ return (
       photoCount={pendingRename?.photoCount ?? 0}
       onCancel={() => {
         if (pendingRename) {
-          logger.debug("[PoleRename] cancelled");
           revertPoleId(pendingRename.oldPoleId);
         }
         setPendingRename(null);
@@ -493,7 +490,6 @@ return (
         if (!pendingRename || !inspectionId) return;
         const { oldPoleId, newPoleId } = pendingRename;
         setPendingRename(null);
-        logger.debug("[PoleRename] confirmed");
         try {
           await PoleRenameService.renamePoleId(
             inspectionId,

@@ -25,7 +25,7 @@ import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { useAddressLookup } from "@/src/components/camera/useAddressLookup";
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
-import { toWatermarkStyleConfig, WATERMARK_PREVIEW_VISUAL_CORRECTION } from "@/src/utils/watermarkStyle";
+import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { pickExpectedPhotoSize } from "@/src/components/camera/expectedPhotoSize";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import {
@@ -186,22 +186,8 @@ export default function CaptureScreen() {
           ratio,
         });
         setExpectedPhotoSize(expected);
-        if (typeof __DEV__ !== "undefined" && __DEV__) {
-          const coverScale = expected
-            ? Math.max(cameraSize.width / expected.width, cameraSize.height / expected.height)
-            : 0;
-          const correctedScale = coverScale * WATERMARK_PREVIEW_VISUAL_CORRECTION;
-          logger.debug(
-            `[Watermark:init] ratio=${ratio} preview=${cameraSize.width}x${cameraSize.height} ` +
-              `expectedPhoto=${expected ? `${expected.width}x${expected.height}` : "none"} ` +
-              `scale=${correctedScale.toFixed(3)}`
-          );
-        }
       })
-      .catch((e) => {
-        if (typeof __DEV__ !== "undefined" && __DEV__) {
-          logger.debug(`[Watermark:init] getAvailablePictureSizesAsync failed: ${String(e)}`);
-        }
+      .catch(() => {
         if (!cancelled) setExpectedPhotoSize(null);
       });
     return () => {
@@ -347,13 +333,6 @@ export default function CaptureScreen() {
     if (typeof __DEV__ !== "undefined" && __DEV__) {
       captureTimesRef.current.push(perfNow() - tCapture);
       if (captureTimesRef.current.length >= 10) {
-        const arr = captureTimesRef.current;
-        const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
-        const min = Math.min(...arr);
-        const max = Math.max(...arr);
-        logger.debug(
-          `[Perf:capture] last${arr.length} takePictureAndWrite avg=${avg.toFixed(1)}ms min=${min.toFixed(1)}ms max=${max.toFixed(1)}ms`
-        );
         captureTimesRef.current = [];
       }
     }

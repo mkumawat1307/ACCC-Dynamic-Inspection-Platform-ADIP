@@ -172,7 +172,6 @@ describe("restoreTemplatesFromFile / applyTemplateRestore", () => {
     const step = await restoreTemplatesFromFile();
 
     expect(step).toEqual({ status: "error", message: "Invalid JSON file." });
-    expect(logSpy).toHaveBeenCalledWith("[TemplateRestore] fileSelected=backup.json");
     expect(logSpy).toHaveBeenCalledWith("[TemplateRestore] failed=Invalid JSON file.");
   });
 
@@ -186,7 +185,6 @@ describe("restoreTemplatesFromFile / applyTemplateRestore", () => {
     expect(step.status).toBe("confirm");
     if (step.status !== "confirm") throw new Error("expected confirm");
     expect(step.parsed.summary.templateCount).toBe(1);
-    expect(logSpy).toHaveBeenCalledWith("[TemplateRestore] fileSelected=backup.json");
 
     const result = await applyTemplateRestore(step.parsed);
     expect(result.ok).toBe(true);

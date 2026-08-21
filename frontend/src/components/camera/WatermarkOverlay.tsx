@@ -7,7 +7,6 @@ import {
   WATERMARK_PREVIEW_VISUAL_CORRECTION,
 } from "@/src/utils/watermarkStyle";
 import { WatermarkSettings } from "@/src/utils/watermarkSettings";
-import { logger } from "@/src/utils/logger";
 
 interface Props {
   width: number;
@@ -88,17 +87,7 @@ export default function WatermarkOverlay({
       corner: Math.max(2, Math.round(photoMetrics.corner * correctedScale)),
     };
 
-if (__DEV__) {
-      logger.debug(
-        `[Watermark:preview] position=${config.position} fitScale=${Math.min(width / photoWidth, height / photoHeight).toFixed(3)} coverScale=${coverScale.toFixed(3)} visualCorrection=${visualCorrection.toFixed(2)} photo=${photoWidth}x${photoHeight} preview=${width}x${height}`
-      );
-      logger.debug(
-        `[Watermark:preview] contentRect=photo(${contentOffsetX.toFixed(0)},${contentOffsetY.toFixed(0)}) ${contentWidth.toFixed(0)}x${contentHeight.toFixed(0)}`
-      );
-      logger.debug(
-        `[Watermark:preview] finalVisualScale=${correctedScale.toFixed(3)} boxX=${boxX} boxY=${boxY} width=${Math.round(photoLayout.boxW * correctedScale)} height=${Math.round(photoLayout.boxH * correctedScale)} fs=${m.fSize} lh=${m.lh} padY=${m.padY} rPad=${m.rPad} gapX=${m.gapX} gapY=${m.gapY} corner=${m.corner}`
-      );
-    }
+
   } else {
     // Fallback: compute directly at preview resolution (legacy behavior)
     // Uses gapX/gapY directly for positioning (matches legacy behavior)

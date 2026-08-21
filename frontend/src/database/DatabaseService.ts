@@ -20,7 +20,6 @@ export function getProjectDuplicates(): ProjectDuplicateGroup[] {
 
 export async function initializeDatabase() {
   if (initializing) {
-    logger.debug("[DatabaseService] initializeDatabase() — already in progress, skipping");
     return;
   }
   initializing = true;

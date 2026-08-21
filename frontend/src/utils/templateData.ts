@@ -305,7 +305,6 @@ export async function pickAndParseTemplate(): Promise<
   const asset = result.assets[0];
   const fileUri = asset.uri;
   const fileName = asset.name ?? fileUri;
-  logger.debug("[TemplateRestore] fileSelected=" + fileName);
   const content = await FileSystem.readAsStringAsync(fileUri, {
     encoding: FileSystem.EncodingType.UTF8,
   });

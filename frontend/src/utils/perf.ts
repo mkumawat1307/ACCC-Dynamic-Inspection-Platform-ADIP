@@ -1,5 +1,3 @@
-import { logger } from "@/src/utils/logger";
-
 export function perfNow(): number {
   return typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
@@ -30,22 +28,18 @@ export function perfStage(acc: PerfAccumulator, name: string): PerfAccumulator {
   return acc;
 }
 
-export function perfReport(acc: PerfAccumulator, label = "watermark"): number {
+export function perfReport(acc: PerfAccumulator, _label = "watermark"): number {
   const total = perfNow() - acc.totalStart;
-  const line = acc.stages.map(s => `${s.name}=${s.ms.toFixed(1)}ms`).join(" ");
-  logger.debug(`[Perf:${label}] photo=${acc.photoId} total=${total.toFixed(1)}ms ${line}`);
   return total;
 }
 
 export function perfLog(context: string, stage: string, start: number): number {
   const ms = perfNow() - start;
-  logger.debug(`[Perf] ${context} ${stage}: ${ms.toFixed(1)}ms`);
   return ms;
 }
 
 let uiPerfSessionStart = 0;
 let uiPerfPrevMs = 0;
-let uiPerfPrevLabel = "(start)";
 
 const UI_PERF_STALE_MS = 15000;
 
@@ -100,7 +94,6 @@ export function uiPerfStageIfProbe(
 export function uiPerfReset(): void {
   uiPerfSessionStart = perfNow();
   uiPerfPrevMs = uiPerfSessionStart;
-  uiPerfPrevLabel = "(start)";
 }
 
 export function uiPerfStage(label: string, extra?: string, probe?: string): void {
@@ -111,14 +104,6 @@ export function uiPerfStage(label: string, extra?: string, probe?: string): void
   if (stale) {
     uiPerfSessionStart = now;
     uiPerfPrevMs = now;
-    uiPerfPrevLabel = "(start)";
   }
-  const total = now - uiPerfSessionStart;
-  const sincePrev = now - uiPerfPrevMs;
-  logger.debug(
-    `${stale ? "[Perf:UI:stale]" : "[Perf:UI]"} ${label} +${sincePrev.toFixed(1)}ms since=${uiPerfPrevLabel} ` +
-      `total=${total.toFixed(1)}ms${extra ? ` ${extra}` : ""}${probe ? ` ${probe}` : ""}`
-  );
   uiPerfPrevMs = now;
-  uiPerfPrevLabel = label;
 }

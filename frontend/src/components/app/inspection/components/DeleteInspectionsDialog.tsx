@@ -31,7 +31,6 @@ export default function DeleteInspectionsDialog({ visible, selectedIds, selected
               await InspectionRepository.deleteMultipleInspections(selectedIds);
               onDismiss();
               onDeleted();
-              logger.info("Delete completed");
             } catch (error) {
               logger.error("Delete failed:", error);
             }

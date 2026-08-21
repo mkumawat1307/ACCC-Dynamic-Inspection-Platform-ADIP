@@ -294,11 +294,6 @@ if (routeInspectionId) {
       inspectionDate
     );
 
-  logger.info(
-    "NEW INSPECTION CREATED:",
-    newInspectionId
-  );
-
   setInspectionId(newInspectionId);
 }
 
@@ -391,11 +386,6 @@ const handleCancel = () => {
             if (!routeInspectionId && inspectionId) {
 
               await InspectionRepository.deleteInspection(
-                inspectionId
-              );
-
-              logger.info(
-                "Draft inspection deleted:",
                 inspectionId
               );
             }

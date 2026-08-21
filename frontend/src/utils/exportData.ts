@@ -423,7 +423,6 @@ export async function createExportFile(
   const ext = format === "csv" ? "csv" : "xlsx";
   const fileName = buildFileName(division, projectName, inspector, ext);
   await ensureRootFolder();
-  logger.debug(`[Storage:check] path=Download/${fileName}`);
   let fileUri: string;
   if (format === "csv") {
     fileUri = await downloadStorage.writeUtf8("", fileName, "text/csv", buildCsv(table));
