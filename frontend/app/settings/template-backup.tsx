@@ -74,7 +74,6 @@ export default function TemplateBackupScreen() {
     try {
       const completed = await InspectionRepository.countFinalInspections();
       if (completed > 0) {
-        logger.info(`[TemplateRestore] blockedCompletedInspections=${completed}`);
         Alert.alert(
           "Restore Blocked",
           "Template restore is blocked because this project contains completed inspections. Create a new project if you need a different template."

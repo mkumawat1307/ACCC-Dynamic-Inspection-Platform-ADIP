@@ -8,7 +8,6 @@ import { INSPECTION_FINAL_STATUSES } from "../database/repositories/InspectionRe
 import { getCurrentInspectionDate } from "./date";
 import { ensureRootFolder } from "./storageManager";
 import { downloadStorage } from "./downloadStorage";
-import { logger } from "./logger";
 
 export type ExportFormat = "csv" | "excel";
 
@@ -400,10 +399,6 @@ function mimeInfo(format: ExportFormat): { mimeType: string; uti: string } {
       };
 }
 
-function exportLogTag(format: ExportFormat): string {
-  return format === "excel" ? "xlsx" : "csv";
-}
-
 export async function createExportFile(
   projectId: number,
   projectName: string,
@@ -426,8 +421,6 @@ export async function createExportFile(
   let fileUri: string;
   if (format === "csv") {
     fileUri = await downloadStorage.writeUtf8("", fileName, "text/csv", buildCsv(table));
-    logger.info("[Storage:csv] path=" + fileUri);
-    logger.info(`[Export:csv] saved=${fileUri}`);
   } else {
     fileUri = await downloadStorage.writeBase64(
       "",
@@ -435,8 +428,6 @@ export async function createExportFile(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       buildExcelBase64(table)
     );
-    logger.info("[Storage:excel] path=" + fileUri);
-    logger.info(`[Export:xlsx] saved=${fileUri}`);
   }
 
   return {
@@ -460,7 +451,6 @@ export async function openExportFile(result: ExportResult): Promise<boolean> {
       type: mimeType,
       flags: 1,
     });
-    logger.info(`[Export:${exportLogTag(result.format)}] openIntent=${contentUri}`);
     return true;
   }
   if (!(await Sharing.isAvailableAsync())) return false;

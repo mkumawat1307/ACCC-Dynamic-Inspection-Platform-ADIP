@@ -19,7 +19,6 @@ export function templateBackupFileName(projectLabel: string): string {
 export async function backupTemplatesToFile(
   projectLabel: string
 ): Promise<TemplateBackupResult> {
-  logger.info("[TemplateBackup] start");
   try {
     const built = await buildTemplateExportData();
     if (!built) {
@@ -28,7 +27,6 @@ export async function backupTemplatesToFile(
     const json = JSON.stringify(built.data, null, 2);
     const fileName = templateBackupFileName(projectLabel);
     await downloadStorage.writeUtf8("", fileName, "application/json", json);
-    logger.info("[TemplateBackup] success");
     return { ok: true, message: "Template backup saved." };
   } catch (e) {
     logger.error("[TemplateBackup] failed=" + String(e));
@@ -42,17 +40,14 @@ export type TemplateRestoreStep =
   | { status: "confirm"; parsed: ParsedTemplateFile };
 
 export async function restoreTemplatesFromFile(): Promise<TemplateRestoreStep> {
-  logger.info("[TemplateRestore] start");
   try {
     const picked = await pickAndParseTemplate();
     if (picked.status === "canceled") return { status: "canceled" };
     if (picked.status === "error") {
-      logger.info("[TemplateRestore] failed=" + picked.message);
       return { status: "error", message: picked.message };
     }
     return { status: "confirm", parsed: picked.parsed };
   } catch (e) {
-    logger.info("[TemplateRestore] failed=" + String(e));
     return { status: "error", message: String(e) };
   }
 }
@@ -63,13 +58,12 @@ export async function applyTemplateRestore(
   try {
     const result = await applyTemplateImport(parsed.data);
     if (result.success) {
-      logger.info("[TemplateRestore] success");
       return { ok: true, message: result.message };
     }
-    logger.info("[TemplateRestore] failed=" + result.message);
+    logger.warn("[TemplateRestore] failed=" + result.message);
     return { ok: false, message: result.message };
   } catch (e) {
-    logger.info("[TemplateRestore] failed=" + String(e));
+    logger.warn("[TemplateRestore] failed=" + String(e));
     return { ok: false, message: String(e) };
   }
 }

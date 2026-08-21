@@ -116,8 +116,7 @@ describe("backupTemplatesToFile", () => {
       "application/json",
       expect.stringContaining('"version": "2.0"')
     );
-    expect(logSpy).toHaveBeenCalledWith("[TemplateBackup] start");
-    expect(logSpy).toHaveBeenCalledWith("[TemplateBackup] success");
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it("returns an error when no templates exist", async () => {
@@ -161,10 +160,9 @@ describe("restoreTemplatesFromFile / applyTemplateRestore", () => {
   it("returns canceled when no file is selected", async () => {
     const { restoreTemplatesFromFile } = require("@/src/utils/templateBackup");
     expect(await restoreTemplatesFromFile()).toEqual({ status: "canceled" });
-    expect(logSpy).toHaveBeenCalledWith("[TemplateRestore] start");
   });
 
-  it("logs fileSelected and returns error on invalid JSON", async () => {
+  it("returns error on invalid JSON", async () => {
     __setMockResult({ canceled: false, assets: [{ uri: "test.json", name: "backup.json" }] });
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValueOnce("not json");
 
@@ -172,7 +170,6 @@ describe("restoreTemplatesFromFile / applyTemplateRestore", () => {
     const step = await restoreTemplatesFromFile();
 
     expect(step).toEqual({ status: "error", message: "Invalid JSON file." });
-    expect(logSpy).toHaveBeenCalledWith("[TemplateRestore] failed=Invalid JSON file.");
   });
 
   it("returns a confirm step and applies the restore on confirm", async () => {
@@ -188,6 +185,5 @@ describe("restoreTemplatesFromFile / applyTemplateRestore", () => {
 
     const result = await applyTemplateRestore(step.parsed);
     expect(result.ok).toBe(true);
-    expect(logSpy).toHaveBeenCalledWith("[TemplateRestore] success");
   });
 });

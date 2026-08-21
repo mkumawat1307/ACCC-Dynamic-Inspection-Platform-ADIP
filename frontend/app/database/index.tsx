@@ -36,7 +36,6 @@ export default function DatabaseScreen() {
   };
 
   const handleRestorePress = () => {
-    logger.info("[Restore] start");
     Alert.alert("Select ZIP file", "Pick a backup (.zip) file to restore from.", [
       { text: "Cancel", style: "cancel" },
       { text: "Select", onPress: () => void openPicker() },
@@ -52,7 +51,6 @@ export default function DatabaseScreen() {
       if (result.canceled || !result.assets?.length) return;
       const selectedUri = result.assets[0].uri;
       const fileName = result.assets[0].name;
-      logger.info("[Restore] fileSelected=" + fileName);
       Alert.alert("Restore DB Data?", `Replace all current data with the selected file "${fileName}"?`, [
         { text: "Cancel", style: "cancel" },
         { text: "Restore", style: "destructive", onPress: () => void handleRestore(selectedUri) },

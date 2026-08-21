@@ -286,7 +286,6 @@ export default function CaptureScreen() {
           setTimeout(() => setFocusRing(null), 500);
         }
       });
-      logger.info("[GPS] tap refresh requested");
       gps.refreshNow();
     },
     [focusAnim, gps]

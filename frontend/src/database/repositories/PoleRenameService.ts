@@ -52,7 +52,7 @@ export class PoleRenameService {
         try {
           const newFilePath = await downloadStorage.renameFile(photo.FilePath, newFileName);
           if (newFilePath === null) {
-            logger.warn(`[PoleRename] photoMissing photo=${photo.PhotoID} old=${photo.FileName}`);
+            logger.warn(`[PoleRename] photoMissing photo=${photo.PhotoID}`);
             missingFiles++;
             continue;
           }
