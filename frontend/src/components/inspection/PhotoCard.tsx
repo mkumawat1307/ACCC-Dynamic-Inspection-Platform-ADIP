@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Card, Text, IconButton, ActivityIndicator } from "react-native-paper";
 import { Photo } from "@/src/models/Photo";
+import { TOUCH_TARGETS } from "@/src/utils/touchTargets";
 
 export type WatermarkState = "pending" | "processing" | "completed" | "failed";
 
@@ -25,7 +26,7 @@ export default function PhotoCard({
   return (
     <Card key={photo.PhotoID} style={styles.card}>
       <View style={styles.row}>
-        <Pressable onPress={() => onPreview(photo)} style={styles.labelPressable}>
+        <Pressable onPress={() => onPreview(photo)} style={styles.labelPressable} hitSlop={TOUCH_TARGETS.hitSlop}>
           <Text variant="titleMedium" style={styles.label}>
             Photo {index + 1}
           </Text>

@@ -12,6 +12,7 @@ import {
 import { HelperText } from "react-native-paper";
 
 import { FieldInput, DropdownOption } from "./renderFieldInput";
+import { TOUCH_TARGETS } from "@/src/utils/touchTargets";
 
 export interface FieldRendererProps {
   fieldKey?: string;
@@ -93,6 +94,7 @@ export default function FieldRenderer({
 
   return (
     <Pressable
+      hitSlop={TOUCH_TARGETS.hitSlop}
       onPress={() =>
         Alert.alert(
           "Pole ID Required",

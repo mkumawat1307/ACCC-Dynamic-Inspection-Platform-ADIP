@@ -9,6 +9,7 @@ import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositori
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
 import { sanitizeNumberInput } from "@/src/utils/fieldInput";
 import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
+import { TOUCH_TARGETS } from "@/src/utils/touchTargets";
 
 interface Props {
   inspectionId: number;
@@ -273,6 +274,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         <Pressable
           disabled={locked}
           onPress={() => updateField(index, field.FieldName, value === "1" ? "0" : "1")}
+          hitSlop={TOUCH_TARGETS.compactHitSlop}
         >
           <View style={styles.checkboxRow}>
             <Checkbox status={value === "1" ? "checked" : "unchecked"} disabled={locked} />

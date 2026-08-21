@@ -469,6 +469,7 @@ return (
         expanded={expandedSections.includes(section.SectionID)}
         onPress={() => handleSectionPress(section.SectionID)}
         titleStyle={styles.sectionTitle}
+        style={styles.accordionHeader}
       >
         <Card.Content>
     {section.SectionKey === "general_information" ? (

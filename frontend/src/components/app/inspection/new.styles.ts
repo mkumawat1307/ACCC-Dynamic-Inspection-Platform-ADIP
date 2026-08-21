@@ -1,4 +1,5 @@
 import { StyleSheet } from "react-native";
+import { TOUCH_TARGETS } from "@/src/utils/touchTargets";
 
 export const styles = StyleSheet.create({
   safeArea: {
@@ -21,5 +22,8 @@ export const styles = StyleSheet.create({
   sectionTitle: {
     fontWeight: "700",
     color: "#1976D2",
+  },
+  accordionHeader: {
+    paddingVertical: TOUCH_TARGETS.sectionHeaderPadding,
   },
 });
