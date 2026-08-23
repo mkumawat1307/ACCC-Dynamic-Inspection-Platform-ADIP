@@ -17,6 +17,8 @@ export interface PoleRenameResult {
   renamedFiles: number;
   updatedRecords: number;
   missingFiles: number;
+  duplicate?: boolean;
+  duplicatePoleId?: string;
 }
 
 interface PendingRename {
@@ -34,6 +36,22 @@ export class PoleRenameService {
     options: PoleRenameOptions
   ): Promise<PoleRenameResult> {
 
+    const trimmedNewPoleId = newPoleId.trim();
+
+    // Fresh duplicate check immediately before any operations
+    if (trimmedNewPoleId.length > 0) {
+      const existing = await InspectionRepository.getInspectionByPoleId(trimmedNewPoleId);
+      if (existing && existing.InspectionID !== inspectionId) {
+        return {
+          renamedFiles: 0,
+          updatedRecords: 0,
+          missingFiles: 0,
+          duplicate: true,
+          duplicatePoleId: trimmedNewPoleId,
+        };
+      }
+    }
+
     const photos = await PhotoRepository.getByInspection(inspectionId);
 
     const renames: PendingRename[] = [];
@@ -44,7 +62,7 @@ export class PoleRenameService {
 
     if (options.renameFiles) {
       for (const photo of photos) {
-        const newFileName = renamePoleTokenInFileName(photo.FileName, oldPoleId, newPoleId);
+        const newFileName = renamePoleTokenInFileName(photo.FileName, oldPoleId, trimmedNewPoleId);
         if (!newFileName) {
           logger.warn(`[PoleRename] skipped no token photo=${photo.PhotoID} old=${photo.FileName}`);
           continue;
@@ -67,7 +85,7 @@ export class PoleRenameService {
       await db.withTransactionAsync(async () => {
         await db.runAsync(
           `UPDATE Inspections SET PoleID = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE InspectionID = ?`,
-          [newPoleId, inspectionId]
+          [trimmedNewPoleId, inspectionId]
         );
 
         if (options.updateReports) {
@@ -82,12 +100,12 @@ export class PoleRenameService {
             if (existing) {
               await db.runAsync(
                 `UPDATE InspectionValues SET FieldValue = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE ValueID = ?`,
-                [newPoleId, existing.ValueID]
+                [trimmedNewPoleId, existing.ValueID]
               );
             } else {
               await db.runAsync(
                 `INSERT INTO InspectionValues (InspectionID, FieldID, FieldValue) VALUES (?, ?, ?)`,
-                [inspectionId, poleIdField.FieldID, newPoleId]
+                [inspectionId, poleIdField.FieldID, trimmedNewPoleId]
               );
             }
           }
@@ -102,7 +120,7 @@ export class PoleRenameService {
 
         await db.runAsync(
           `INSERT INTO InspectionPoleIdHistory (InspectionID, OldPoleId, NewPoleId) VALUES (?, ?, ?)`,
-          [inspectionId, oldPoleId, newPoleId]
+          [inspectionId, oldPoleId, trimmedNewPoleId]
         );
       });
     } catch (error) {

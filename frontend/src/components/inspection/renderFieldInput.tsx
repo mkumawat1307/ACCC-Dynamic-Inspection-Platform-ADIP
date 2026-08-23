@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import { Keyboard, StyleSheet, View } from "react-native";
 import { Checkbox, Switch, Text, TextInput } from "react-native-paper";
 import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
 import { sanitizeNumberInput } from "../../utils/fieldInput";
@@ -38,6 +38,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
   const { setDropdownOpen } = useInspectionScroll();
 
   const handleDropdownFocus = () => {
+    Keyboard.dismiss();
     setDropdownFocus(true);
     setDropdownOpen(true);
   };

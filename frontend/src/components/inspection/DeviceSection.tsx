@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Keyboard, Pressable, StyleSheet, View } from "react-native";
 import { Card, Checkbox, Text, TextInput } from "react-native-paper";
 import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
 import DeviceFieldDefinitionsRepository, {
@@ -261,7 +261,10 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           placeholder={field.Placeholder ?? `Select ${field.Label}`}
           value={value}
           disable={locked}
-          onFocus={() => { setDropdownOpen(true); }}
+          onFocus={() => {
+            Keyboard.dismiss();
+            setDropdownOpen(true);
+          }}
           onChange={(item) => {
             setDropdownOpen(false);
             updateField(index, field.FieldName, item.value);

@@ -234,6 +234,19 @@ async function handlePoleIdSave(
     const trimmed = text.trim();
     const current = await InspectionRepository.getInspectionPoleId(inspectionId);
 
+    // Fresh duplicate check immediately before any persistence
+    if (trimmed.length > 0) {
+      const existing = await InspectionRepository.getInspectionByPoleId(trimmed);
+      if (existing && existing.InspectionID !== inspectionId) {
+        Alert.alert(
+          "Duplicate Site ID",
+          `Site ID ${trimmed} already exists in another inspection. Please enter a unique Site ID.`
+        );
+        revertPoleId(current);
+        return;
+      }
+    }
+
     if (cleanPoleToken(trimmed) === cleanPoleToken(current)) {
       await InspectionRepository.saveFieldValue(inspectionId, fieldId, trimmed);
       if (trimmed !== current) {
@@ -364,6 +377,11 @@ return (
                       existing &&
                       existing.InspectionID !== inspectionId
                     ) {
+                      // Cancel pending save to prevent race condition
+                      if (saveTimeout.current) {
+                        clearTimeout(saveTimeout.current);
+                        saveTimeout.current = null;
+                      }
                       Alert.alert(
                         "Inspection Already Exists",
                         `SITE ID ${text} already exists.`,
@@ -371,11 +389,6 @@ return (
                           {
                             text: "Edit Existing",
                             onPress: async () => {
-                              if (saveTimeout.current) {
-                                clearTimeout(saveTimeout.current);
-                                saveTimeout.current = null;
-                              }
-
                               setValues({});
                               setInspectionId(existing.InspectionID);
 
@@ -389,7 +402,14 @@ return (
                               });
                             },
                           },
-                          { text: "Create New" },
+                          {
+                            text: "Create New",
+                            onPress: () => {
+                              setValues((prev) => ({ ...prev, pole_id: "" }));
+                              setPoleId("");
+                              setFormUnlocked(false);
+                            },
+                          },
                           { text: "Cancel", style: "cancel" },
                         ]
                       );
@@ -491,12 +511,20 @@ return (
         const { oldPoleId, newPoleId } = pendingRename;
         setPendingRename(null);
         try {
-          await PoleRenameService.renamePoleId(
+          const result = await PoleRenameService.renamePoleId(
             inspectionId,
             oldPoleId,
             newPoleId,
             { renameFiles, updateReports }
           );
+          if (result.duplicate) {
+            Alert.alert(
+              "Duplicate Site ID",
+              `Site ID ${result.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`
+            );
+            revertPoleId(oldPoleId);
+            return;
+          }
         } catch (error) {
           logger.error("[PoleRename] rename error:", error);
           Alert.alert(

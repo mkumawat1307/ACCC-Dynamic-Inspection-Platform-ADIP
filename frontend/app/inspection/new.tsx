@@ -112,6 +112,7 @@ export default function NewInspectionScreen({
     setInspectionId,
     inspectionId,
     setPoleId,
+    poleId,
     getPhotoStates,
   } = useInspection();
 
@@ -190,6 +191,19 @@ const validateBeforeExit = async (): Promise<boolean> => {
       "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section."
     );
     return false;
+  }
+
+  // Check for duplicate Pole ID
+  const currentPoleId = poleId?.trim();
+  if (currentPoleId) {
+    const existing = await InspectionRepository.getInspectionByPoleId(currentPoleId);
+    if (existing && existing.InspectionID !== inspectionId) {
+      Alert.alert(
+        "Duplicate Site ID",
+        `Site ID ${currentPoleId} already exists in another inspection. Please enter a unique Site ID.`
+      );
+      return false;
+    }
   }
 
   return true;
