@@ -95,6 +95,24 @@ const poleField: InspectionField = {
   UpdatedAt: "2026-01-01T00:00:00",
 };
 
+const divisionField: InspectionField = {
+  FieldID: 2,
+  SectionID: 1,
+  FieldName: "Division",
+  FieldKey: "division",
+  FieldType: "text",
+  Placeholder: null,
+  DefaultValue: null,
+  HelpText: null,
+  ValidationRule: null,
+  DisplayOrder: 2,
+  IsRequired: 0,
+  IsVisible: 1,
+  IsActive: 1,
+  CreatedAt: "2026-01-01T00:00:00",
+  UpdatedAt: "2026-01-01T00:00:00",
+};
+
 const mockProject = {
   ProjectID: 1,
   TemplateID: 1,
@@ -140,10 +158,10 @@ async function flushPromises(): Promise<void> {
   await Promise.resolve();
 }
 
-async function renderComponent(): Promise<ReturnType<typeof TestRenderer.create>> {
+async function renderComponent(props: Record<string, unknown> = {}): Promise<ReturnType<typeof TestRenderer.create>> {
   let tree!: ReturnType<typeof TestRenderer.create>;
   await act(async () => {
-    tree = TestRenderer.create(<GeneralInformation />);
+    tree = TestRenderer.create(<GeneralInformation {...props} />);
     await flushPromises();
   });
   return tree!;
@@ -213,7 +231,8 @@ async function changePoleId(
   tree: ReturnType<typeof TestRenderer.create>,
   text: string
 ): Promise<void> {
-  const node = tree.root.findByType(FieldRenderer as never);
+  const nodes = tree.root.findAll((n) => (n as { type?: unknown }).type === FieldRenderer);
+  const node = nodes[0]!;
   await act(async () => {
     (node.props as { onChange: (t: string) => void }).onChange(text);
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -248,10 +267,10 @@ describe("GeneralInformation pole id rename dialog", () => {
     jest.restoreAllMocks();
   });
 
-  it("renders no fields when there is no inspection id, so no popup is possible", async () => {
+  it("renders the Site ID field with no inspection id (no draft yet), and no popup is possible", async () => {
     mockContext({ inspectionId: null });
     const tree = await renderComponent();
-    expect(tree.root.findAll((n) => (n as { type?: unknown }).type === FieldRenderer).length).toBe(0);
+    expect(tree.root.findAll((n) => (n as { type?: unknown }).type === FieldRenderer).length).toBe(1);
     expect(dialogVisible(tree)).toBe(false);
   });
 
@@ -351,5 +370,501 @@ describe("GeneralInformation pole id rename dialog", () => {
     expect(setPoleId).toHaveBeenCalledWith("OLD");
     expect(service.renamePoleId).not.toHaveBeenCalled();
     expect(dialogVisible(tree)).toBe(false);
+  });
+});
+
+describe("GeneralInformation lazy draft + duplicate flow", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Alert, "alert");
+    setPoleId.mockReset();
+    setInspectionId.mockReset();
+    getPhotoStates.mockReset();
+    getPhotoStates.mockReturnValue({});
+    mockContext({ inspectionId: null });
+    repo.getFieldsByKey.mockResolvedValue([poleField]);
+    repo.getInspectionValues.mockResolvedValue({});
+    repo.getInspectionPoleId.mockResolvedValue("");
+    repo.getInspectionByPoleId.mockResolvedValue(null);
+    repo.saveFieldValue.mockResolvedValue(undefined);
+    repo.updateInspectionPoleId.mockResolvedValue(undefined);
+    repo.updatePoleIdDirectSave.mockResolvedValue(undefined);
+    photoRepo.getByInspection.mockResolvedValue([]);
+    service.renamePoleId.mockResolvedValue({
+      renamedFiles: 0,
+      updatedRecords: 0,
+      missingFiles: 0,
+    });
+  });
+
+  it("creates a draft lazily only after a unique Site ID passes the duplicate check", async () => {
+    const ensureDraft = jest
+      .fn()
+      .mockResolvedValue(101);
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ ensureDraft, releaseAbandonedDraft });
+
+    await changePoleId(tree, "SIK101");
+
+    expect(ensureDraft).toHaveBeenCalledTimes(1);
+    expect(repo.updatePoleIdDirectSave).toHaveBeenCalledWith(
+      101,
+      expect.any(Number),
+      "SIK101"
+    );
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("does NOT create a draft when the Site ID is a duplicate", async () => {
+    repo.getInspectionByPoleId.mockResolvedValue({
+      InspectionID: 99,
+      PoleID: "SIK101",
+      Status: "draft",
+    });
+    const ensureDraft = jest.fn().mockResolvedValue(101);
+    const tree = await renderComponent({ ensureDraft });
+
+    await changePoleId(tree, "SIK101");
+
+    expect(ensureDraft).not.toHaveBeenCalled();
+    expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
+    expect(setPoleId).toHaveBeenCalledWith("");
+  });
+
+  it("cleans up the abandoned draft when Edit Existing is chosen from the duplicate alert", async () => {
+    repo.getInspectionByPoleId.mockResolvedValue({
+      InspectionID: 99,
+      PoleID: "SIK101",
+      Status: "draft",
+    });
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ releaseAbandonedDraft });
+
+    await changePoleId(tree, "SIK101");
+
+    const call = (Alert.alert as jest.Mock).mock.calls.find(
+      ([title]: string[]) => title === "Inspection Already Exists"
+    );
+    expect(call).toBeDefined();
+    const buttons = call[2] as { text: string; onPress: () => void }[];
+    const editButton = buttons.find((b) => b.text === "Edit Existing");
+    expect(editButton).toBeDefined();
+
+    await act(async () => {
+      await editButton!.onPress();
+    });
+
+    expect(releaseAbandonedDraft).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("GeneralInformation duplicate Site ID -> Cancel", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Alert, "alert");
+    setPoleId.mockReset();
+    setInspectionId.mockReset();
+    getPhotoStates.mockReset();
+    getPhotoStates.mockReturnValue({});
+    mockContext({ inspectionId: null });
+    repo.getFieldsByKey.mockResolvedValue([poleField, divisionField]);
+    repo.getInspectionValues.mockResolvedValue({});
+    repo.getInspectionPoleId.mockResolvedValue("");
+    repo.getInspectionByPoleId.mockResolvedValue({
+      InspectionID: 99,
+      PoleID: "SIK101",
+      Status: "draft",
+    });
+    repo.saveFieldValue.mockResolvedValue(undefined);
+    repo.updateInspectionPoleId.mockResolvedValue(undefined);
+    repo.updatePoleIdDirectSave.mockResolvedValue(undefined);
+    photoRepo.getByInspection.mockResolvedValue([]);
+    service.renamePoleId.mockResolvedValue({
+      renamedFiles: 0,
+      updatedRecords: 0,
+      missingFiles: 0,
+    });
+  });
+
+  async function pressDuplicateCancel(
+    tree: ReturnType<typeof TestRenderer.create>
+  ): Promise<void> {
+    const call = (Alert.alert as jest.Mock).mock.calls.find(
+      ([title]: string[]) => title === "Inspection Already Exists"
+    );
+    expect(call).toBeDefined();
+    const buttons = call[2] as { text: string; onPress: () => void }[];
+    const cancelButton = buttons.find((b) => b.text === "Cancel");
+    expect(cancelButton).toBeDefined();
+    await act(async () => {
+      cancelButton!.onPress?.();
+      await flushPromises();
+    });
+  }
+
+  function renderedFieldValues(
+    tree: ReturnType<typeof TestRenderer.create>
+  ): string[] {
+    return tree.root
+      .findAll((n) => (n as { type?: unknown }).type === FieldRenderer)
+      .map((n) => (n.props as { value?: string }).value ?? "");
+  }
+
+  it("TEST 1/5: Cancel clears ONLY the Site ID and preserves other field values", async () => {
+    const ensureDraft = jest.fn().mockResolvedValue(101);
+    const tree = await renderComponent({ ensureDraft });
+
+    await changePoleId(tree, "SIK101");
+    await pressDuplicateCancel(tree);
+
+    // Site ID field is empty; the division field (default "Sikar") is untouched.
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("");
+    expect(values[1]).toBe("Sikar");
+    expect(setPoleId).toHaveBeenLastCalledWith("");
+
+    // Nothing was persisted for the duplicate and no draft was created.
+    expect(ensureDraft).not.toHaveBeenCalled();
+    expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
+    expect(repo.saveFieldValue).not.toHaveBeenCalled();
+    expect(repo.updateInspectionPoleId).not.toHaveBeenCalled();
+    expect(setInspectionId).not.toHaveBeenCalled();
+  });
+
+  it("TEST 2: after Cancel a new unique Site ID is accepted and the old duplicate is not in the DB", async () => {
+    const ensureDraft = jest.fn().mockResolvedValue(101);
+    const tree = await renderComponent({ ensureDraft });
+
+    await changePoleId(tree, "SIK101");
+    await pressDuplicateCancel(tree);
+
+    // Now enter a fresh, unique Site ID.
+    repo.getInspectionByPoleId.mockResolvedValue(null);
+    await changePoleId(tree, "NEW1");
+
+    expect(ensureDraft).toHaveBeenCalledTimes(1);
+    expect(repo.updatePoleIdDirectSave).toHaveBeenCalledWith(
+      101,
+      expect.any(Number),
+      "NEW1"
+    );
+    // The old duplicate must never have been persisted.
+    const allCalls = [
+      ...(repo.updatePoleIdDirectSave as jest.Mock).mock.calls,
+      ...(repo.saveFieldValue as jest.Mock).mock.calls,
+      ...(repo.updateInspectionPoleId as jest.Mock).mock.calls,
+    ].map((c) => String(c[2] ?? c[1] ?? ""));
+    expect(allCalls).not.toContain("SIK101");
+  });
+
+  it("TEST 3: pending debounced duplicate save is cancelled - duplicate is not restored after Cancel", async () => {
+    const ensureDraft = jest.fn().mockResolvedValue(101);
+    const tree = await renderComponent({ ensureDraft });
+
+    await changePoleId(tree, "SIK101");
+
+    // Press Cancel, then flush all pending async work.
+    await pressDuplicateCancel(tree);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    });
+
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("");
+    expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "SIK101"
+    );
+    expect(repo.saveFieldValue).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "SIK101"
+    );
+    expect(repo.updateInspectionPoleId).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "SIK101"
+    );
+  });
+
+  it("TEST 4: no draft/persisted Site ID exists when the inspection was never created", async () => {
+    const ensureDraft = jest.fn().mockResolvedValue(101);
+    const tree = await renderComponent({ ensureDraft });
+
+    await changePoleId(tree, "SIK101");
+    await pressDuplicateCancel(tree);
+
+    // Blank new inspection: draft must not be created, so nothing is persisted.
+    expect(ensureDraft).not.toHaveBeenCalled();
+    expect(setInspectionId).not.toHaveBeenCalled();
+    expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
+    expect(repo.saveFieldValue).not.toHaveBeenCalled();
+    expect(repo.updateInspectionPoleId).not.toHaveBeenCalled();
+    expect(renderedFieldValues(tree)[0]).toBe("");
+  });
+
+  it("TEST 6 (Edit Existing only): Edit Existing from the duplicate alert remains unchanged", async () => {
+    const ensureDraft = jest.fn().mockResolvedValue(101);
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ ensureDraft, releaseAbandonedDraft });
+
+    await changePoleId(tree, "SIK101");
+
+    const call = (Alert.alert as jest.Mock).mock.calls.find(
+      ([title]: string[]) => title === "Inspection Already Exists"
+    );
+    const buttons = call![2] as { text: string; onPress: () => void }[];
+
+    // Edit Existing releases the abandoned draft and navigates away.
+    const editButton = buttons.find((b) => b.text === "Edit Existing")!;
+    await act(async () => {
+      await editButton.onPress();
+    });
+    expect(releaseAbandonedDraft).toHaveBeenCalledTimes(1);
+    expect(setInspectionId).toHaveBeenCalledWith(99);
+  });
+});
+
+describe("GeneralInformation duplicate Site ID -> Create New", () => {
+  let ctxState: { inspectionId: number | null; poleId: string };
+  let statefulSetInspectionId: jest.Mock;
+  let statefulSetPoleId: jest.Mock;
+
+  function statefulContext(initialInspectionId: number | null): void {
+    ctxState = { inspectionId: initialInspectionId, poleId: "" };
+    statefulSetInspectionId = jest.fn((id: number | null) => {
+      ctxState.inspectionId = id;
+    });
+    statefulSetPoleId = jest.fn((pole: string) => {
+      ctxState.poleId = pole;
+    });
+    useInspectionMock.mockImplementation(() => ({
+      project: mockProject,
+      inspectionDate: "14-Aug-2026",
+      inspectionId: ctxState.inspectionId,
+      setInspectionId: statefulSetInspectionId,
+      setPoleId: statefulSetPoleId,
+      getPhotoStates,
+      ...(ctxState.poleId !== undefined ? { poleId: ctxState.poleId } : { poleId: "" }),
+    }));
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Alert, "alert");
+    setPoleId.mockReset();
+    setInspectionId.mockReset();
+    getPhotoStates.mockReset();
+    getPhotoStates.mockReturnValue({});
+    repo.getFieldsByKey.mockResolvedValue([poleField, divisionField]);
+    repo.getInspectionPoleId.mockResolvedValue("");
+    repo.getInspectionByPoleId.mockResolvedValue({
+      InspectionID: 99,
+      PoleID: "SIK201",
+      Status: "draft",
+    });
+    repo.saveFieldValue.mockResolvedValue(undefined);
+    repo.updateInspectionPoleId.mockResolvedValue(undefined);
+    repo.updatePoleIdDirectSave.mockResolvedValue(undefined);
+    photoRepo.getByInspection.mockResolvedValue([]);
+    service.renamePoleId.mockResolvedValue({
+      renamedFiles: 0,
+      updatedRecords: 0,
+      missingFiles: 0,
+    });
+  });
+
+  async function pressCreateNew(
+    tree: ReturnType<typeof TestRenderer.create>
+  ): Promise<void> {
+    const call = (Alert.alert as jest.Mock).mock.calls.find(
+      ([title]: string[]) => title === "Inspection Already Exists"
+    );
+    expect(call).toBeDefined();
+    const buttons = call![2] as { text: string; onPress: () => void }[];
+    const createNew = buttons.find((b) => b.text === "Create New");
+    expect(createNew).toBeDefined();
+    await act(async () => {
+      await createNew!.onPress();
+      await flushPromises();
+    });
+  }
+
+  function renderedFieldValues(
+    tree: ReturnType<typeof TestRenderer.create>
+  ): string[] {
+    return tree.root
+      .findAll((n) => (n as { type?: unknown }).type === FieldRenderer)
+      .map((n) => (n.props as { value?: string }).value ?? "");
+  }
+
+  it("TEST 1: Cancel still preserves every other form value (regression)", async () => {
+    // A draft has already persisted saved values for this duplicate inspection.
+    statefulContext(42);
+    repo.getInspectionValues.mockResolvedValue({
+      pole_id: "SIK101",
+      division: "GivenDivision",
+    });
+    const tree = await renderComponent();
+
+    // Change Site ID to the duplicate, then Cancel.
+    await changePoleId(tree, "SIK201");
+    const call = (Alert.alert as jest.Mock).mock.calls.find(
+      ([title]: string[]) => title === "Inspection Already Exists"
+    );
+    const cancelBtn = (call![2] as { text: string; onPress: () => void }[]).find(
+      (b) => b.text === "Cancel"
+    );
+    await act(async () => {
+      cancelBtn!.onPress();
+      await flushPromises();
+    });
+
+    // Pole ID cleared; every other value preserved.
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("");
+    expect(values[1]).toBe("GivenDivision");
+    // inspectionId untouched (Cancel keeps the current inspection).
+    expect(statefulSetInspectionId).not.toHaveBeenCalled();
+  });
+
+  it("TEST 2: Create New resets the whole inspection to a blank new lifecycle", async () => {
+    // A draft exists with previously saved/selected values. getInspectionValues
+    // returns those old values only for the live draft (id 42); a reset (null)
+    // must yield a clean form, exactly as the app's loadInspectionValues does.
+    statefulContext(42);
+    repo.getInspectionValues.mockImplementation((id: number | null) =>
+      Promise.resolve(
+        (id != null
+          ? { pole_id: "SIK101", division: "OldDivision" }
+          : {}) as Record<string, string>
+      )
+    );
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ releaseAbandonedDraft });
+
+    await changePoleId(tree, "SIK201");
+    await pressCreateNew(tree);
+
+    // inspectionId reset to null -> new.tsx re-locks sections / unmounts renderers
+    expect(statefulSetInspectionId).toHaveBeenLastCalledWith(null);
+    // orphan draft is released/deleted
+    expect(releaseAbandonedDraft).toHaveBeenCalledTimes(1);
+    // GeneralInformation values reset to clean config defaults; old saved values gone
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("");
+    expect(values[1]).toBe("Sikar");
+    expect(statefulSetPoleId).toHaveBeenLastCalledWith("");
+  });
+
+  it("TEST 3: old values do not reappear after waiting following Create New", async () => {
+    statefulContext(42);
+    repo.getInspectionValues.mockImplementation((id: number | null) =>
+      Promise.resolve(
+        (id != null
+          ? { pole_id: "SIK101", division: "OldDivision" }
+          : {}) as Record<string, string>
+      )
+    );
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ releaseAbandonedDraft });
+
+    await changePoleId(tree, "SIK201");
+    await pressCreateNew(tree);
+
+    // Wait for any stale debounce/init to attempt a restore.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      await flushPromises();
+    });
+
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("");
+    expect(values[1]).toBe("Sikar");
+    expect(renderedFieldValues(tree)[1]).not.toBe("OldDivision");
+  });
+
+  it("TEST 4: after Create New a new unique Site ID starts an entirely new inspection", async () => {
+    statefulContext(null);
+    repo.getInspectionValues.mockResolvedValue({});
+    const ensureDraft = jest.fn().mockResolvedValue(201);
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ ensureDraft, releaseAbandonedDraft });
+
+    // Duplicate first (no draft), then Create New.
+    await changePoleId(tree, "SIK201");
+    await pressCreateNew(tree);
+    // fresh lifecycle: the cleanup path always runs (releaseAbandonedDraft is
+    // idempotent and no-ops when no draft exists), but the duplicate never
+    // created a draft and inspectionId is reset to null.
+    expect(ensureDraft).not.toHaveBeenCalled();
+    expect(releaseAbandonedDraft).toHaveBeenCalledTimes(1);
+    expect(statefulSetInspectionId).toHaveBeenLastCalledWith(null);
+
+    // Now enter a new unique Site ID.
+    repo.getInspectionByPoleId.mockResolvedValue(null);
+    await changePoleId(tree, "BRAND-NEW");
+    expect(ensureDraft).toHaveBeenCalledTimes(1);
+    expect(repo.updatePoleIdDirectSave).toHaveBeenCalledWith(
+      201,
+      expect.any(Number),
+      "BRAND-NEW"
+    );
+    // The abandoned inspection's values are never loaded for the new one.
+    const loadedIds = (repo.getInspectionValues as jest.Mock).mock.calls.map(
+      (c) => c[0]
+    );
+    expect(loadedIds).not.toContain(201);
+  });
+
+  it("TEST 5: no orphan draft is left behind after Create New", async () => {
+    statefulContext(42);
+    repo.getInspectionValues.mockResolvedValue({
+      pole_id: "SIK101",
+      division: "OldDivision",
+    });
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ releaseAbandonedDraft });
+
+    await changePoleId(tree, "SIK201");
+    await pressCreateNew(tree);
+
+    // The persisted draft for the abandoned inspection is released/deleted.
+    expect(releaseAbandonedDraft).toHaveBeenCalledTimes(1);
+    // Before Create New the draft was live; after reset the id is null.
+    expect(statefulSetInspectionId).toHaveBeenLastCalledWith(null);
+  });
+
+  it("TEST 6: async race - a stale init load cannot repopulate old values after Create New", async () => {
+    statefulContext(42);
+    // Old inspection's async load stays pending until we resolve it later.
+    let resolveOld!: (v: Record<string, string>) => void;
+    repo.getInspectionValues.mockImplementation(
+      (id: number | null) =>
+        id != null
+          ? new Promise((res) => {
+              resolveOld = res;
+            })
+          : Promise.resolve({})
+    );
+    const releaseAbandonedDraft = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderComponent({ releaseAbandonedDraft });
+
+    // Old init(42) is pending (getInspectionValues(42) unresolved).
+    // Type the duplicate; the alert appears; then Create New.
+    await changePoleId(tree, "SIK201");
+    await pressCreateNew(tree);
+
+    // Now let the OLD inspection's load resolve with its old values.
+    await act(async () => {
+      resolveOld({ pole_id: "OLD-REPO", division: "OldDivision" });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await flushPromises();
+    });
+
+    // The stale load must NOT repopulate the reset form.
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("");
+    expect(values[0]).not.toBe("OLD-REPO");
   });
 });

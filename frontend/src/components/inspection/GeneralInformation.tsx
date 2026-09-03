@@ -18,7 +18,15 @@ import { PoleRenameService } from "@/src/database/repositories/PoleRenameService
 import { cleanPoleToken, decidePoleIdChange } from "./photoUtils";
 import PoleRenameConfirmDialog from "./PoleRenameConfirmDialog";
 
-const GeneralInformation = forwardRef((_props, ref) => {
+interface GeneralInformationProps {
+  ensureDraft?: () => Promise<number | null>;
+  releaseAbandonedDraft?: () => Promise<void>;
+}
+
+const GeneralInformation = forwardRef(({
+  ensureDraft,
+  releaseAbandonedDraft,
+}: GeneralInformationProps, ref) => {
 const {
   project: contextProject,
   inspectionDate,
@@ -43,6 +51,11 @@ const [pendingRename, setPendingRename] = useState<{
 const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleIdSaveChain = useRef<Promise<unknown>>(Promise.resolve());
+// The inspectionId the current render targets. Used by init() to detect when a
+// stale async load (started for an older inspectionId) resolves after the
+// inspection was switched or reset, so old values can never be repopulated.
+const inspectionIdRef = useRef(inspectionId);
+inspectionIdRef.current = inspectionId;
 
 useEffect(() => {
   return () => {
@@ -58,11 +71,11 @@ useEffect(() => {
 }, [inspectionId]);
 
 useEffect(() => {
-  if (!inspectionId) return;
   init();
 }, [inspectionId]);
 
 async function init() {
+  const targetId = inspectionId;
   try {
     setInitError(null);
     let projectData = contextProject;
@@ -89,12 +102,28 @@ async function init() {
 
     const loadedFields = await loadFields(templateId);
     const savedValues = await loadInspectionValues(loadedFields, projectData);
-    setValues(savedValues);
 
-    if ((savedValues.pole_id ?? "").trim() !== "") {
+    // If the inspection was switched or reset while this async load was in
+    // flight, discard the result so a stale/blank inspection never repopulates
+    // the current form with the previous inspection's values.
+    if (inspectionIdRef.current !== targetId) return;
+
+    const savedPoleId = (savedValues.pole_id ?? "").trim();
+    const hasTypedPoleId = (values.pole_id ?? "").trim() !== "";
+
+    if (savedPoleId !== "") {
       setFormUnlocked(true);
     }
-    setPoleId(savedValues.pole_id ?? "");
+
+    if (savedPoleId || !hasTypedPoleId) {
+      setValues(savedValues);
+      setPoleId(savedPoleId);
+    } else {
+      // The user has typed a Site ID that is not persisted yet (lazy draft
+      // not saved). Keep the typed value so a re-init triggered by draft
+      // creation doesn't clobber it; merge the rest of the values.
+      setValues((prev) => ({ ...prev, ...savedValues, pole_id: prev.pole_id }));
+    }
 
     for (const field of loadedFields) {
       const key = field.FieldKey;
@@ -124,9 +153,9 @@ async function loadInspectionValues(
   loadedFields: InspectionField[],
   project: typeof contextProject
 ): Promise<Record<string, string>> {
-  if (!inspectionId) return {};
-
-  const data = await InspectionRepository.getInspectionValues(inspectionId);
+  const data = inspectionId
+    ? await InspectionRepository.getInspectionValues(inspectionId)
+    : {};
 
   const result: Record<string, string> = {};
 
@@ -226,18 +255,26 @@ function isReadOnly(fieldKey: string) {
 }
 
 async function handlePoleIdSave(
-  inspectionId: number,
+  inspectionId: number | null,
   fieldId: number,
   text: string
 ) {
   const run = async () => {
     const trimmed = text.trim();
-    const current = await InspectionRepository.getInspectionPoleId(inspectionId);
 
-    // Fresh duplicate check immediately before any persistence
+    // Resolve the inspection row. For a brand-new inspection this is null
+    // until the draft is created lazily — AFTER the duplicate check passes.
+    let effectiveId = inspectionId;
+    const current = effectiveId != null
+      ? await InspectionRepository.getInspectionPoleId(effectiveId)
+      : "";
+
+    // Fresh duplicate check immediately before any persistence. When no
+    // draft exists yet, any existing match is a genuine duplicate, so no
+    // draft is created for it.
     if (trimmed.length > 0) {
       const existing = await InspectionRepository.getInspectionByPoleId(trimmed);
-      if (existing && existing.InspectionID !== inspectionId) {
+      if (existing && existing.InspectionID !== effectiveId) {
         Alert.alert(
           "Duplicate Site ID",
           `Site ID ${trimmed} already exists in another inspection. Please enter a unique Site ID.`
@@ -247,15 +284,25 @@ async function handlePoleIdSave(
       }
     }
 
+    // Lazy draft creation — only after the duplicate check passes, so a
+    // duplicate Site ID never leaves an orphan draft behind.
+    if (effectiveId == null) {
+      effectiveId = ensureDraft ? await ensureDraft() : null;
+      if (effectiveId == null) {
+        revertPoleId(current);
+        return;
+      }
+    }
+
     if (cleanPoleToken(trimmed) === cleanPoleToken(current)) {
-      await InspectionRepository.saveFieldValue(inspectionId, fieldId, trimmed);
+      await InspectionRepository.saveFieldValue(effectiveId, fieldId, trimmed);
       if (trimmed !== current) {
-        await InspectionRepository.updateInspectionPoleId(inspectionId, trimmed);
+        await InspectionRepository.updateInspectionPoleId(effectiveId, trimmed);
       }
       return;
     }
 
-    const photos = await PhotoRepository.getByInspection(inspectionId);
+    const photos = await PhotoRepository.getByInspection(effectiveId);
     const decision = decidePoleIdChange(photos, getPhotoStates());
 
     if (decision.type === "blocked") {
@@ -270,7 +317,7 @@ async function handlePoleIdSave(
     if (decision.type === "direct-save") {
       try {
         await InspectionRepository.updatePoleIdDirectSave(
-          inspectionId,
+          effectiveId,
           fieldId,
           trimmed
         );
@@ -301,6 +348,54 @@ function revertPoleId(value: string) {
   setValues((prev) => ({ ...prev, pole_id: value }));
   setPoleId(value);
   setFormUnlocked(value.trim().length > 0);
+}
+
+// Clear ONLY the Site ID (Pole ID) from form state. Used when the user
+// dismisses a duplicate-Site-ID alert with Cancel. It cancels any pending
+// debounced save so a stale duplicate value can never be written back, then
+// empties the field while preserving every other form value. The inspection
+// row and all other section data are left untouched.
+function clearSiteId() {
+  if (saveTimeout.current) {
+    clearTimeout(saveTimeout.current);
+    saveTimeout.current = null;
+  }
+  if (poleCheckTimeout.current) {
+    clearTimeout(poleCheckTimeout.current);
+    poleCheckTimeout.current = null;
+  }
+  setValues((prev) => ({ ...prev, pole_id: "" }));
+  setPoleId("");
+  setFormUnlocked(false);
+}
+
+// Abandon the current duplicate inspection and reset the whole form to a blank
+// new-inspection lifecycle. Used when the user dismisses a duplicate-Site-ID
+// alert with "Create New". It cancels pending timers, deletes the abandoned
+// draft (if a NEW-inspection draft was persisted), clears the form values, and
+// nulls inspectionId so new.tsx re-locks sections and unmounts the other
+// section renderers. The result is an unpersisted new inspection (inspectionId
+// = null) with a clean in-memory form.
+async function handleCreateNew() {
+  if (saveTimeout.current) {
+    clearTimeout(saveTimeout.current);
+    saveTimeout.current = null;
+  }
+  if (poleCheckTimeout.current) {
+    clearTimeout(poleCheckTimeout.current);
+    poleCheckTimeout.current = null;
+  }
+  setValues({});
+  setPoleId("");
+  setFormUnlocked(false);
+  setInspectionId(null);
+  if (releaseAbandonedDraft) {
+    try {
+      await releaseAbandonedDraft();
+    } catch (error) {
+      logger.error("[CreateNew] abandon draft failed:", error);
+    }
+  }
 }
 
 useImperativeHandle(ref, () => ({
@@ -389,6 +484,12 @@ return (
                           {
                             text: "Edit Existing",
                             onPress: async () => {
+                              // Delete the session draft (if any) so it does
+                              // not linger as an orphan, then open the
+                              // existing inspection.
+                              if (releaseAbandonedDraft) {
+                                await releaseAbandonedDraft();
+                              }
                               setValues({});
                               setInspectionId(existing.InspectionID);
 
@@ -405,12 +506,19 @@ return (
                           {
                             text: "Create New",
                             onPress: () => {
-                              setValues((prev) => ({ ...prev, pole_id: "" }));
-                              setPoleId("");
-                              setFormUnlocked(false);
+                              handleCreateNew();
                             },
                           },
-                          { text: "Cancel", style: "cancel" },
+                          { text: "Cancel", style: "cancel",
+                            onPress: () => {
+                              // Dismiss the duplicate alert and clear ONLY the
+                              // Site ID. Cancel any pending/debounced save for
+                              // the duplicate so it cannot be written back, and
+                              // keep the user on this form with all other data
+                              // intact. No draft is created by cancelling.
+                              clearSiteId();
+                            },
+                          },
                         ]
                       );
                     }
@@ -422,7 +530,7 @@ return (
               }
             }
 
-            if (!inspectionId) return;
+            if (!inspectionId && field.FieldKey !== "pole_id") return;
 
             if (saveTimeout.current) {
               clearTimeout(saveTimeout.current);
@@ -431,7 +539,7 @@ return (
             const currentInspectionId = inspectionId;
 
             saveTimeout.current = setTimeout(async () => {
-              if (!currentInspectionId) return;
+              if (!currentInspectionId && field.FieldKey !== "pole_id") return;
 
               if (field.FieldKey === "pole_id") {
                 await handlePoleIdSave(
@@ -441,6 +549,8 @@ return (
                 );
                 return;
               }
+
+              if (currentInspectionId == null) return;
 
               await InspectionRepository.saveFieldValue(
                 currentInspectionId,

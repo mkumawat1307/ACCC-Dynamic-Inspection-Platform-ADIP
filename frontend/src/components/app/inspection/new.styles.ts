@@ -26,4 +26,9 @@ export const styles = StyleSheet.create({
   accordionHeader: {
     paddingVertical: TOUCH_TARGETS.sectionHeaderPadding,
   },
+  lockedNotice: {
+    paddingVertical: 12,
+    color: "#757575",
+    fontStyle: "italic",
+  },
 });

@@ -66,6 +66,9 @@ export default function NewInspectionScreen({
   const sectionRefs = useRef<Map<number, View>>(new Map());
   const expandedSectionsRef = useRef<number[]>([1]);
   const sectionScrollCoordinatorRef = useRef<SectionScrollCoordinator | null>(null);
+  const createdDraftIdRef = useRef<number | null>(null);
+  const creatingDraftRef = useRef<Promise<number | null> | null>(null);
+  const inspectionIdRef = useRef<number | null>(null);
   if (!sectionScrollCoordinatorRef.current) {
     sectionScrollCoordinatorRef.current = new SectionScrollCoordinator({
       isExpanded: (sectionId) => expandedSectionsRef.current.includes(sectionId),
@@ -115,6 +118,7 @@ export default function NewInspectionScreen({
     poleId,
     getPhotoStates,
   } = useInspection();
+  inspectionIdRef.current = inspectionId;
 
   const photosProcessing = usePhotosProcessing();
 
@@ -299,20 +303,69 @@ if (routeInspectionId) {
 
 } else {
 
-  // Creating new inspection
+  // Creating new inspection — do NOT create a Draft row yet.
+  // Lazy draft creation happens only once the entered Site ID passes
+  // duplicate validation (see createDraftInspection). Until then
+  // inspectionId stays null so no orphan draft is left behind if the
+  // user backs out or jumps to an existing inspection.
   setPoleId("");
-  const newInspectionId =
-    await InspectionRepository.createInspection(
-      data.ProjectID,
-      data.DistrictID,
-      inspectionDate
-    );
-
-  setInspectionId(newInspectionId);
+  setInspectionId(null);
+  createdDraftIdRef.current = null;
 }
 
 return data;
 }
+
+const createDraftInspection = async (): Promise<number | null> => {
+  // Editing an existing inspection — its row already exists.
+  if (routeInspectionId) return Number(routeInspectionId);
+
+  // Reuse an already-created session draft.
+  if (createdDraftIdRef.current != null) return createdDraftIdRef.current;
+
+  // Guard against concurrent creation (debounced saves can overlap).
+  if (creatingDraftRef.current) return creatingDraftRef.current;
+
+  const create = (async () => {
+    const data = projectDataJson
+      ? (JSON.parse(projectDataJson) as Project)
+      : contextProject;
+    if (!data) {
+      logger.error("[new.tsx] createDraftInspection — no project data");
+      return null;
+    }
+    const newId = await InspectionRepository.createInspection(
+      data.ProjectID,
+      data.DistrictID,
+      getCurrentInspectionDate()
+    );
+    createdDraftIdRef.current = newId;
+    setInspectionId(newId);
+    return newId;
+  })();
+
+  creatingDraftRef.current = create;
+  try {
+    return (await create) ?? createdDraftIdRef.current;
+  } finally {
+    creatingDraftRef.current = null;
+  }
+};
+
+const releaseAbandonedDraft = async (): Promise<void> => {
+  // Editing an existing inspection — never delete the existing row.
+  if (routeInspectionId) return;
+
+  const draftId = createdDraftIdRef.current;
+  createdDraftIdRef.current = null;
+  if (draftId == null) return;
+
+  try {
+    await InspectionRepository.deleteInspection(draftId);
+  } catch (error) {
+    logger.error("[new.tsx] releaseAbandonedDraft — delete failed:", error);
+  }
+};
 
 const handleBack = async () => {
   const ok = await validateBeforeExit();
@@ -402,6 +455,7 @@ const handleCancel = () => {
               await InspectionRepository.deleteInspection(
                 inspectionId
               );
+              createdDraftIdRef.current = null;
             }
 
             router.back();
@@ -487,14 +541,21 @@ return (
       >
         <Card.Content>
     {section.SectionKey === "general_information" ? (
-      <GeneralInformation />
-    ) : (
+      <GeneralInformation
+        ensureDraft={createDraftInspection}
+        releaseAbandonedDraft={releaseAbandonedDraft}
+      />
+    ) : inspectionId ? (
       <SectionRenderer
         sectionId={section.SectionID}
-        inspectionId={inspectionId!}
+        inspectionId={inspectionId}
         sectionKey={section.SectionKey}
         templateId={defaultTemplateId}
       />
+    ) : (
+      <Text variant="bodyMedium" style={styles.lockedNotice}>
+        Enter a unique Site ID above to enable this section.
+      </Text>
     )}
         </Card.Content>
       </List.Accordion>

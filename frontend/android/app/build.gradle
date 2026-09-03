@@ -4,6 +4,11 @@ apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
+// Single source of truth for versionCode/versionName is app.json. Gradle reads
+// it at configure time so the release build always matches expo config without
+// manual sync or re-running prebuild (which would wipe native customizations).
+def expoConfig = new groovy.json.JsonSlurper().parseText(file("$projectRoot/app.json").text)
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -98,10 +103,9 @@ android {
         applicationId 'com.accc.dynamicinspection'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // versionCode 3
-        // versionName is the user-visible app version string.
-        versionCode 4
-        versionName "1.3.0"
+        // versionCode and versionName come from app.json (single source of truth)
+        versionCode expoConfig.expo.android.versionCode as int
+        versionName expoConfig.expo.version
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
