@@ -17,22 +17,9 @@ app-example
 .metro-cache/
 .metro-health-check*
 
-# Test coverage artifacts (docs/ and test sources are tracked)
-coverage/
+# Test coverage artifacts
+**/coverage/
 *.test-results.xml
-
-# Tests
-__tests__/
-tests/
-test/
-*.test.ts
-*.test.tsx
-*.spec.ts
-*.spec.tsx
-
-# Mocks
-__mocks__/
-mocks/
 
 # Native build outputs (source under android/, ios/ is tracked)
 **/build/

@@ -1,0 +1,210 @@
+import React from "react";
+import TestRenderer, { act } from "react-test-renderer";
+import { FieldInput } from "@/src/components/inspection/renderFieldInput";
+import { InspectionScrollProvider } from "@/src/context/InspectionScrollContext";
+
+jest.mock("react-native-paper", () => {
+  const ReactPaper = require("react");
+  const { Text } = require("react-native");
+  return {
+    Text,
+    TextInput: (props: Record<string, unknown>) =>
+      ReactPaper.createElement("TextInput", props),
+    Checkbox: {
+      Item: (props: Record<string, unknown>) =>
+        ReactPaper.createElement("CheckboxItem", props),
+    },
+    Switch: (props: Record<string, unknown>) =>
+      ReactPaper.createElement("Switch", props),
+  };
+});
+
+jest.mock("react-native-element-dropdown", () => ({
+  Dropdown: (props: any) => {
+    const ReactMock = require("react");
+    return ReactMock.createElement("Dropdown", props);
+  },
+}));
+
+jest.mock("@/src/context/InspectionScrollContext", () => ({
+  useInspectionScroll: () => ({
+    scrollViewRef: { current: null },
+    scrollOffsetRef: { current: 0 },
+    setDropdownOpen: jest.fn(),
+  }),
+  InspectionScrollProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+function renderNumber(params: Partial<React.ComponentProps<typeof FieldInput>> = {}) {
+  const onChange = jest.fn();
+  const onCameraCountChange = jest.fn();
+  const onSwitchCountChange = jest.fn();
+  const setDropdownFocus = jest.fn();
+  const props = {
+    fieldType: "number",
+    label: "Voltage",
+    value: "",
+    editable: true,
+    placeholder: "",
+    error: undefined,
+    options: [],
+    dropdownFocus: false,
+    setDropdownFocus,
+    onChange,
+    onCameraCountChange,
+    onSwitchCountChange,
+    ...params,
+  };
+  let tree!: ReturnType<typeof TestRenderer.create>;
+  act(() => {
+    tree = TestRenderer.create(
+      <InspectionScrollProvider setDropdownOpen={jest.fn()}>
+        <FieldInput {...props} />
+      </InspectionScrollProvider>
+    );
+  });
+  return { tree, onChange, onCameraCountChange, onSwitchCountChange };
+}
+
+function findInput(tree: ReturnType<typeof TestRenderer.create>) {
+  const node = tree.root.findAll((n) => (n as { type?: unknown }).type === "TextInput")[0];
+  return node as unknown as {
+    props: { onChangeText: (text: string) => void };
+  };
+}
+
+describe("FieldInput NUMBER", () => {
+  it("renders a TextInput with decimal-pad keyboard", () => {
+    const { tree } = renderNumber();
+    const inputs = tree.root.findAll((n) => (n as { type?: unknown }).type === "TextInput");
+    expect(inputs.length).toBe(1);
+    expect(inputs[0].props.keyboardType).toBe("decimal-pad");
+  });
+
+  it("sanitizes a decimal value typed into the field", () => {
+    const { tree, onChange } = renderNumber({ value: "12.5" });
+    const input = findInput(tree);
+    input.props.onChangeText("12.5");
+    expect(onChange).toHaveBeenCalledWith("12.5");
+  });
+
+  it("keeps empty string as empty (distinct from 0)", () => {
+    const { tree, onChange } = renderNumber({ value: "" });
+    const input = findInput(tree);
+    input.props.onChangeText("");
+    expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("camera_count uses integer-only sanitization and reports numeric count", () => {
+    const { tree, onChange, onCameraCountChange } = renderNumber({
+      fieldKey: "camera_count",
+      value: "1",
+    });
+    const input = findInput(tree);
+    input.props.onChangeText("12.9");
+    expect(onChange).toHaveBeenCalledWith("129");
+    expect(onCameraCountChange).toHaveBeenCalledWith(129);
+  });
+
+  it("camera_count cleared maps empty to count 0 but stores empty", () => {
+    const { tree, onChange, onCameraCountChange } = renderNumber({
+      fieldKey: "camera_count",
+      value: "1",
+    });
+    const input = findInput(tree);
+    input.props.onChangeText("");
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(onCameraCountChange).toHaveBeenCalledWith(0);
+  });
+});
+
+function renderDropdown(params: Partial<React.ComponentProps<typeof FieldInput>> = {}) {
+  const onChange = jest.fn();
+  const onCameraCountChange = jest.fn();
+  const onSwitchCountChange = jest.fn();
+  const setDropdownFocus = jest.fn();
+  const props = {
+    fieldType: "dropdown",
+    label: "Power Cable Status",
+    value: "Overhead",
+    editable: true,
+    placeholder: "Select",
+    error: undefined,
+    options: [
+      { label: "Overhead", value: "Overhead" },
+      { label: "Underground", value: "Underground" },
+    ],
+    dropdownFocus: false,
+    setDropdownFocus,
+    onChange,
+    onCameraCountChange,
+    onSwitchCountChange,
+    ...params,
+  };
+  let tree!: ReturnType<typeof TestRenderer.create>;
+  act(() => {
+    tree = TestRenderer.create(
+      <InspectionScrollProvider setDropdownOpen={jest.fn()}>
+        <FieldInput {...props} />
+      </InspectionScrollProvider>
+    );
+  });
+  return { tree, onChange, setDropdownFocus };
+}
+
+function findDropdown(tree: ReturnType<typeof TestRenderer.create>) {
+  return tree.root.findAll(
+    (n) => (n as { type?: unknown }).type === "Dropdown"
+  )[0] as unknown as {
+    props: {
+      value: string;
+      data: Array<{ label: string; value: string; isClear?: boolean }>;
+      onChange: (item: any) => void;
+      onFocus?: () => void;
+      onBlur?: () => void;
+    };
+  };
+}
+
+describe("FieldInput DROPDOWN clear selection wiring", () => {
+  it("selected dropdown offers options plus a Clear selection row", () => {
+    const { tree } = renderDropdown();
+    const dd = findDropdown(tree);
+    expect(dd.props.value).toBe("Overhead");
+    expect(dd.props.data).toHaveLength(3);
+    expect(dd.props.data[2]).toMatchObject({ label: "Clear selection", isClear: true });
+  });
+
+  it("empty dropdown shows no Clear selection row", () => {
+    const { tree } = renderDropdown({ value: "" });
+    const dd = findDropdown(tree);
+    expect(dd.props.data).toHaveLength(2);
+    expect(dd.props.data.some((i) => i.isClear === true)).toBe(false);
+  });
+
+  it("clearing propagates the empty string upward (never the sentinel)", () => {
+    const { tree, onChange, setDropdownFocus } = renderDropdown();
+    const dd = findDropdown(tree);
+    const clear = dd.props.data[2];
+    act(() => {
+      dd.props.onChange(clear);
+    });
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(onChange.mock.calls[0][0]).not.toBe(clear.value);
+    expect(setDropdownFocus).toHaveBeenCalledWith(false);
+  });
+
+  it("selecting a configured option propagates its value", () => {
+    const { tree, onChange } = renderDropdown();
+    act(() => {
+      findDropdown(tree).props.onChange({ label: "Underground", value: "Underground" });
+    });
+    expect(onChange).toHaveBeenCalledWith("Underground");
+  });
+
+  it("disabled dropdown passes editable=false through to the underlying control", () => {
+    const { tree } = renderDropdown({ editable: false });
+    const dd = findDropdown(tree);
+    expect(dd.props.data).toHaveLength(2);
+  });
+});
