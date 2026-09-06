@@ -2,17 +2,28 @@
 import { getDatabase } from "../db";
 import { logger } from "@/src/utils/logger";
 import { InspectionValue } from "@/src/models/InspectionValue";
+import { InspectionEditSession } from "./InspectionEditSession";
 
 export default class InspectionValueRepository {
 
   /**
-   * Insert or Update a field value
+   * Insert or Update a field value.
+   *
+   * While an edit session is active for this inspection (editing an EXISTING
+   * inspection), the write is staged in memory and only persisted when the
+   * session is committed (explicit Save). Back/Cancel discards it, so unsaved
+   * edits never reach the database.
    */
   static async saveValue(
     inspectionId: number,
     fieldId: number,
     value: string | null
   ): Promise<void> {
+
+    if (InspectionEditSession.isActive(inspectionId)) {
+      InspectionEditSession.stageFieldValue(fieldId, value);
+      return;
+    }
 
     const db = await getDatabase();
 

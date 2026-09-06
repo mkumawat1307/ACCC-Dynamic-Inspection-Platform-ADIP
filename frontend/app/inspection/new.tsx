@@ -47,7 +47,9 @@ import {
 } from "@/src/components/inspection/dropdownScrollGate";
 import { getDatabase } from "@/src/database/db";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
+import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
 import { validatePhotosForSave } from "@/src/components/inspection/photoUtils";
 
@@ -69,6 +71,7 @@ export default function NewInspectionScreen({
   const createdDraftIdRef = useRef<number | null>(null);
   const creatingDraftRef = useRef<Promise<number | null> | null>(null);
   const inspectionIdRef = useRef<number | null>(null);
+  const hydratedInspectionIdRef = useRef<number | null>(null);
   if (!sectionScrollCoordinatorRef.current) {
     sectionScrollCoordinatorRef.current = new SectionScrollCoordinator({
       isExpanded: (sectionId) => expandedSectionsRef.current.includes(sectionId),
@@ -131,12 +134,51 @@ export default function NewInspectionScreen({
     expandedSectionsRef.current = expandedSections;
   }, [expandedSections]);
 
+  // Apply configured "Default Selection" field values as soon as an inspection
+  // id exists (new draft created, or existing inspection loaded), independent
+  // of whether any section has been expanded. Only fields with an enabled
+  // Default Selection receive a value; existing saved values always win. Runs
+  // once per inspection id (idempotent). See InspectionFieldRepository.
+  useEffect(() => {
+    if (inspectionId == null) return;
+    if (hydratedInspectionIdRef.current === inspectionId) return;
+    hydratedInspectionIdRef.current = inspectionId;
+    InspectionFieldRepository.applyDefaultSelections(
+      inspectionId,
+      Boolean(routeInspectionId)
+    ).catch(
+      (error) => {
+        logger.error(
+          "[new.tsx] applyDefaultSelections failed:",
+          error
+        );
+      }
+    );
+  }, [inspectionId]);
+
   useEffect(() => {
     return () => {
       cancelPendingOpen();
       sectionScrollCoordinatorRef.current?.cancel();
     };
   }, []);
+
+  // Editing an EXISTING inspection creates an isolated edit session: every
+  // field/device/Pole ID change is staged in memory and only persisted on an
+  // explicit Save (commit). Back/Cancel (and unmount) discards the staged
+  // edits, leaving the database untouched. NEW inspections have no session and
+  // keep their current autosave behaviour.
+  useEffect(() => {
+    const isExisting = Boolean(routeInspectionId);
+    if (isExisting && inspectionId != null) {
+      InspectionEditSession.activate(inspectionId);
+    } else {
+      InspectionEditSession.discard();
+    }
+    return () => {
+      InspectionEditSession.discard();
+    };
+  }, [inspectionId, routeInspectionId]);
 
   function handleSectionPress(sectionId: number) {
     const coordinator = sectionScrollCoordinatorRef.current;
@@ -254,7 +296,10 @@ async function initialize() {
   );
   if (tpl) setDefaultTemplateId(tpl.TemplateID);
 
-  const data = await InspectionRepository.getSections();
+  const data = await InspectionRepository.getSections(
+    undefined,
+    routeInspectionId ? Number(routeInspectionId) : undefined
+  );
   if (data.length > 0) {
     setSections(data);
   }
@@ -378,6 +423,8 @@ const handleBack = async () => {
 const handleSave = async () => {
   if (!inspectionId) return;
 
+  const isExisting = Boolean(routeInspectionId);
+
   const result = await validateSectionsAndDevices();
 
   if (!result.valid) {
@@ -400,6 +447,21 @@ const handleSave = async () => {
     const message = getPhotoBlockMessage(photoValidation.reason);
     Alert.alert("Inspection Incomplete", message);
     return;
+  }
+
+  // Persist all staged edits (field values, Pole ID, device records) for an
+  // existing inspection. This is the explicit Save boundary — nothing is
+  // written to the database until this point, and only a fully valid Save
+  // deactivates the edit session.
+  if (isExisting) {
+    const committed = await InspectionEditSession.commit();
+    if (!committed) {
+      Alert.alert(
+        "Duplicate Site ID",
+        "Site ID already exists in another inspection. Please enter a unique Site ID."
+      );
+      return;
+    }
   }
 
   await InspectionRepository.updateInspectionStatus(
@@ -533,7 +595,7 @@ return (
       }}
     >
       <List.Accordion
-        title={section.SectionName}
+        title={section.IsActive === 0 ? `Deleted ${section.SectionName}` : section.SectionName}
         expanded={expandedSections.includes(section.SectionID)}
         onPress={() => handleSectionPress(section.SectionID)}
         titleStyle={styles.sectionTitle}
@@ -551,6 +613,7 @@ return (
         inspectionId={inspectionId}
         sectionKey={section.SectionKey}
         templateId={defaultTemplateId}
+        existing={Boolean(routeInspectionId)}
       />
     ) : (
       <Text variant="bodyMedium" style={styles.lockedNotice}>

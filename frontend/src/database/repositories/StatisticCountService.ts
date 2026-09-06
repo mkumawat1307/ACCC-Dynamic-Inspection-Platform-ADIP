@@ -184,22 +184,27 @@ export class StatisticCountService {
 
       params.push(card.BreakdownField);
 
-      const sql = `SELECT iv.FieldValue AS label, COUNT(DISTINCT iv.InspectionID) AS count
+      const sql = `SELECT COALESCE(fo.OptionLabel, iv.FieldValue) AS label, COUNT(DISTINCT iv.InspectionID) AS count
          FROM Inspections i
          JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
          JOIN InspectionFields f ON f.FieldID = iv.FieldID
+         LEFT JOIN FieldOptions fo ON fo.FieldID = f.FieldID AND fo.OptionValue = iv.FieldValue AND fo.IsActive = 1
          WHERE i.ProjectID = ?
          AND ${DRAFT_EXCLUDED_STATUS_SQL}
          ${time.clause}
          ${filterFragments.join(" ")}
          AND f.FieldKey = ?
          AND f.IsActive = 1
-         GROUP BY iv.FieldValue
+         AND iv.FieldValue IS NOT NULL
+         AND TRIM(iv.FieldValue) != ''
+         GROUP BY COALESCE(fo.OptionLabel, iv.FieldValue)
          ORDER BY count DESC, label ASC`;
 
       const db = await getDatabase();
       const rows = await db.getAllAsync<{ label: string | null; count: number }>(sql, params);
-      return rows.map((row) => ({ label: row.label ?? "(Not set)", count: row.count }));
+      return rows
+        .filter((row) => row.label != null && row.label.trim() !== "")
+        .map((row) => ({ label: row.label as string, count: row.count }));
     } catch {
       return [];
     }
@@ -379,6 +384,117 @@ export class StatisticCountService {
       return rows.map((row) => ({ label: row.label ?? "(Not set)", count: row.count }));
     } catch {
       return [];
+    }
+  }
+
+  static async resolveFieldType(card: DashboardCard): Promise<string | null> {
+    try {
+      if (!card.BreakdownField) return null;
+      const db = await getDatabase();
+      if (card.EntityType === "inspections") {
+        const row = await db.getFirstAsync<{ FieldType: string }>(
+          `SELECT FieldType FROM InspectionFields WHERE FieldKey = ? AND IsActive = 1 LIMIT 1`,
+          [card.BreakdownField]
+        );
+        return row ? row.FieldType.toLowerCase() : null;
+      }
+      if (card.EntityType === "devices" && card.DeviceType) {
+        const row = await db.getFirstAsync<{ FieldType: string }>(
+          `SELECT FieldType FROM DeviceFieldDefinitions WHERE DeviceType = ? AND FieldName = ? AND IsActive = 1 LIMIT 1`,
+          [card.DeviceType, card.BreakdownField]
+        );
+        return row ? row.FieldType.toLowerCase() : null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  static async resolveSectionName(card: DashboardCard): Promise<string | null> {
+    try {
+      if (!card.BreakdownField) return null;
+      const db = await getDatabase();
+      if (card.EntityType === "inspections") {
+        const row = await db.getFirstAsync<{ SectionName: string }>(
+          `SELECT s.SectionName FROM InspectionFields f JOIN InspectionSections s ON f.SectionID = s.SectionID WHERE f.FieldKey = ? AND f.IsActive = 1 LIMIT 1`,
+          [card.BreakdownField]
+        );
+        return row ? row.SectionName : null;
+      }
+      if (card.EntityType === "devices") {
+        return card.DeviceType ?? null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  static async checkboxCountCard(projectId: number, card: DashboardCard): Promise<number> {
+    try {
+      if (card.EntityType !== "inspections" || !card.BreakdownField) return 0;
+
+      const counter = COUNTER_TYPES[card.CounterType];
+      if (!counter) return 0;
+
+      const params: (string | number)[] = [projectId];
+
+      const time = counter.buildTimeClause("i");
+      if (time.clause) params.push(...time.params);
+
+      params.push(card.BreakdownField);
+
+      const sql = `SELECT COUNT(DISTINCT iv.InspectionID) AS count
+         FROM Inspections i
+         JOIN InspectionValues iv ON iv.InspectionID = i.InspectionID
+         JOIN InspectionFields f ON f.FieldID = iv.FieldID
+         WHERE i.ProjectID = ?
+         AND ${DRAFT_EXCLUDED_STATUS_SQL}
+         ${time.clause}
+         AND f.FieldKey = ?
+         AND f.IsActive = 1
+         AND iv.FieldValue = '1'`;
+
+      const db = await getDatabase();
+      const row = await db.getFirstAsync<{ count: number }>(sql, params);
+      return row?.count ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  static async deviceCheckboxCountCard(projectId: number, card: DashboardCard): Promise<number> {
+    try {
+      if (card.EntityType !== "devices" || !card.DeviceType || !card.BreakdownField) return 0;
+      const fieldName = card.BreakdownField;
+      if (!/^[A-Za-z0-9_]+$/.test(fieldName)) return 0;
+
+      const counter = COUNTER_TYPES[card.CounterType];
+      if (!counter) return 0;
+
+      const params: (string | number)[] = [projectId];
+
+      const time = counter.buildTimeClause("r");
+      if (time.clause) params.push(...time.params);
+
+      params.push(card.DeviceType);
+
+      const jsonExpr = `json_extract(r.DeviceData, '$.${fieldName}')`;
+      const sql = `SELECT COUNT(*) AS count
+         FROM DeviceRecords r
+         JOIN Inspections i ON r.InspectionID = i.InspectionID
+         WHERE i.ProjectID = ? AND r.IsActive = 1
+         AND ${DRAFT_EXCLUDED_STATUS_SQL}
+         ${time.clause}
+         AND r.DeviceType = ?
+         AND ${jsonExpr} = '1'`;
+
+      const db = await getDatabase();
+      const row = await db.getFirstAsync<{ count: number }>(sql, params);
+      return row?.count ?? 0;
+    } catch {
+      return 0;
     }
   }
 }

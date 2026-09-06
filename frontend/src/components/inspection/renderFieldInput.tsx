@@ -1,9 +1,9 @@
 import React, { useRef } from "react";
 import { Keyboard, StyleSheet, View } from "react-native";
 import { Checkbox, Switch, Text, TextInput } from "react-native-paper";
-import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
 import { sanitizeNumberInput } from "../../utils/fieldInput";
 import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
+import DropdownField from "./DropdownField";
 
 export interface DropdownOption {
   label: string;
@@ -34,7 +34,6 @@ export const FieldInput: React.FC<FieldInputProps> = ({
   const isCameraCount = fieldKey === "camera_count";
   const isSwitchCount = fieldKey === "switch_count";
   const dropdownViewRef = useRef<View>(null);
-  const dropdownOpenRef = useRef<IDropdownRef | null>(null);
   const { setDropdownOpen } = useInspectionScroll();
 
   const handleDropdownFocus = () => {
@@ -177,8 +176,12 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <View ref={dropdownViewRef}>
           <Text style={styles.fieldLabel}>{label}</Text>
-          <Dropdown
-            ref={dropdownOpenRef}
+          <DropdownField
+            value={value}
+            options={options}
+            editable={editable}
+            placeholder={placeholder || "Select"}
+            maxHeight={350}
             style={[
               styles.dropdown,
               dropdownFocus && styles.dropdownFocus,
@@ -187,26 +190,15 @@ export const FieldInput: React.FC<FieldInputProps> = ({
             placeholderStyle={styles.placeholderStyle}
             selectedTextStyle={styles.selectedTextStyle}
             iconStyle={styles.iconStyle}
-            data={options}
-            search={false}
-            maxHeight={350}
-            keyboardAvoiding={false}
-            labelField="label"
-            valueField="value"
-            placeholder={
-              placeholder || "Select"
-            }
-            value={value}
-            disable={!editable}
             onFocus={handleDropdownFocus}
             onBlur={() => {
               setDropdownFocus(false);
               setDropdownOpen(false);
             }}
-            onChange={(item) => {
+            onChange={(dropdownValue) => {
               setDropdownFocus(false);
               setDropdownOpen(false);
-              onChange?.(item.value);
+              onChange?.(dropdownValue);
             }}
           />
         </View>

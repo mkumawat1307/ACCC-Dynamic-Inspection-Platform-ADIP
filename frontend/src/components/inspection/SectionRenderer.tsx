@@ -36,6 +36,7 @@ interface Props {
   sectionId: number;
   sectionKey?: string;
   templateId?: number;
+  existing?: boolean;
 }
 
 export default function SectionRenderer({
@@ -43,6 +44,7 @@ export default function SectionRenderer({
   sectionId,
   sectionKey,
   templateId,
+  existing = false,
 }: Props) {
   const { poleId: contextPoleId } = useInspection();
   const [loading, setLoading] = useState(true);
@@ -64,11 +66,11 @@ export default function SectionRenderer({
       setError(null);
 
       const sectionFields =
-        await InspectionFieldRepository.getFieldsBySection(sectionId);
+        await InspectionFieldRepository.getFieldsBySection(sectionId, inspectionId);
 
       const [savedValues, allOptions] = await Promise.all([
         InspectionValueRepository.getValuesByInspection(inspectionId),
-        InspectionFieldRepository.getFieldOptionsBySection(sectionId),
+        InspectionFieldRepository.getFieldOptionsBySection(sectionId, inspectionId),
       ]);
 
       const savedMap = new Map<number, string>();
@@ -95,6 +97,15 @@ export default function SectionRenderer({
           )?.OptionValue;
         }
 
+        // Editing an existing inspection: the persisted InspectionValue is
+        // authoritative. A missing value stays empty — the field default must
+        // never be injected into an existing inspection just because a default
+        // is configured now, and no InspectionValue is created on open.
+        if (existing) {
+          valueMap[field.FieldID] = saved ?? "";
+          continue;
+        }
+
         const resolved =
           saved ??
           defaultOptionValue ??
@@ -118,7 +129,7 @@ export default function SectionRenderer({
       setPoleIdLoaded(true);
 
       // Load all device types from DeviceFieldDefinitions
-      const types = await DeviceFieldDefinitionsRepository.getDeviceTypes(templateId);
+      const types = await DeviceFieldDefinitionsRepository.getDeviceTypes(templateId, existing);
       setDeviceTypes(types);
 
       // Detect device count fields dynamically
@@ -144,7 +155,7 @@ export default function SectionRenderer({
     } finally {
       setLoading(false);
     }
-  }, [sectionId, inspectionId, templateId]);
+  }, [sectionId, inspectionId, templateId, existing]);
 
   const isFormLocked = !contextPoleId.trim();
 
@@ -211,12 +222,11 @@ export default function SectionRenderer({
           <FieldRenderer
             key={field.FieldID}
             fieldKey={field.FieldKey}
-            fieldName={field.FieldName}
+            fieldName={field.IsActive === 0 ? `Deleted ${field.FieldName}` : field.FieldName}
             fieldType={field.FieldType}
             required={field.IsRequired === 1}
             editable={
-              field.IsActive === 1 &&
-              (!isFormLocked || field.FieldKey === "pole_id")
+              !isFormLocked || field.FieldKey === "pole_id"
             }
             placeholder={field.Placeholder ?? ""}
             helpText={field.HelpText ?? ""}
@@ -239,6 +249,7 @@ export default function SectionRenderer({
             count={deviceCounts[currentDeviceType]}
             templateId={templateId}
             locked={isFormLocked}
+            existing={existing}
           />
         </View>
       )}

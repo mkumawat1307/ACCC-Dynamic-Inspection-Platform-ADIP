@@ -15,19 +15,23 @@ export interface DeviceFieldDefinition {
 }
 
 class DeviceFieldDefinitionsRepository {
-  async getByDeviceType(deviceType: string, templateId?: number): Promise<DeviceFieldDefinition[]> {
+  async getByDeviceType(
+    deviceType: string,
+    templateId?: number,
+    includeInactive = false
+  ): Promise<DeviceFieldDefinition[]> {
     const db = await getDatabase();
     if (templateId) {
       return db.getAllAsync<DeviceFieldDefinition>(
         `SELECT * FROM DeviceFieldDefinitions
-         WHERE DeviceType = ? AND TemplateID = ? AND IsActive = 1
+         WHERE DeviceType = ? AND TemplateID = ?${includeInactive ? "" : " AND IsActive = 1"}
          ORDER BY DisplayOrder`,
         [deviceType, templateId]
       );
     }
     return db.getAllAsync<DeviceFieldDefinition>(
       `SELECT * FROM DeviceFieldDefinitions
-       WHERE DeviceType = ? AND IsActive = 1
+       WHERE DeviceType = ?${includeInactive ? "" : " AND IsActive = 1"}
        ORDER BY DisplayOrder`,
       [deviceType]
     );
@@ -50,19 +54,19 @@ class DeviceFieldDefinitionsRepository {
     );
   }
 
-  async getDeviceTypes(templateId?: number): Promise<string[]> {
+  async getDeviceTypes(templateId?: number, includeInactive = false): Promise<string[]> {
     const db = await getDatabase();
     if (templateId) {
       const rows = await db.getAllAsync<{ DeviceType: string }>(
-        `SELECT DISTINCT DeviceType FROM DeviceFieldDefinitions WHERE TemplateID = ? AND IsActive = 1`,
+        `SELECT DeviceType FROM DeviceFieldDefinitions WHERE TemplateID = ?${includeInactive ? "" : " AND IsActive = 1"}`,
         [templateId]
       );
-      return rows.map((r) => r.DeviceType);
+      return Array.from(new Set(rows.map((r) => r.DeviceType)));
     }
     const rows = await db.getAllAsync<{ DeviceType: string }>(
-      `SELECT DISTINCT DeviceType FROM DeviceFieldDefinitions WHERE IsActive = 1`
+      `SELECT DeviceType FROM DeviceFieldDefinitions${includeInactive ? "" : " WHERE IsActive = 1"}`
     );
-    return rows.map((r) => r.DeviceType);
+    return Array.from(new Set(rows.map((r) => r.DeviceType)));
   }
 
   async add(field: DeviceFieldDefinition, templateId?: number): Promise<number> {

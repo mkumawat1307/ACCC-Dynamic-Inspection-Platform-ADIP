@@ -40,6 +40,21 @@ export class FieldOptionRepository {
   }): Promise<number> {
     const db = await getDatabase();
 
+    const existing = await db.getAllAsync<{ OptionID: number; OptionLabel: string; OptionValue: string }>(
+      `SELECT OptionID, OptionLabel, OptionValue FROM FieldOptions WHERE FieldID = ? AND IsActive = 1`,
+      [data.FieldID]
+    );
+
+    if (
+      existing.some(
+        (o) =>
+          o.OptionLabel.trim() === data.OptionLabel.trim() ||
+          o.OptionValue.trim() === data.OptionValue.trim()
+      )
+    ) {
+      throw new Error(`An option with label or value "${data.OptionLabel.trim()}" already exists for this field`);
+    }
+
     const maxOrder = await db.getFirstAsync<{ Max: number }>(
       `SELECT COALESCE(MAX(DisplayOrder), 0) as Max
        FROM FieldOptions WHERE FieldID = ?`,
@@ -80,6 +95,32 @@ export class FieldOptionRepository {
     }
   ): Promise<void> {
     const db = await getDatabase();
+
+    if (data.OptionLabel !== undefined || data.OptionValue !== undefined) {
+      const current = await db.getFirstAsync<{ FieldID: number; OptionLabel: string; OptionValue: string }>(
+        `SELECT FieldID, OptionLabel, OptionValue FROM FieldOptions WHERE OptionID = ?`,
+        [id]
+      );
+
+      if (current) {
+        const targetLabel = (data.OptionLabel ?? current.OptionLabel).trim();
+        const targetValue = (data.OptionValue ?? current.OptionValue).trim();
+
+        const siblings = await db.getAllAsync<{ OptionID: number; OptionLabel: string; OptionValue: string }>(
+          `SELECT OptionID, OptionLabel, OptionValue FROM FieldOptions WHERE FieldID = ? AND IsActive = 1 AND OptionID != ?`,
+          [current.FieldID, id]
+        );
+
+        if (
+          siblings.some(
+            (o) => o.OptionLabel.trim() === targetLabel || o.OptionValue.trim() === targetValue
+          )
+        ) {
+          throw new Error(`An option with label or value "${targetLabel}" already exists for this field`);
+        }
+      }
+    }
+
     const fields: string[] = [];
     const values: SqlValue[] = [];
 

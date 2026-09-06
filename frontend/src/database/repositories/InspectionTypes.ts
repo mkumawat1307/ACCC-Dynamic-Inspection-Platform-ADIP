@@ -3,6 +3,9 @@ export interface InspectionSection {
   SectionName: string;
   SectionKey: string;
   DisplayOrder: number;
+  IsActive?: number;
+  IsVisible?: number;
+  CreatedAt?: string | null;
 }
 
 export interface InspectionField {

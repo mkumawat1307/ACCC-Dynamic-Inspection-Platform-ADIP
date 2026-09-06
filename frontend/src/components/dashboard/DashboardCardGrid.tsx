@@ -5,6 +5,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { DashboardService, CardWithCount } from "@/src/database/repositories/DashboardService";
 import StatCard from "@/src/components/StatCard";
 import StatBreakdownCard from "@/src/components/dashboard/StatBreakdownCard";
+import CheckboxStatGroup from "@/src/components/dashboard/CheckboxStatGroup";
 import useDashboardAutoRefresh from "@/src/hooks/useDashboardAutoRefresh";
 import useSectionCollapse from "@/src/hooks/useSectionCollapse";
 import { SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "@/src/database/seeds/dashboard-cards.seed";
@@ -53,10 +54,40 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
     );
   }
 
-  function renderSectionCards(sectionCards: CardWithCount[]) {
+  function renderCards(sectionCards: CardWithCount[]) {
     const children: React.ReactNode[] = [];
+    const checkboxSections = new Map<string, CardWithCount[]>();
+    for (const c of sectionCards) {
+      if (c.fieldType !== "checkbox") continue;
+      const key = c.fieldSectionName ?? "";
+      const list = checkboxSections.get(key);
+      if (list) list.push(c);
+      else checkboxSections.set(key, [c]);
+    }
+    const insertedSections = new Set<string>();
     for (let k = 0; k < sectionCards.length; k++) {
       const card = sectionCards[k];
+      if (card.fieldType === "checkbox") {
+        const key = card.fieldSectionName ?? "";
+        if (!insertedSections.has(key)) {
+          insertedSections.add(key);
+          const groupCards = checkboxSections.get(key)!;
+          children.push(
+            <CheckboxStatGroup
+              key={`checkbox-group-${groupCards[0].CardID}-${key}`}
+              title={key || undefined}
+              items={groupCards.map((c) => ({
+                title: c.Title,
+                count: c.count ?? 0,
+                color: c.Color,
+                icon: c.Icon,
+              }))}
+            />
+          );
+        }
+        continue;
+      }
+
       if (isBreakdown(card)) {
         children.push(
           <StatBreakdownCard
@@ -71,7 +102,7 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
       }
 
       const next = sectionCards[k + 1];
-      if (next && !isBreakdown(next)) {
+      if (next && next.fieldType !== "checkbox" && !isBreakdown(next)) {
         children.push(
           <View key={`${card.CardID}-${next.CardID}`} style={styles.statRow}>
             <StatCard
@@ -106,56 +137,48 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
   }
 
   const rows = [];
-  let currentSection: string | null = null;
-  for (let i = 0; i < cards.length; i++) {
+  for (let i = 0; i < cards.length; ) {
     const card = cards[i];
     const section = card.SectionLabel ?? null;
+    let end = i + 1;
+    while (end < cards.length && (cards[end].SectionLabel ?? null) === section) end++;
+    const sectionCards = cards.slice(i, end);
 
-    if (section !== currentSection) {
-      currentSection = section;
-      if (section) {
-        const collapsible = section === SECTION_LABEL_TOTAL || section === SECTION_LABEL_TODAY;
-        const collapsed = collapsible && isCollapsed(section);
+    if (section) {
+      const collapsible = section === SECTION_LABEL_TOTAL || section === SECTION_LABEL_TODAY;
+      const collapsed = collapsible && isCollapsed(section);
 
-        if (collapsible) {
-          const color =
-            section === SECTION_LABEL_TOTAL ? COLORS.summaryTotal : COLORS.summaryToday;
-          let end = i;
-          while (end + 1 < cards.length && (cards[end + 1].SectionLabel ?? null) === section) {
-            end++;
-          }
-          const sectionCards = cards.slice(i, end + 1);
-          i = end;
+      if (collapsible) {
+        const color =
+          section === SECTION_LABEL_TOTAL ? COLORS.summaryTotal : COLORS.summaryToday;
 
-          rows.push(
-            <View
-              key={`section-${section}-${i}`}
-              style={[styles.summaryPanel, { borderColor: color }]}
-              testID={`dashboard-section-panel-${section}`}
+        rows.push(
+          <View
+            key={`section-${section}-${i}`}
+            style={[styles.summaryPanel, { borderColor: color }]}
+            testID={`dashboard-section-panel-${section}`}
+          >
+            <Pressable
+              style={styles.summaryHeaderRow}
+              onPress={() => toggle(section)}
+              disabled={false}
             >
-              <Pressable
-                style={styles.summaryHeaderRow}
-                onPress={() => toggle(section)}
-                disabled={false}
-              >
-                <Text style={[styles.sectionHeader, { color }]}>{section}</Text>
-                <MaterialCommunityIcons
-                  name={collapsed ? "chevron-down" : "chevron-up"}
-                  size={20}
-                  color={color}
-                />
-              </Pressable>
-              {collapsed ? null : (
-                <>
-                  <View style={styles.summaryDivider} />
-                  <View style={styles.summaryContent}>{renderSectionCards(sectionCards)}</View>
-                </>
-              )}
-            </View>
-          );
-          continue;
-        }
-
+              <Text style={[styles.sectionHeader, { color }]}>{section}</Text>
+              <MaterialCommunityIcons
+                name={collapsed ? "chevron-down" : "chevron-up"}
+                size={20}
+                color={color}
+              />
+            </Pressable>
+            {collapsed ? null : (
+              <>
+                <View style={styles.summaryDivider} />
+                <View style={styles.summaryContent}>{renderCards(sectionCards)}</View>
+              </>
+            )}
+          </View>
+        );
+      } else {
         rows.push(
           <View key={`section-${section}-${i}`} style={styles.sectionBlock}>
             <Pressable style={styles.sectionHeaderButton} disabled>
@@ -164,53 +187,13 @@ export default function DashboardCardGrid({ projectId, reloadKey = 0, focused = 
             <View style={styles.sectionDivider} />
           </View>
         );
+        rows.push(...renderCards(sectionCards));
       }
-    }
-
-    if (isBreakdown(card)) {
-      rows.push(
-        <StatBreakdownCard
-          key={card.CardID}
-          title={card.Title}
-          icon={card.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
-          color={card.Color}
-          rows={card.breakdown ?? []}
-        />
-      );
-      continue;
-    }
-
-    const next = cards[i + 1];
-    if (next && !isBreakdown(next) && (next.SectionLabel ?? null) === section) {
-      rows.push(
-        <View key={`${card.CardID}-${next.CardID}`} style={styles.statRow}>
-          <StatCard
-            title={card.Title}
-            value={card.count ?? 0}
-            icon={card.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
-            color={card.Color}
-          />
-          <StatCard
-            title={next.Title}
-            value={next.count ?? 0}
-            icon={next.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
-            color={next.Color}
-          />
-        </View>
-      );
-      i++;
     } else {
-      rows.push(
-        <View key={card.CardID} style={styles.statRow}>
-          <StatCard
-            title={card.Title}
-            value={card.count ?? 0}
-            icon={card.Icon as keyof typeof MaterialCommunityIcons.glyphMap}
-            color={card.Color}
-          />
-        </View>
-      );
+      rows.push(...renderCards(sectionCards));
     }
+
+    i = end;
   }
 
   return <View style={styles.list}>{rows}</View>;

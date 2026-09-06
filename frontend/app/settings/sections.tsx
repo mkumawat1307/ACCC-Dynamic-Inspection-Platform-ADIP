@@ -8,6 +8,8 @@ import {
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { getDatabase } from "../../src/database/db";
+import SectionRepository, { SectionDeletionError } from "../../src/database/repositories/SectionRepository";
+import { isLockedSectionKey } from "../../src/database/seeds/factory-config";
 
 interface Section {
   SectionID: number;
@@ -114,24 +116,28 @@ export default function SectionsScreen() {
   };
 
   const handleDelete = (s: Section) => {
-    if (s.IsDefault) {
-      Alert.alert("Cannot Delete", "Default sections cannot be deleted.");
+    if (isLockedSectionKey(s.SectionKey)) {
+      Alert.alert("Cannot Delete", "Locked sections cannot be deleted.");
       return;
     }
     Alert.alert(
       "Delete Section",
-      `Delete "${s.SectionName}"? All fields in this section will also be removed.`,
+      `Delete "${s.SectionName}"? Fields in this section will be hidden from the form, but inspection data you already recorded is kept.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            const db = await getDatabase();
-            await db.runAsync(
-              `UPDATE InspectionSections SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionID = ?`,
-              [s.SectionID]
-            );
+            try {
+              await SectionRepository.softDeleteSection(s.SectionID);
+            } catch (error) {
+              if (error instanceof SectionDeletionError) {
+                Alert.alert("Cannot Delete", error.message);
+              } else {
+                Alert.alert("Error", "Failed to delete section. Please try again.");
+              }
+            }
             loadSections();
           },
         },
@@ -245,7 +251,7 @@ export default function SectionsScreen() {
                     onPress={(e) => { e.stopPropagation?.(); openEditDialog(item); }}
                   />
                 )}
-                {!item.IsDefault && !isLocked && (
+                {!isLocked && (
                   <IconButton
                     icon="delete"
                     size={18}

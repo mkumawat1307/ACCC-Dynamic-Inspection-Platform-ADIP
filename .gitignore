@@ -1,35 +1,106 @@
-# Dependencies
-frontend/node_modules/
+# Dependencies — reinstalled on the EAS server / by yarn
+node_modules/
+.npmrc
 
-# Expo local state
-frontend/.expo/
-frontend/.expo-shared/
-frontend/.metro-cache/
-frontend/%TEMP%/
+# Repository-level instruction file (local-only, not tracked)
+/AGENTS.md
 
-# Native build outputs
-frontend/android/.gradle/
-frontend/android/.kotlin/
-frontend/android/build/
-frontend/android/app/build/
-frontend/android/app/.cxx/
-frontend/android/local.properties
+# Expo local state (not source of truth, regenerated)
+.expo/
+.expo-shared/
+dist/
+web-build/
+expo-env.d.ts
+app-example
+
+# Metro
+.metro-cache/
+.metro-health-check*
+
+# Test coverage artifacts (docs/ and test sources are tracked)
+coverage/
+*.test-results.xml
+
+# Tests
+__tests__/
+tests/
+test/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Mocks
+__mocks__/
+mocks/
+
+# Native build outputs (source under android/, ios/ is tracked)
+**/build/
+**/.gradle/
+**/.cxx/
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/app/.cxx/
+android/local.properties
+**/local.properties
+ios/build/
+ios/Pods/
+
+# Build output / dist artifacts
+*.apk
+*.aab
+*.jsbundle
+
+# Caches and temporary files
+.cache/
+.turbo/
+.tmp/
+tmp/
+temp/
+.temp/
+%TEMP%/
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.tsbuildinfo
+
+# Media and archive downloads — not in source control
+*.mp4
+*.mov
+*.avi
+*.zip
+*.tar
+*.gz
+
+# Secrets MUST stay out of the repository
+**/keystore.properties
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+*.orig.*
+
+# Local env files
+.env*.local
+
+# Development-only docs/reports (kept locally, not tracked)
+frontend/docs/
 
 # Local tooling state
 .kilo/
 .claude/
+.opencode/
 
 # Editor / OS junk
 .vscode/
 .idea/
-Thumbs.db
+*.iml
+*.hprof
 .DS_Store
-
-# Secrets
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-frontend/android/keystore.properties
-frontend/android/app/release.keystore
+Thumbs.db

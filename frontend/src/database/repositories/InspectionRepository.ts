@@ -1,12 +1,14 @@
 // src/database/repositories/InspectionRepository.ts
 
 import { getDatabase } from "../db";
+import type { SQLiteDatabase } from "expo-sqlite";
 import { logger } from "@/src/utils/logger";
 import { InspectionSection, InspectionField } from "./InspectionTypes";
 import { deleteInspectionData } from "./inspectionDataHelper";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
+import { InspectionEditSession } from "./InspectionEditSession";
 
 export function isFieldValueEmpty(type: string, value: string): boolean {
   switch (type) {
@@ -29,7 +31,7 @@ export function isFieldValueEmpty(type: string, value: string): boolean {
 export const INSPECTION_FINAL_STATUSES = ["Completed", "Submitted"] as const;
 
 export class InspectionRepository {
-static async getSections(templateId?: number): Promise<InspectionSection[]> {
+static async getSections(templateId?: number, inspectionId?: number): Promise<InspectionSection[]> {
     const db = await getDatabase();
 
     if (!templateId) {
@@ -39,19 +41,74 @@ static async getSections(templateId?: number): Promise<InspectionSection[]> {
       templateId = defaultTpl?.TemplateID;
     }
 
-    if (templateId) {
-      return await db.getAllAsync<InspectionSection>(`
-        SELECT
-          SectionID,
-          SectionName,
-          SectionKey,
-          DisplayOrder
-        FROM InspectionSections
-        WHERE IsActive = 1 AND TemplateID = ?
-        ORDER BY CASE WHEN SectionKey = 'photos' THEN 2 WHEN SectionKey = 'remarks' THEN 1 ELSE 0 END, DisplayOrder;
-      `, [templateId]);
+    if (!templateId) {
+      return [];
     }
-    return [];
+
+    const sections = await db.getAllAsync<InspectionSection>(`
+      SELECT
+        SectionID,
+        SectionName,
+        SectionKey,
+        DisplayOrder,
+        IsActive,
+        IsVisible,
+        CreatedAt
+      FROM InspectionSections
+      WHERE IsActive = 1 AND TemplateID = ?
+      ORDER BY CASE WHEN SectionKey = 'photos' THEN 2 WHEN SectionKey = 'remarks' THEN 1 ELSE 0 END, DisplayOrder;
+    `, [templateId]);
+
+    if (inspectionId == null) {
+      return sections;
+    }
+
+    return await this.reconcileSectionsForInspection(db, sections, inspectionId);
+  }
+
+  static async reconcileSectionsForInspection(
+    db: SQLiteDatabase,
+    active: InspectionSection[],
+    inspectionId: number
+  ): Promise<InspectionSection[]> {
+    const valueRows = await db.getAllAsync<{ FieldID: number }>(
+      `SELECT FieldID FROM InspectionValues WHERE InspectionID = ?`,
+      [inspectionId]
+    );
+    const valueFieldIds = [...new Set(valueRows.map((r) => r.FieldID))];
+
+    const result: InspectionSection[] = [...active];
+    const added = new Set<number>();
+    for (const s of active) {
+      added.add(s.SectionID);
+    }
+
+    if (valueFieldIds.length > 0) {
+      const placeholders = valueFieldIds.map(() => "?").join(",");
+      const links = await db.getAllAsync<{ SectionID: number }>(
+        `SELECT SectionID FROM InspectionFields WHERE FieldID IN (${placeholders})`,
+        valueFieldIds
+      );
+      const sectionIds = [...new Set(links.map((l) => l.SectionID))];
+      if (sectionIds.length > 0) {
+        const sectionPlaceholders = sectionIds.map(() => "?").join(",");
+        const sections = await db.getAllAsync<InspectionSection>(
+          `SELECT SectionID, SectionName, SectionKey, DisplayOrder, IsActive, IsVisible, CreatedAt
+           FROM InspectionSections WHERE SectionID IN (${sectionPlaceholders})`,
+          sectionIds
+        );
+        for (const s of sections) {
+          if (s.IsActive !== 1 && !added.has(s.SectionID)) {
+            result.push(s);
+            added.add(s.SectionID);
+          }
+        }
+      }
+    }
+
+    const sortKey = (s: InspectionSection) =>
+      s.SectionKey === "photos" ? 2 : s.SectionKey === "remarks" ? 1 : 0;
+    return result.sort((a, b) => sortKey(a) - sortKey(b) || a.DisplayOrder - b.DisplayOrder);
   }
 
   static async countFinalInspections(): Promise<number> {
@@ -156,6 +213,13 @@ static async saveFieldValue(
   fieldId: number,
   value: string
 ) {
+  // Editing an existing inspection: defer to the edit session so the value is
+  // only persisted on an explicit Save, and never on Back/Cancel.
+  if (InspectionEditSession.isActive(inspectionId)) {
+    InspectionEditSession.stageFieldValue(fieldId, value);
+    return;
+  }
+
   const db = await getDatabase();
 
   const parents = await db.getFirstAsync<{ hasInspection: number | null; hasField: number | null }>(
@@ -234,6 +298,12 @@ static async updateInspectionPoleId(
   inspectionId: number,
   poleId: string
 ) {
+  // Editing an existing inspection: defer to the edit session (committed on Save).
+  if (InspectionEditSession.isActive(inspectionId)) {
+    InspectionEditSession.stagePoleId(poleId);
+    return;
+  }
+
   const db = await getDatabase();
 
   await db.runAsync(
@@ -256,6 +326,12 @@ static async updatePoleIdDirectSave(
   fieldId: number,
   poleId: string
 ) {
+  // Editing an existing inspection: defer to the edit session (committed on Save).
+  if (InspectionEditSession.isActive(inspectionId)) {
+    InspectionEditSession.stagePoleId(poleId);
+    return;
+  }
+
   const db = await getDatabase();
   await db.withTransactionAsync(async () => {
     await this.saveFieldValue(inspectionId, fieldId, poleId);

@@ -7,9 +7,11 @@ import {
 } from "react-native-paper";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
+import { getDatabase } from "../../src/database/db";
 import {
   FieldOptionRepository, FieldOption,
 } from "../../src/database/repositories/FieldOptionRepository";
+import { isLockedSectionKey } from "../../src/database/seeds/factory-config";
 export default function OptionsScreen() {
   const router = useRouter();
   const { fieldId, fieldName } = useLocalSearchParams<{
@@ -21,13 +23,26 @@ export default function OptionsScreen() {
   const [options, setOptions] = useState<FieldOption[]>([]);
   const [showDialog, setShowDialog] = useState(false);
   const [editing, setEditing] = useState<FieldOption | null>(null);
+  const [fieldLocked, setFieldLocked] = useState(false);
   const [optionLabel, setOptionLabel] = useState("");
   const [optionValue, setOptionValue] = useState("");
   const [isDefault, setIsDefault] = useState(false);
 
   const loadOptions = useCallback(async () => {
-    const data = await FieldOptionRepository.getByField(fid);
+    const [data, field] = await Promise.all([
+      FieldOptionRepository.getByField(fid),
+      getDatabase().then((db) =>
+        db.getFirstAsync<{ SectionKey: string | null }>(
+          `SELECT s.SectionKey
+           FROM InspectionFields f
+           INNER JOIN InspectionSections s ON s.SectionID = f.SectionID
+           WHERE f.FieldID = ?`,
+          [fid]
+        )
+      ),
+    ]);
     setOptions(data);
+    setFieldLocked(field ? isLockedSectionKey(field.SectionKey) : false);
   }, [fid]);
 
   useFocusEffect(
@@ -59,19 +74,24 @@ export default function OptionsScreen() {
     }
     const value = optionValue.trim() || optionLabel.trim();
 
-    if (editing) {
-      await FieldOptionRepository.update(editing.OptionID, {
-        OptionLabel: optionLabel.trim(),
-        OptionValue: value,
-        IsDefault: isDefault ? 1 : 0,
-      });
-    } else {
-      await FieldOptionRepository.create({
-        FieldID: fid,
-        OptionLabel: optionLabel.trim(),
-        OptionValue: value,
-        IsDefault: isDefault ? 1 : 0,
-      });
+    try {
+      if (editing) {
+        await FieldOptionRepository.update(editing.OptionID, {
+          OptionLabel: optionLabel.trim(),
+          OptionValue: value,
+          IsDefault: isDefault ? 1 : 0,
+        });
+      } else {
+        await FieldOptionRepository.create({
+          FieldID: fid,
+          OptionLabel: optionLabel.trim(),
+          OptionValue: value,
+          IsDefault: isDefault ? 1 : 0,
+        });
+      }
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not save option");
+      return;
     }
     setShowDialog(false);
     loadOptions();
@@ -87,7 +107,7 @@ export default function OptionsScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            await FieldOptionRepository.hardDelete(o.OptionID);
+            await FieldOptionRepository.delete(o.OptionID);
             loadOptions();
           },
         },
@@ -157,12 +177,14 @@ export default function OptionsScreen() {
               size={20}
               onPress={() => openEditDialog(item)}
             />
-            <IconButton
-              icon="delete"
-              size={20}
-              iconColor="#D32F2F"
-              onPress={() => handleDelete(item)}
-            />
+            {!fieldLocked && (
+              <IconButton
+                icon="delete"
+                size={20}
+                iconColor="#D32F2F"
+                onPress={() => handleDelete(item)}
+              />
+            )}
           </View>
         </View>
       </Card.Content>

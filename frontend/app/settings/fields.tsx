@@ -6,9 +6,11 @@ import {
 } from "react-native-paper";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
+import { getDatabase } from "../../src/database/db";
 import { FieldRepository, Field, CREATEABLE_FIELD_TYPES, FIELD_TYPES } from "../../src/database/repositories/FieldRepository";
 import { FieldDialog } from "@/src/components/app/settings/components/DeviceTypeDialogs";
 import { styles as deviceTypeStyles } from "@/src/components/app/settings/device-types.styles";
+import { isLockedSectionKey } from "../../src/database/seeds/factory-config";
 
 export default function FieldsScreen() {
   const router = useRouter();
@@ -21,6 +23,7 @@ export default function FieldsScreen() {
   const [fields, setFields] = useState<Field[]>([]);
   const [showDialog, setShowDialog] = useState(false);
   const [editing, setEditing] = useState<Field | null>(null);
+  const [sectionLocked, setSectionLocked] = useState(false);
 
   const [fieldName, setFieldName] = useState("");
   const [fieldKey, setFieldKey] = useState("");
@@ -30,8 +33,17 @@ export default function FieldsScreen() {
   const [isVisible, setIsVisible] = useState(true);
 
   const loadFields = useCallback(async () => {
-    const data = await FieldRepository.getBySection(sid);
+    const [data, section] = await Promise.all([
+      FieldRepository.getBySection(sid),
+      getDatabase().then((db) =>
+        db.getFirstAsync<{ SectionKey: string | null }>(
+          `SELECT SectionKey FROM InspectionSections WHERE SectionID = ?`,
+          [sid]
+        )
+      ),
+    ]);
     setFields(data);
+    setSectionLocked(section ? isLockedSectionKey(section.SectionKey) : false);
   }, [sid]);
 
   useFocusEffect(
@@ -109,7 +121,7 @@ export default function FieldsScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            await FieldRepository.hardDelete(f.FieldID);
+            await FieldRepository.delete(f.FieldID);
             loadFields();
           },
         },
@@ -164,7 +176,9 @@ const getTypeLabel = (type: string) =>
           </View>
           <View style={styles.cardActions}>
             <IconButton icon="pencil" size={20} onPress={() => openEditDialog(item)} />
-            <IconButton icon="delete" size={20} iconColor="#D32F2F" onPress={() => handleDelete(item)} />
+            {!sectionLocked && (
+              <IconButton icon="delete" size={20} iconColor="#D32F2F" onPress={() => handleDelete(item)} />
+            )}
           </View>
         </View>
       </Card.Content>

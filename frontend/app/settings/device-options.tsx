@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { View, FlatList, ScrollView, StyleSheet } from "react-native";
+import { View, FlatList, ScrollView, StyleSheet, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Appbar, Card, Text, IconButton, Chip, Button, Portal,
@@ -93,36 +93,41 @@ export default function DeviceOptionsScreen() {
   const handleSave = async () => {
     if (!label.trim()) return;
 
-    if (editingOption) {
-      await DeviceOptionsRepository.update({
-        ...editingOption,
-        OptionLabel: label.trim(),
-        OptionValue: value.trim(),
-        IsDefault: isDefault ? 1 : 0,
-      });
-    } else {
-      const maxOrder = options.length > 0
-        ? Math.max(...options.map((o) => o.DisplayOrder))
-        : 0;
-      await DeviceOptionsRepository.add({
-        DeviceType: selectedType,
-        FieldName: selectedField,
-        OptionLabel: label.trim(),
-        OptionValue: value.trim(),
-        DisplayOrder: maxOrder + 1,
-        IsDefault: isDefault ? 1 : 0,
-        IsActive: 1,
-      }, defaultTemplateId);
-    }
-
-    if (isDefault) {
-      const savedOptions = await DeviceOptionsRepository.getByField(selectedType, selectedField, defaultTemplateId);
-      const match = savedOptions.find(
-        (o) => o.OptionLabel === label.trim() && o.OptionValue === value.trim()
-      );
-      if (match?.OptionID) {
-        await DeviceOptionsRepository.setDefault(selectedType, selectedField, match.OptionID, defaultTemplateId);
+    try {
+      if (editingOption) {
+        await DeviceOptionsRepository.update({
+          ...editingOption,
+          OptionLabel: label.trim(),
+          OptionValue: value.trim(),
+          IsDefault: isDefault ? 1 : 0,
+        });
+      } else {
+        const maxOrder = options.length > 0
+          ? Math.max(...options.map((o) => o.DisplayOrder))
+          : 0;
+        await DeviceOptionsRepository.add({
+          DeviceType: selectedType,
+          FieldName: selectedField,
+          OptionLabel: label.trim(),
+          OptionValue: value.trim(),
+          DisplayOrder: maxOrder + 1,
+          IsDefault: isDefault ? 1 : 0,
+          IsActive: 1,
+        }, defaultTemplateId);
       }
+
+      if (isDefault) {
+        const savedOptions = await DeviceOptionsRepository.getByField(selectedType, selectedField, defaultTemplateId);
+        const match = savedOptions.find(
+          (o) => o.OptionLabel === label.trim() && o.OptionValue === value.trim()
+        );
+        if (match?.OptionID) {
+          await DeviceOptionsRepository.setDefault(selectedType, selectedField, match.OptionID, defaultTemplateId);
+        }
+      }
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not save option");
+      return;
     }
 
     setDialogVisible(false);

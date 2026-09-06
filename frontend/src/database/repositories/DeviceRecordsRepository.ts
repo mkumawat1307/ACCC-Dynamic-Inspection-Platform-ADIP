@@ -1,4 +1,5 @@
 import { getDatabase } from "../db";
+import { InspectionEditSession } from "./InspectionEditSession";
 
 export interface DeviceRecord {
   RecordID?: number;
@@ -32,6 +33,13 @@ export class DeviceRecordsRepository {
     debounceMs: number = 500,
     onPersisted?: (recordId: number) => void
   ): Promise<void> {
+    // Editing an existing inspection: defer to the edit session so device
+    // edits are only persisted on an explicit Save, never on Back/Cancel.
+    if (InspectionEditSession.isActive(record.InspectionID)) {
+      InspectionEditSession.stageDeviceRecord(record);
+      return;
+    }
+
     const key = this.getSaveKey(record);
     const existing = this.saveRegistry.get(key);
     if (existing) {

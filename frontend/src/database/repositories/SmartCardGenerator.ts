@@ -2,6 +2,7 @@ import { getDatabase } from "../db";
 import { CardModeValue, DashboardCard } from "@/src/models/DashboardCard";
 import { DashboardCardRepository } from "./DashboardCardRepository";
 import { SECTION_LABEL_TODAY, SECTION_LABEL_TOTAL } from "../seeds/dashboard-cards.seed";
+import { isLockedSectionKey } from "../seeds/factory-config";
 
 export interface SmartFormField {
   FieldID: number;
@@ -9,6 +10,7 @@ export interface SmartFormField {
   FieldName: string;
   FieldType: string;
   Options: { label: string; value: string }[];
+  SectionKey?: string;
   source?: "inspection" | "device";
   DeviceType?: string;
   DeviceColumn?: string;
@@ -42,6 +44,10 @@ const TYPE_TO_MODE: Record<string, CardModeValue | "skip"> = {
 
 function normalizeType(fieldType: string): string {
   return fieldType.toLowerCase();
+}
+
+function deviceTypeCountKey(deviceType: string): string {
+  return `${deviceType.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_count`;
 }
 
 function iconForType(type: string): string {
@@ -100,8 +106,9 @@ export class SmartCardGenerator {
       FieldKey: string;
       FieldName: string;
       FieldType: string;
+      SectionKey: string;
     }>(
-      `SELECT f.FieldKey, f.FieldName, f.FieldType, f.FieldID
+      `SELECT f.FieldKey, f.FieldName, f.FieldType, f.FieldID, s.SectionKey
        FROM InspectionFields f
        INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
        INNER JOIN InspectionTemplates t ON s.TemplateID = t.TemplateID
@@ -109,12 +116,12 @@ export class SmartCardGenerator {
          AND s.IsActive = 1
          AND f.IsActive = 1
          AND f.IsVisible = 1
-         AND f.FieldKey != 'remarks'
        ORDER BY s.DisplayOrder ASC, f.DisplayOrder ASC;`
     );
 
     const result: SmartFormField[] = [];
     for (const row of rows) {
+      if (isLockedSectionKey(row.SectionKey)) continue;
       const options = await db.getAllAsync<{ OptionLabel: string; OptionValue: string }>(
         `SELECT OptionLabel, OptionValue
          FROM FieldOptions
@@ -128,6 +135,7 @@ export class SmartCardGenerator {
         FieldKey: row.FieldKey,
         FieldName: row.FieldName,
         FieldType: type,
+        SectionKey: row.SectionKey,
         Options: options.map((o) => ({ label: o.OptionLabel, value: o.OptionValue })),
         source: "inspection",
       });
@@ -190,7 +198,7 @@ export class SmartCardGenerator {
   ): DashboardCard[] {
     const kind = this.getCardKind(field.FieldType);
     if (kind === "skip") return [];
-    if (field.FieldKey === "remarks") return [];
+    if (isLockedSectionKey(field.SectionKey)) return [];
     const isSum = kind === "sum";
     const isDevice = field.source === "device";
     const entityType = isDevice ? "devices" : "inspections";
@@ -242,10 +250,36 @@ export class SmartCardGenerator {
     return false;
   }
 
+  static isDeviceCountField(field: SmartFormField, deviceTypes: string[]): boolean {
+    if (!field.FieldKey.endsWith("_count")) return false;
+    return deviceTypes.some((t) => deviceTypeCountKey(t) === field.FieldKey);
+  }
+
+  static isPickerEligible(field: SmartFormField, deviceTypes: string[]): boolean {
+    if (field.source === "device") return true;
+    const type = normalizeType(field.FieldType);
+    if (type === "text" || type === "multiline") return false;
+    if (type === "number" && !SmartCardGenerator.isDeviceCountField(field, deviceTypes)) return false;
+    return true;
+  }
+
   static async getAvailableFields(projectId: number): Promise<SmartFormField[]> {
     const cards = await DashboardCardRepository.getAllCards(projectId);
     const allFields = await this.getAllFields();
-    return allFields.filter((field) => !SmartCardGenerator.isFieldCovered(field, cards));
+    const deviceTypes = await SmartCardGenerator.getDeviceTypes();
+    return allFields.filter(
+      (field) =>
+        !SmartCardGenerator.isFieldCovered(field, cards) &&
+        SmartCardGenerator.isPickerEligible(field, deviceTypes)
+    );
+  }
+
+  private static async getDeviceTypes(): Promise<string[]> {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<{ DeviceType: string }>(
+      `SELECT DISTINCT DeviceType FROM DeviceFieldDefinitions WHERE IsActive = 1`
+    );
+    return rows.map((row) => row.DeviceType);
   }
 
   static async getNextSortOrder(projectId: number): Promise<number> {

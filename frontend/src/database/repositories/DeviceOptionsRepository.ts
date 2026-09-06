@@ -34,20 +34,21 @@ class DeviceOptionsRepository {
   async getByField(
     deviceType: string,
     fieldName: string,
-    templateId?: number
+    templateId?: number,
+    includeInactive = false
   ): Promise<DeviceOption[]> {
     const db = await getDatabase();
     if (templateId) {
       return db.getAllAsync<DeviceOption>(
         `SELECT * FROM DeviceOptions
-         WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1
+         WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ?${includeInactive ? "" : " AND IsActive = 1"}
          ORDER BY DisplayOrder`,
         [deviceType, fieldName, templateId]
       );
     }
     return db.getAllAsync<DeviceOption>(
       `SELECT * FROM DeviceOptions
-       WHERE DeviceType = ? AND FieldName = ? AND IsActive = 1
+       WHERE DeviceType = ? AND FieldName = ?${includeInactive ? "" : " AND IsActive = 1"}
        ORDER BY DisplayOrder`,
       [deviceType, fieldName]
     );
@@ -56,10 +57,11 @@ class DeviceOptionsRepository {
   async getDropdownData(
     deviceType: string,
     fieldName: string,
-    templateId?: number
-  ): Promise<{ label: string; value: string; isDefault: number }[]> {
-    const options = await this.getByField(deviceType, fieldName, templateId);
-    return options.map((o) => ({ label: o.OptionLabel, value: o.OptionValue, isDefault: o.IsDefault }));
+    templateId?: number,
+    includeInactive = false
+  ): Promise<{ label: string; value: string; isDefault: number; IsActive?: number }[]> {
+    const options = await this.getByField(deviceType, fieldName, templateId, includeInactive);
+    return options.map((o) => ({ label: o.OptionLabel, value: o.OptionValue, isDefault: o.IsDefault, IsActive: o.IsActive }));
   }
 
   async getDefaultOption(
@@ -75,6 +77,23 @@ class DeviceOptionsRepository {
   async add(option: DeviceOption, templateId?: number): Promise<number> {
     const db = await getDatabase();
     const tid = templateId ?? option.TemplateID ?? 1;
+
+    const existing = await db.getAllAsync<{ OptionID: number; OptionLabel: string; OptionValue: string }>(
+      `SELECT OptionID, OptionLabel, OptionValue FROM DeviceOptions
+       WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1`,
+      [option.DeviceType, option.FieldName, tid]
+    );
+
+    if (
+      existing.some(
+        (o) =>
+          o.OptionLabel.trim() === option.OptionLabel.trim() ||
+          o.OptionValue.trim() === option.OptionValue.trim()
+      )
+    ) {
+      throw new Error(`An option with label or value "${option.OptionLabel.trim()}" already exists for this field`);
+    }
+
     const result = await db.runAsync(
       `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -102,6 +121,24 @@ class DeviceOptionsRepository {
 
   async update(option: DeviceOption): Promise<void> {
     const db = await getDatabase();
+    const tid = option.TemplateID ?? 1;
+
+    const siblings = await db.getAllAsync<{ OptionID: number; OptionLabel: string; OptionValue: string }>(
+      `SELECT OptionID, OptionLabel, OptionValue FROM DeviceOptions
+       WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1 AND OptionID != ?`,
+      [option.DeviceType, option.FieldName, tid, option.OptionID!]
+    );
+
+    if (
+      siblings.some(
+        (o) =>
+          o.OptionLabel.trim() === option.OptionLabel.trim() ||
+          o.OptionValue.trim() === option.OptionValue.trim()
+      )
+    ) {
+      throw new Error(`An option with label or value "${option.OptionLabel.trim()}" already exists for this field`);
+    }
+
     await db.runAsync(
       `UPDATE DeviceOptions
        SET OptionLabel = ?, OptionValue = ?, DisplayOrder = ?, IsDefault = ?, UpdatedAt = CURRENT_TIMESTAMP
@@ -110,7 +147,6 @@ class DeviceOptionsRepository {
     );
 
     if (option.IsDefault === 1) {
-      const tid = option.TemplateID ?? 1;
       await db.runAsync(
         `UPDATE DeviceOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
          WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1 AND OptionID != ?`,

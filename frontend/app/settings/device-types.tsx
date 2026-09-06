@@ -332,12 +332,6 @@ export default function DeviceTypesScreen() {
       [selectedType]
     );
 
-    // Delete device records
-    await db.runAsync(
-      `DELETE FROM DeviceRecords WHERE DeviceType = ?`,
-      [selectedType]
-    );
-
     setDeleteTypeDialogVisible(false);
     setSelectedType("");
     setEnabledTypes((prev) => {

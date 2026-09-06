@@ -10,6 +10,8 @@ export interface BreakdownRow {
 export interface CardWithCount extends DashboardCard {
   count?: number;
   breakdown?: BreakdownRow[];
+  fieldType?: string | null;
+  fieldSectionName?: string | null;
 }
 
 export class DashboardService {
@@ -22,18 +24,26 @@ export class DashboardService {
           result.push({ ...card, count: await StatisticCountService.fieldCard(projectId, card), breakdown: undefined });
           break;
         case "fieldcount":
-          result.push({ ...card, count: await StatisticCountService.fieldCountCard(projectId, card), breakdown: undefined });
-          break;
         case "datebreakdown":
-          result.push({ ...card, count: undefined, breakdown: await StatisticCountService.dateBreakdownCard(projectId, card) });
           break;
-        case "dropdown":
-          if (card.EntityType === "inspections") {
+        case "dropdown": {
+          const fieldType = await StatisticCountService.resolveFieldType(card);
+          if (fieldType === "checkbox") {
+            const count =
+              card.EntityType === "devices"
+                ? await StatisticCountService.deviceCheckboxCountCard(projectId, card)
+                : await StatisticCountService.checkboxCountCard(projectId, card);
+            const fieldSectionName = await StatisticCountService.resolveSectionName(card);
+            result.push({ ...card, count, breakdown: undefined, fieldType, fieldSectionName });
+          } else if (fieldType && fieldType !== "dropdown") {
+            break;
+          } else if (card.EntityType === "inspections") {
             result.push({ ...card, count: undefined, breakdown: await StatisticCountService.breakdownCard(projectId, card) });
           } else {
             result.push({ ...card, count: undefined, breakdown: await StatisticCountService.deviceBreakdownCard(projectId, card) });
           }
           break;
+        }
         default:
           result.push({ ...card, count: await StatisticCountService.countCard(projectId, card), breakdown: undefined });
       }

@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Alert, Keyboard, Pressable, StyleSheet, View } from "react-native";
 import { Card, Checkbox, Text, TextInput } from "react-native-paper";
-import { Dropdown, IDropdownRef } from "react-native-element-dropdown";
 import DeviceFieldDefinitionsRepository, {
   DeviceFieldDefinition,
 } from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
@@ -10,6 +9,7 @@ import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRe
 import { sanitizeNumberInput } from "@/src/utils/fieldInput";
 import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
 import { TOUCH_TARGETS } from "@/src/utils/touchTargets";
+import DropdownField from "./DropdownField";
 
 interface Props {
   inspectionId: number;
@@ -17,16 +17,19 @@ interface Props {
   count: number;
   templateId?: number;
   locked?: boolean;
+  existing?: boolean;
 }
 
 interface DropdownItem {
   label: string;
   value: string;
   isDefault?: number;
+  IsActive?: number;
 }
 
-export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false }: Props) {
+export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false, existing = false }: Props) {
   const [fields, setFields] = useState<DeviceFieldDefinition[]>([]);
+  const [deletedDefs, setDeletedDefs] = useState<DeviceFieldDefinition[]>([]);
   const [records, setRecords] = useState<DeviceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [opts, setOpts] = useState<Record<string, DropdownItem[]>>({});
@@ -35,27 +38,58 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   countRef.current = count;
   const countOpsRef = useRef(Promise.resolve());
   const dropdownRefs = useRef<Record<string, View | null>>({});
-  const dropdownOpenRefs = useRef<Record<string, IDropdownRef | null>>({});
   const { setDropdownOpen } = useInspectionScroll();
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       persistedIds.current = new Map();
-      const fieldDefs = await DeviceFieldDefinitionsRepository.getByDeviceType(deviceType, templateId);
-      const visibleFieldDefs = fieldDefs.filter((f) => f.IsVisible !== 0);
+      const fieldDefs = await DeviceFieldDefinitionsRepository.getByDeviceType(deviceType, templateId, existing);
+      const visibleFieldDefs = fieldDefs.filter((f) => f.IsActive !== 0 && f.IsVisible !== 0);
       setFields(visibleFieldDefs);
+      setDeletedDefs(fieldDefs.filter((f) => f.IsActive === 0));
+
+      const existingRecords = await DeviceRecordsRepository.getByInspection(inspectionId, deviceType);
+      let list = existingRecords.length > 0 ? existingRecords : [];
+
+      const savedValuesByField = new Map<string, Set<string>>();
+      for (const rec of list) {
+        let data: Record<string, string | null> = {};
+        try {
+          data = typeof rec.DeviceData === "string" ? JSON.parse(rec.DeviceData) : (rec.DeviceData || {});
+        } catch {
+          data = {};
+        }
+        for (const f of visibleFieldDefs) {
+          if (f.FieldType !== "dropdown") continue;
+          const v = data[f.FieldName];
+          if (v == null || v === "") continue;
+          let set = savedValuesByField.get(f.FieldName);
+          if (!set) {
+            set = new Set();
+            savedValuesByField.set(f.FieldName, set);
+          }
+          set.add(v);
+        }
+      }
 
       const dropdownFields = visibleFieldDefs.filter((f) => f.FieldType === "dropdown");
+      const deletedDropdownFields = fieldDefs.filter((f) => f.IsActive === 0 && f.FieldType === "dropdown");
       const loaded: Record<string, DropdownItem[]> = {};
       for (const f of dropdownFields) {
-        const dbOpts = await DeviceOptionsRepository.getDropdownData(deviceType, f.FieldName, templateId);
+        let dbOpts = existing
+          ? await DeviceOptionsRepository.getDropdownData(deviceType, f.FieldName, templateId, true)
+          : await DeviceOptionsRepository.getDropdownData(deviceType, f.FieldName, templateId);
+        if (existing) {
+          dbOpts = dbOpts.filter((o) => o.IsActive !== 0 || savedValuesByField.get(f.FieldName)?.has(o.value));
+        }
+        loaded[f.FieldName] = dbOpts;
+      }
+      for (const f of deletedDropdownFields) {
+        const dbOpts = await DeviceOptionsRepository.getDropdownData(deviceType, f.FieldName, templateId, true);
         loaded[f.FieldName] = dbOpts;
       }
       setOpts(loaded);
-
-      const existing = await DeviceRecordsRepository.getByInspection(inspectionId, deviceType);
-      let list = existing.length > 0 ? existing : [];
 
       if (list.length < count) {
         for (let i = list.length + 1; i <= count; i++) {
@@ -87,7 +121,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       setRecords(list);
       setLoading(false);
     })();
-  }, [inspectionId, deviceType, templateId]);
+  }, [inspectionId, deviceType, templateId, existing]);
 
   useEffect(() => {
     if (loading) return;
@@ -230,9 +264,15 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     return `${deviceType} ${record.DeviceNo}`;
   };
 
+  const hasHistoricalValue = (field: DeviceFieldDefinition, record: DeviceRecord): boolean => {
+    const v = getData(record)[field.FieldName];
+    return v != null && v !== "";
+  };
+
   const renderField = (field: DeviceFieldDefinition, index: number, record: DeviceRecord) => {
     const data = getData(record);
     const value = data[field.FieldName] ?? null;
+    const fieldLabel = field.IsActive === 0 ? `Deleted ${field.Label}` : field.Label;
 
     const isNumber = field.FieldType === "number";
     const isCheckbox = field.FieldType === "checkbox";
@@ -246,28 +286,22 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           dropdownRefs.current[dropdownKey] = node;
         }}
       >
-        <Text style={styles.fieldLabel}>{field.Label}{field.IsRequired ? " *" : ""}</Text>
-        <Dropdown
-          ref={(node) => {
-            dropdownOpenRefs.current[dropdownKey] = node;
-          }}
+        <Text style={styles.fieldLabel}>{fieldLabel}{field.IsRequired ? " *" : ""}</Text>
+        <DropdownField
+          value={value}
+          options={opts[field.FieldName] ?? []}
+          editable={!locked}
+          placeholder={field.Placeholder ?? `Select ${field.Label}`}
           style={styles.dropdown}
           placeholderStyle={styles.placeholder}
           selectedTextStyle={styles.selectedText}
-          data={opts[field.FieldName] ?? []}
-          keyboardAvoiding={false}
-          labelField="label"
-          valueField="value"
-          placeholder={field.Placeholder ?? `Select ${field.Label}`}
-          value={value}
-          disable={locked}
           onFocus={() => {
             Keyboard.dismiss();
             setDropdownOpen(true);
           }}
-          onChange={(item) => {
+          onChange={(dropdownValue) => {
             setDropdownOpen(false);
-            updateField(index, field.FieldName, item.value);
+            updateField(index, field.FieldName, dropdownValue);
           }}
           onBlur={() => { setDropdownOpen(false); }}
         />
@@ -281,7 +315,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         >
           <View style={styles.checkboxRow}>
             <Checkbox status={value === "1" ? "checked" : "unchecked"} disabled={locked} />
-            <Text style={styles.fieldLabel}>{field.Label}{field.IsRequired ? " *" : ""}</Text>
+            <Text style={styles.fieldLabel}>{fieldLabel}{field.IsRequired ? " *" : ""}</Text>
           </View>
         </Pressable>
       </View>
@@ -289,7 +323,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       <View key={field.FieldDefID} style={styles.fieldHalf}>
         <TextInput
           mode="outlined"
-          label={field.Label + (field.IsRequired ? " *" : "")}
+          label={fieldLabel + (field.IsRequired ? " *" : "")}
           value={value ?? ""}
           placeholder={field.Placeholder ?? undefined}
           keyboardType={isNumber ? "decimal-pad" : undefined}
@@ -326,10 +360,17 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     );
   };
 
-  const halfFields: DeviceFieldDefinition[][] = [];
-  for (let i = 0; i < fields.length; i += 2) {
-    halfFields.push(fields.slice(i, i + 2));
-  }
+  const halfFieldsFor = (record: DeviceRecord): DeviceFieldDefinition[][] => {
+    const recordFields = existing
+      ? [...fields, ...deletedDefs.filter((d) => hasHistoricalValue(d, record))]
+          .sort((a, b) => a.DisplayOrder - b.DisplayOrder)
+      : fields;
+    const pairs: DeviceFieldDefinition[][] = [];
+    for (let i = 0; i < recordFields.length; i += 2) {
+      pairs.push(recordFields.slice(i, i + 2));
+    }
+    return pairs;
+  };
 
   return (
     <View style={styles.container}>
@@ -343,7 +384,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         <Card key={`dev-${record.DeviceNo}`} style={styles.card}>
           <Card.Title title={getDeviceLabel(record)} titleStyle={styles.cardTitle} />
           <Card.Content>
-            {halfFields.map((pair, pairIdx) => (
+            {halfFieldsFor(record).map((pair, pairIdx) => (
               <View key={pairIdx} style={styles.row}>
                 {pair.map((field) => renderField(field, index, record))}
               </View>

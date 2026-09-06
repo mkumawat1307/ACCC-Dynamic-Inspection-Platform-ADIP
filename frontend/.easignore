@@ -2,32 +2,49 @@
 # EAS uses ONLY this file when it exists (gitignore is not consulted),
 # so secret-file exclusions are duplicated here from .gitignore.
 #
-# KEEP (required for the Android APK build — do not remove):
-#   android/          - bare native Android project. MUST stay: the custom
-#                       WatermarkEncoderModule (WatermarkEncoderModule.kt) is
-#                       registered in MainApplication.kt and compiled into the
-#                       APK from this folder. Excluding it would silently drop
-#                       the native overlay composite and break watermarking.
-#   assets/           - app icons, splash, fonts bundled into the APK.
-#   src/, app/        - the JS/TS source that Metro bundles.
-#   scripts/          - preinstall guard (cmd-guard.js) runs on `yarn install`
-#                       on the EAS build server via the `preinstall` hook.
-#   package.json      - dependency manifest + `preinstall` hook target.
-#   yarn.lock         - dependency resolution for the EAS install step.
-#   app.json          - expo + android config (package name, icons, version).
-#   eas.json          - EAS build profile configuration.
-#   metro.config.js   - Metro bundler config.
-#   tsconfig.json     - TS compiler config (bundler/type resolution).
-#   expo-env.d.ts     - Expo env types; small, harmless to include.
+# KEEP (required to build the final Android APK — do not remove):
+#   android/           - bare native Android project. MainApplication.kt registers
+#                        AndroidBackupModule (AndroidBackupModule.kt / .kt in
+#                        app/src/main/java). build.gradle reads ../app.json for
+#                        versionCode/versionName and falls back to debug.keystore
+#                        for release signing when keystore.properties is absent.
+#   modules/download-storage/ - local native Expo module (expo-module.config.json
+#                        declares DownloadStorageModule.kt; autolinked and consumed
+#                        by src/utils/downloadStorage.ts). Excluding it breaks the
+#                        APK at link/autolink time.
+#   app/               - Expo Router screens that Metro bundles into the APK.
+#   src/               - JS/TS app source that Metro bundles (schema, seeds,
+#                        repositories, utils, components, context).
+#   assets/            - app icon + splash (referenced by app.json).
+#   patches/           - postinstall runs `patch-package`; the
+#                        react-native-element-dropdown+2.12.4.patch must reach the
+#                        build server or install fails to apply the fix.
+#   scripts/cmd-guard.js + scripts/cmd-guard/  - preinstall hook
+#                        (`node scripts/cmd-guard.js --preinstall`) runs on
+#                        `yarn install` on the EAS server.
+#   package.json       - dependency manifest + preinstall/postinstall hooks.
+#   yarn.lock          - dependency resolution for the EAS install step.
+#   app.json           - expo + android config (package name, icons, version).
+#   eas.json           - EAS build profile configuration (preview = apk).
+#   metro.config.js    - Metro bundler config (cacheStores, maxWorkers).
+#   tsconfig.json      - TS compiler config (path alias used by Metro resolver).
 #
-# EXCLUDED (NOT needed for the APK build):
-#   README.md / RELEASE_NOTES_v1.1.md  - docs, not bundled.
-#   .npmrc                             - only sets save-exact=true (no
-#                                        registry/auth), so not needed here.
+# EXCLUDED (NOT needed for the final APK build — verified by config trace):
+#   docs/              - plans, specs, reports; never bundled.
+#   __tests__/ src/__tests__/ src/tests/ - Jest suites + fixtures.
+#   __mocks__/         - Jest dev mocks (expo-sqlite, expo-file-system, ...).
+#   jest.config.js / jest.setup.ts - test runner config.
+#   eslint.config.js   - dev-only lint config.
+#   scripts/install-guard.sh / sync-shims.sh - local Linux shim tooling, only
+#                        referenced by each other, never by package.json hooks.
+#   scripts/measure-bundle.js - dev-only `yarn bundle:measure` helper.
+#   expo-env.d.ts      - generated local typegen artifact (not tracked in git).
+#   android/local.properties - machine-local ANDROID_HOME pointer (never committed).
 
 # VCS
 .git/
 .gitignore
+.easignore
 
 # Dependencies — reinstalled on the EAS server
 node_modules/
@@ -45,6 +62,7 @@ RELEASE_NOTES_v1.1.md
 
 # Tests and test config — not bundled into the APK
 __tests__/
+src/tests/
 __mocks__/
 jest.config.js
 jest.setup.ts
@@ -61,6 +79,8 @@ android/app/build/
 android/.gradle/
 android/.kotlin/
 android/app/.cxx/
+modules/*/android/build/
+modules/*/android/.gradle/
 ios/build/
 ios/Pods/
 
@@ -95,6 +115,8 @@ yarn-error.*
 .superpowers/
 .kilo/
 scripts/__pycache__/
+expo-env.d.ts
+android/local.properties
 
 # Screenshots and recordings
 screenshots/
