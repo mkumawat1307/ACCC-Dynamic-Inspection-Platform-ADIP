@@ -88,6 +88,10 @@ export class InspectionEditSession {
     return new Map(this.fieldValues);
   }
 
+  static getStagedDeviceRecords(): DeviceRecord[] {
+    return [...this.deviceRecords.values()];
+  }
+
   static getStagedPoleId(): string | null {
     return this.stagedPoleId;
   }

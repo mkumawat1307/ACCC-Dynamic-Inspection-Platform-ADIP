@@ -36,7 +36,7 @@ function resetState() {
 const SQL_COMMANDS = {
   INSERT: /^\s*INSERT(?:\s+OR\s+IGNORE)?\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)\s*;?\s*$/i,
   SELECT: /^\s*SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)(?:\s+AS\s+\w+|\s+\w+)?(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+?))?(?:\s+LIMIT\s+(\d+))?(?:\s+OFFSET\s+(\d+))?;?\s*$/i,
-  UPDATE: /^\s*UPDATE\s+(\w+)\s+SET\s+(.+?)(?:\s+WHERE\s+(.+?))?;?\s*$/i,
+  UPDATE: /^\s*UPDATE\s+(\w+)\s+SET\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+?))?;?\s*$/i,
   DELETE: /^\s*DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?;?\s*$/i,
   PRAGMA: /^\s*PRAGMA\s/i,
   CREATE_TABLE: /^\s*CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(\w+)/i,
@@ -91,6 +91,9 @@ function compileWhereConditions(whereClause: string, params: unknown[]): WhereCo
   let paramIdx = 0;
   return conditions
     .map((cond): WhereCond | null => {
+      if (/(?:=|!=|<>|>=|<=|>|<)\s*\(\s*SELECT\b/i.test(cond)) {
+        return null;
+      }
       const inMatch = cond.match(
         /(?:(?:(\w+)\.)?(\w+))\s+(NOT\s+)?IN\s*\(([\s\S]+)\)/i
       );
@@ -357,7 +360,14 @@ class MockDatabase {
     }
 
     const fromLessMatch = sql.match(/^\s*SELECT\s+([\s\S]+?)\s*;?\s*$/i);
-    if (fromLessMatch && !/FROM/i.test(fromLessMatch[1]) && /\(SELECT/i.test(fromLessMatch[1])) {
+    const subqueryOnlyList =
+      fromLessMatch != null &&
+      fromLessMatch[1]
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .every((t) => /^\(\s*SELECT\s+[\s\S]+?\)\s+AS\s+\w+\s*$/i.test(t));
+    if (fromLessMatch && subqueryOnlyList) {
       const out: Row = {};
       let paramIdx = 0;
       for (const token of fromLessMatch[1].split(",").map((t) => t.trim())) {
@@ -486,7 +496,9 @@ class MockDatabase {
 
     const selectMatch = sql.match(SQL_COMMANDS.SELECT);
     if (selectMatch) {
-      const cols = parseColumnList(selectMatch[1]);
+      const selectList = selectMatch[1];
+      const isDistinct = /^\s*DISTINCT\s+/i.test(selectList);
+      const cols = parseColumnList(isDistinct ? selectList.replace(/^\s*DISTINCT\s+/i, "") : selectList);
       const tableName = selectMatch[2];
       const whereClause = selectMatch[3];
       const orderByClause = selectMatch[4];

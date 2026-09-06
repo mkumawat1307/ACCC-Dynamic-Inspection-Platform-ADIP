@@ -214,4 +214,108 @@ describe("mandatory validation survives delete default section + reset (REPRO)",
     expect(validation.missingFields.filter((f) => !beforeValidation.missingFields.includes(f))).toEqual([]);
     expect(editorValues.length).toBeGreaterThan(0);
   });
+
+  it("C. inspection created WHILE definitions deleted -> reset -> reopen existing -> staged mandatory option must validate (session overlay) and commit", async () => {
+    const { db } = await openSeededProject();
+    const { default: SectionRepository } = require("@/src/database/repositories/SectionRepository") as typeof import("@/src/database/repositories/SectionRepository");
+    const { FieldRepository } = require("@/src/database/repositories/FieldRepository") as typeof import("@/src/database/repositories/FieldRepository");
+    const { ResetRepository } = require("@/src/database/repositories/ResetRepository") as typeof import("@/src/database/repositories/ResetRepository");
+    const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository") as typeof import("@/src/database/repositories/InspectionRepository");
+    const InspectionFieldRepository: typeof import("@/src/database/repositories/InspectionFieldRepository").default = require("@/src/database/repositories/InspectionFieldRepository").default;
+    const InspectionValueRepository: typeof import("@/src/database/repositories/InspectionValueRepository").default = require("@/src/database/repositories/InspectionValueRepository").default;
+    const { InspectionEditSession } = require("@/src/database/repositories/InspectionEditSession") as typeof import("@/src/database/repositories/InspectionEditSession");
+
+    const foundation = await db.getFirstAsync<{ FieldID: number; SectionID: number; IsRequired: number }>(
+      "SELECT FieldID, SectionID, IsRequired FROM InspectionFields WHERE FieldKey = 'foundation_cond'"
+    );
+    expect(foundation).toBeTruthy();
+    expect(foundation!.IsRequired).toBe(1);
+    const sectionId = foundation!.SectionID;
+    const foundationId = foundation!.FieldID;
+
+    // DELETE default definitions (section + its fields) BEFORE any inspection exists
+    await SectionRepository.softDeleteSection(sectionId);
+    const sectionFields = await db.getAllAsync<{ FieldID: number }>(
+      "SELECT FieldID FROM InspectionFields WHERE SectionID = ?",
+      [sectionId]
+    );
+    for (const f of sectionFields) {
+      await FieldRepository.delete(f.FieldID);
+    }
+
+    // Create a NEW inspection WHILE the definitions are deleted
+    const inspectionId = await createInspection("2026-09-05");
+    await seedAllRequired(db, inspectionId);
+
+    // The mandatory field is absent: no saved value row exists
+    expect((await InspectionValueRepository.getValue(inspectionId, foundationId))?.FieldValue ?? null).toBeNull();
+
+    // Reset to Default restores the section, field (same FieldID) and options
+    await ResetRepository.performReset();
+
+    const restored = await db.getFirstAsync<{ FieldID: number; IsActive: number }>(
+      "SELECT FieldID, IsActive FROM InspectionFields WHERE FieldKey = 'foundation_cond' LIMIT 1"
+    );
+    expect(restored!.IsActive).toBe(1);
+    expect(restored!.FieldID).toBe(foundationId);
+
+    const sections = await InspectionRepository.getSections(undefined, inspectionId);
+    expect(sections.some((s: SectionRow) => s.SectionID === sectionId && s.IsActive === 1)).toBe(true);
+
+    const options = await InspectionFieldRepository.getFieldOptionsBySection(sectionId, inspectionId);
+    expect((options.get(foundationId) ?? []).map((o) => o.OptionValue)).toContain("Acceptable");
+
+    // Reopen the existing inspection (edit session) and pick the restored
+    // MANDATORY option; with the session active this is staged, not written.
+    InspectionEditSession.activate(inspectionId);
+    await InspectionValueRepository.saveValue(inspectionId, foundationId, "Acceptable");
+
+    // The restored required sibling and a non-mandatory restored field are
+    // also filled (all staged together, as in the real form).
+    const poleAvail = await db.getFirstAsync<{ FieldID: number }>(
+      "SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_avail' AND IsActive = 1 LIMIT 1"
+    );
+    let poleAvailOption: string | null = null;
+    if (poleAvail) {
+      poleAvailOption = (options.get(poleAvail.FieldID) ?? [])[0]?.OptionValue ?? null;
+      if (poleAvailOption != null) {
+        await InspectionValueRepository.saveValue(inspectionId, poleAvail.FieldID, poleAvailOption);
+      }
+    }
+    const poleStatus = await db.getFirstAsync<{ FieldID: number }>(
+      "SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_status' AND IsActive = 1 LIMIT 1"
+    );
+    let poleStatusOption: string | null = null;
+    if (poleStatus) {
+      poleStatusOption = (options.get(poleStatus.FieldID) ?? [])[0]?.OptionValue ?? null;
+      if (poleStatusOption != null) {
+        await InspectionValueRepository.saveValue(inspectionId, poleStatus.FieldID, poleStatusOption);
+      }
+    }
+
+    // Nothing staged has reached the DB yet
+    expect((await InspectionValueRepository.getValue(inspectionId, foundationId))?.FieldValue ?? null).toBeNull();
+
+    // Regression: with the session active, validation auto-overlays the staged
+    // values, so the selected mandatory options are seen without any caller
+    // having to pass the staged map explicitly (Save would pass).
+    const result = await InspectionRepository.validateInspection(inspectionId);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields.filter((f) => f === "Foundation Condition" || f === "Pole Availability")).toEqual([]);
+
+    // Save path: validation passed -> commit persists every staged value
+    const committed = await InspectionEditSession.commit();
+    expect(committed).toBe(true);
+    expect((await InspectionValueRepository.getValue(inspectionId, foundationId))?.FieldValue).toBe("Acceptable");
+    if (poleAvailOption != null) {
+      expect((await InspectionValueRepository.getValue(inspectionId, poleAvail!.FieldID))?.FieldValue).toBe(poleAvailOption);
+    }
+    if (poleStatusOption != null) {
+      expect((await InspectionValueRepository.getValue(inspectionId, poleStatus!.FieldID))?.FieldValue).toBe(poleStatusOption);
+    }
+    expect(InspectionEditSession.isActive(inspectionId)).toBe(false);
+
+    const finalValidation = await InspectionRepository.validateInspection(inspectionId);
+    expect(finalValidation.valid).toBe(true);
+  });
 });

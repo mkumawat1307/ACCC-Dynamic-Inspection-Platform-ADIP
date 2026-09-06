@@ -367,7 +367,8 @@ static async getInspectionValues(
 }
 
 static async validateInspection(
-    inspectionId: number
+    inspectionId: number,
+    stagedValues?: ReadonlyMap<number, string>
   ): Promise<{
     valid: boolean;
     missingFields: string[];
@@ -375,6 +376,7 @@ static async validateInspection(
     const db = await getDatabase();
 
     const requiredFields = await db.getAllAsync<{
+      FieldID: number;
       FieldKey: string;
       FieldName: string;
       FieldType: string;
@@ -382,6 +384,7 @@ static async validateInspection(
     }>(
       `
       SELECT DISTINCT
+        f.FieldID,
         f.FieldKey,
         f.FieldName,
         f.FieldType,
@@ -403,6 +406,12 @@ static async validateInspection(
 
     const values = await this.getInspectionValues(inspectionId);
 
+    const effectiveStagedValues =
+      stagedValues ??
+      (InspectionEditSession.isActive(inspectionId)
+        ? InspectionEditSession.getStagedFieldValues()
+        : undefined);
+
     const missingFields: string[] = [];
 
     const autoFilledFields = [
@@ -418,7 +427,11 @@ static async validateInspection(
         continue;
       }
 
-      const value = values[field.FieldKey];
+      const stagedValue = effectiveStagedValues?.get(field.FieldID);
+      const value =
+        stagedValue !== undefined
+          ? stagedValue
+          : values[field.FieldKey];
 
       if (isFieldValueEmpty(field.FieldType, value ?? "")) {
         missingFields.push(field.FieldName);
@@ -479,14 +492,22 @@ static async validateDeviceMandatory(
     );
 
     // Device counts come from {type}_count inspection fields (e.g. camera_count)
-    const countFields = await db.getAllAsync<{ FieldKey: string }>(
-      `SELECT DISTINCT f.FieldKey
+    const countFields = await db.getAllAsync<{
+      FieldID: number;
+      FieldKey: string;
+    }>(
+      `SELECT DISTINCT f.FieldID, f.FieldKey
        FROM InspectionFields f
        INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
        INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
        WHERE f.IsActive = 1 AND t.IsDefault = 1 AND f.FieldKey LIKE '%_count'`
     );
     const values = await this.getInspectionValues(inspectionId);
+
+    const sessionActive = InspectionEditSession.isActive(inspectionId);
+    const sessionFieldValues = sessionActive
+      ? InspectionEditSession.getStagedFieldValues()
+      : undefined;
 
     const counts: Record<string, number> = {};
     for (const row of countFields) {
@@ -498,7 +519,12 @@ static async validateDeviceMandatory(
           row.FieldKey
       );
       if (type) {
-        const count = Number(values[row.FieldKey] || "0");
+        const stagedCount = sessionFieldValues?.get(row.FieldID);
+        const countValue =
+          stagedCount !== undefined
+            ? stagedCount
+            : (values[row.FieldKey] || "0");
+        const count = Number(countValue || "0");
         counts[type.DeviceType] = count > 0 ? count : 0;
       }
     }
@@ -509,6 +535,16 @@ static async validateDeviceMandatory(
     for (const record of deviceRecords) {
       recordsByTypeNo[record.DeviceType] = recordsByTypeNo[record.DeviceType] ?? {};
       recordsByTypeNo[record.DeviceType][record.DeviceNo] = record;
+    }
+
+    // Overlay device records staged in the active edit session: when the UI
+    // saves through the session they are not yet in the database, but they are
+    // the authoritative state during validation.
+    if (sessionActive) {
+      for (const record of InspectionEditSession.getStagedDeviceRecords()) {
+        recordsByTypeNo[record.DeviceType] = recordsByTypeNo[record.DeviceType] ?? {};
+        recordsByTypeNo[record.DeviceType][record.DeviceNo] = record;
+      }
     }
 
     const fieldsByType: Record<string, typeof requiredFields> = {};
