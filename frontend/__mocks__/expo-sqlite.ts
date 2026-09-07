@@ -577,7 +577,23 @@ class MockDatabase {
   }
 
   async withTransactionAsync<T>(fn: () => Promise<T>): Promise<T> {
-    return fn();
+    const snapshot = {
+      tables: new Map<string, TableData>(
+        [...this.tables].map(([name, rows]) => [
+          name,
+          rows.map((row) => ({ ...row })),
+        ])
+      ),
+      rowIdCounter: this.rowIdCounter,
+    };
+    try {
+      const result = await fn();
+      return result;
+    } catch (error) {
+      this.tables = snapshot.tables;
+      this.rowIdCounter = snapshot.rowIdCounter;
+      throw error;
+    }
   }
 }
 

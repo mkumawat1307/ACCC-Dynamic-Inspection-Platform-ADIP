@@ -1,5 +1,12 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { closeAllDatabases, getGlobalDatabase, GLOBAL_DATABASE_NAME } from "../db";
+import type { SQLiteDatabase } from "expo-sqlite";
+import {
+  closeAllDatabases,
+  getDatabase,
+  getGlobalDatabase,
+  GLOBAL_DATABASE_NAME,
+  setActiveProject,
+} from "../db";
 import { listProjectFolders } from "./ProjectDBManager";
 import {
   BACKUP_FILE_NAME,
@@ -32,47 +39,71 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function collectDbFiles(): Promise<Record<string, Uint8Array>> {
-  const files: Record<string, Uint8Array> = {};
-  const globalBase = `SQLite/${GLOBAL_DATABASE_NAME}`;
-  const globalRels = [globalBase, `${globalBase}-wal`, `${globalBase}-shm`];
-  for (const rel of globalRels) {
-    try {
-      const b64 = await FileSystem.readAsStringAsync(
-        `${FileSystem.documentDirectory}${rel}`,
-        { encoding: FileSystem.EncodingType.Base64 }
-      );
-      files[rel] = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    } catch {
-      // global DB / sidecar absent — skip, non-fatal
-    }
+let snapshotCounter = 0;
+
+function nextSnapshotUri(): string {
+  const cache = FileSystem.cacheDirectory ?? "";
+  const cacheDir = cache.endsWith("/") ? cache : `${cache}/`;
+  snapshotCounter += 1;
+  return `${cacheDir}accc_backup_${Date.now()}_${snapshotCounter}_${Math.floor(
+    Math.random() * 0xffffff
+  )}.db`;
+}
+
+function toSqlStringLiteral(path: string): string {
+  return `'${path.replace(/'/g, "''")}'`;
+}
+
+async function readSnapshotBytes(uri: string): Promise<Uint8Array> {
+  const b64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+async function snapshotDatabase(
+  db: SQLiteDatabase,
+  label: string
+): Promise<Uint8Array> {
+  if (await db.isInTransactionAsync()) {
+    throw new Error(`Cannot back up ${label}: a write transaction is in progress`);
   }
-  const folders = await listProjectFolders();
-  for (const folder of folders) {
-    const rels = [
-      `Projects/${folder}/inspection.db`,
-      `Projects/${folder}/inspection.db-wal`,
-      `Projects/${folder}/inspection.db-shm`,
-    ];
-    for (const rel of rels) {
-      try {
-        const b64 = await FileSystem.readAsStringAsync(
-          `${FileSystem.documentDirectory}${rel}`,
-          { encoding: FileSystem.EncodingType.Base64 }
-        );
-        files[rel] = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      } catch {
-        // sidecar/file absent — skip
-      }
-    }
+  const snapshotUri = nextSnapshotUri();
+  const nativePath = snapshotUri.replace(/^file:\/\//, "");
+  try {
+    await db.execAsync(`VACUUM INTO ${toSqlStringLiteral(nativePath)}`);
+    return await readSnapshotBytes(snapshotUri);
+  } finally {
+    await FileSystem.deleteAsync(snapshotUri, { idempotent: true }).catch(() => {});
   }
-  return files;
 }
 
 export async function backupNow(): Promise<BackupResult> {
   try {
     await ensureRootFolder();
-    const files = await collectDbFiles();
+    const files: Record<string, Uint8Array> = {};
+
+    const globalDb = await getGlobalDatabase();
+    files[`SQLite/${GLOBAL_DATABASE_NAME}`] = await snapshotDatabase(
+      globalDb,
+      "the global database"
+    );
+
+    const folders = await listProjectFolders();
+    for (const folder of folders) {
+      const projectDbPath = `${FileSystem.documentDirectory}Projects/${folder}/inspection.db`;
+      const info = await FileSystem.getInfoAsync(projectDbPath);
+      if (!info.exists) {
+        throw new Error(`Project database is missing: ${projectDbPath}`);
+      }
+      await setActiveProject(projectDbPath);
+      const projectDb = await getDatabase();
+      files[`Projects/${folder}/inspection.db`] = await snapshotDatabase(
+        projectDb,
+        `project "${folder}"`
+      );
+    }
+
     const zip = await zipBase64(files);
     await downloadStorage.writeBase64("", BACKUP_FILE_NAME, "application/zip", zip);
     return { ok: true, message: "Backup created", path: buildBackupDisplayPath() };

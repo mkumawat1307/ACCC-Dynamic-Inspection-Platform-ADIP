@@ -2,6 +2,7 @@ import React, {
   createContext,
   useContext,
   useMemo,
+  useRef,
   useState,
   useCallback,
 } from "react";
@@ -44,16 +45,20 @@ export function InspectionProvider({
   const { setPhotoStates, getPhotoStates } = usePhotoStates();
 
   const [project, setProject] = useState<Project | null>(null);
+  const openSeqRef = useRef(0);
 
 const [inspectionDate, setInspectionDate] = useState("");
 const [inspectionId, setInspectionId] = useState<number | null>(null);
 const [poleId, setPoleId] = useState("");
 
 const openProject = useCallback(async (p: Project) => {
+  const seq = ++openSeqRef.current;
   if (p.DBPath) {
     await openProjectDb(p.DBPath, p.ProjectID);
   }
-  setProject(p);
+  if (seq === openSeqRef.current) {
+    setProject(p);
+  }
 }, []);
 
 const closeProject = useCallback(async () => {

@@ -7,6 +7,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import { ResetRepository } from "@/src/database/repositories/ResetRepository";
 import { Project } from "@/src/models/Project";
+import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 
 export default function SettingsScreen() {
   const { projectData: projectDataJson } = useLocalSearchParams<{
@@ -28,6 +29,8 @@ export default function SettingsScreen() {
   const settingsParams = project
     ? { projectId: project.ProjectID.toString(), projectData: JSON.stringify(project) }
     : undefined;
+
+  const { ready, error } = useProjectActivation(project);
 
   const handleResetToDefault = async () => {
     let inspectionCount = 0;
@@ -90,14 +93,28 @@ export default function SettingsScreen() {
     }
   };
 
-  if (!project || !settingsParams) {
+  if (!project || !settingsParams || error) {
     return (
       <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
         <Appbar.Header>
           <Appbar.BackAction onPress={() => router.back()} />
           <Appbar.Content title="Project Settings" />
         </Appbar.Header>
-        <Text style={styles.guard}>Open a project to access settings.</Text>
+        <Text style={styles.guard}>
+          {error ? "Project not found." : "Open a project to access settings."}
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+        <Appbar.Header>
+          <Appbar.BackAction onPress={() => router.back()} />
+          <Appbar.Content title="Project Settings" />
+        </Appbar.Header>
+        <ActivityIndicator style={styles.loading} />
       </SafeAreaView>
     );
   }
@@ -197,9 +214,14 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: 30,
   },
-  guard: {
+guard: {
     textAlign: "center",
     marginTop: 40,
     color: "#666",
   },
+
+  loading: {
+    marginTop: 40,
+  },
+
 });

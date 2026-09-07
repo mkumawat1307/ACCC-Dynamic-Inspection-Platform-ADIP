@@ -27,6 +27,7 @@ import {
 import { INSPECTION_FINAL_STATUSES } from "@/src/database/repositories/InspectionRepository";
 
 import { useInspection } from "@/src/context/InspectionContext";
+import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 
 import { useExportFlow } from "@/src/components/export/useExportFlow";
 
@@ -41,7 +42,14 @@ export default function InspectionListScreen() {
     projectId: string;
   }>();
 
-  const { project } = useInspection();
+  const { project: contextProject } = useInspection();
+
+  const resolvedProject =
+    contextProject && contextProject.ProjectID === Number(projectId)
+      ? contextProject
+      : null;
+
+  const { ready, error } = useProjectActivation(resolvedProject);
 
   const [search, setSearch] = useState("");
 
@@ -61,10 +69,10 @@ export default function InspectionListScreen() {
 
   const exportFlow = useExportFlow(
     Number(projectId ?? 0),
-    project?.ProjectName ?? "Project",
+    contextProject?.ProjectName ?? "Project",
     {
-      division: project?.DivisionName ?? "",
-      inspector: project?.InspectorName ?? "",
+      division: contextProject?.DivisionName ?? "",
+      inspector: contextProject?.InspectorName ?? "",
     }
   );
 
@@ -78,8 +86,8 @@ export default function InspectionListScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadInspections();
-    }, [projectId, tab])
+      if (ready) loadInspections();
+    }, [projectId, tab, ready])
   );
 
   async function loadInspections() {
@@ -110,8 +118,8 @@ export default function InspectionListScreen() {
       projectId: projectId ?? "",
     };
 
-    if (project) {
-      params.projectData = JSON.stringify(project);
+    if (contextProject) {
+      params.projectData = JSON.stringify(contextProject);
     }
 
     router.push({
@@ -178,6 +186,18 @@ export default function InspectionListScreen() {
 
   const filtered =
     InspectionListRepository.filterByQuery(inspections, search);
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+        <Appbar.Header>
+          <Appbar.BackAction onPress={() => router.back()} />
+          <Appbar.Content title="Inspection List" />
+        </Appbar.Header>
+        <Text style={styles.guardText}>Project not found.</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
         <SafeAreaView
@@ -499,6 +519,12 @@ const styles = StyleSheet.create({
 
   draftCount: {
     marginRight: 12,
+  },
+
+  guardText: {
+    textAlign: "center",
+    marginTop: 40,
+    color: "#666",
   },
 
 });

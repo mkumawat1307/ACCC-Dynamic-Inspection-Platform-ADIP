@@ -13,6 +13,7 @@ import {
   backupTemplatesToFile,
   restoreTemplatesFromFile,
 } from "@/src/utils/templateBackup";
+import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 
 export default function TemplateBackupScreen() {
   const { projectData: projectDataJson } = useLocalSearchParams<{
@@ -32,6 +33,8 @@ export default function TemplateBackupScreen() {
   }, [projectDataJson]);
 
   const projectLabel = project ? canonicalProjectLabel(project) : null;
+
+  const { ready, error } = useProjectActivation(project);
 
   const handleBackup = async () => {
     if (!projectLabel) return;
@@ -105,14 +108,28 @@ export default function TemplateBackupScreen() {
     }
   };
 
-  if (!project || !projectLabel) {
+  if (!project || !projectLabel || error) {
     return (
       <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
         <Appbar.Header>
           <Appbar.BackAction onPress={() => router.back()} />
           <Appbar.Content title="Template Backup & Restore" />
         </Appbar.Header>
-        <Text style={styles.guard}>Open a project to access template settings.</Text>
+        <Text style={styles.guard}>
+          {error ? "Project not found." : "Open a project to access template settings."}
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+        <Appbar.Header>
+          <Appbar.BackAction onPress={() => router.back()} />
+          <Appbar.Content title="Template Backup & Restore" />
+        </Appbar.Header>
+        <ActivityIndicator style={styles.loading} />
       </SafeAreaView>
     );
   }
@@ -156,9 +173,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F5F5F5",
   },
-  guard: {
+guard: {
     textAlign: "center",
     marginTop: 40,
     color: "#666",
   },
+
+  loading: {
+    marginTop: 40,
+  },
+
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { StyleSheet, View, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -12,6 +12,7 @@ import {
 import ReportTablePreview from "@/src/components/reports/ReportTablePreview";
 import { logger } from "@/src/utils/logger";
 import { Project } from "@/src/models/Project";
+import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 
 const EXPORT_ACTIONS: { format: ExportFormat; label: string; icon: string }[] = [
   { format: "excel", label: "Export as Excel", icon: "microsoft-excel" },
@@ -25,14 +26,16 @@ export default function ReportsScreen() {
     projectData?: string;
   }>();
 
-  const project: Project | null = (() => {
+  const project: Project | null = useMemo(() => {
     if (!projectData) return null;
     try {
       return JSON.parse(projectData) as Project;
     } catch {
       return null;
     }
-  })();
+  }, [projectData]);
+
+  const { ready, error } = useProjectActivation(project);
 
   const router = useRouter();
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
@@ -41,8 +44,8 @@ export default function ReportsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (projectId) loadPreview();
-    }, [projectId])
+      if (projectId && ready) loadPreview();
+    }, [projectId, ready])
   );
 
   async function loadPreview() {
@@ -78,6 +81,30 @@ export default function ReportsScreen() {
       setExporting(null);
     }
   };
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+        <Appbar.Header>
+          <Appbar.BackAction onPress={() => router.back()} />
+          <Appbar.Content title="Reports" />
+        </Appbar.Header>
+        <Text style={styles.empty}>Project not found.</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!ready) {
+    return (
+      <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>
+        <Appbar.Header>
+          <Appbar.BackAction onPress={() => router.back()} />
+          <Appbar.Content title="Reports" />
+        </Appbar.Header>
+        <ActivityIndicator style={styles.previewLoading} />
+      </SafeAreaView>
+    );
+  }
 
   const totalRows = table?.rows.length ?? 0;
   const columnCount = table?.headers.length ?? 0;

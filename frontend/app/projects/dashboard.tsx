@@ -7,6 +7,7 @@ import { Card, Text, ActivityIndicator, Appbar } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
+import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 import { logger } from "@/src/utils/logger";
 import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard";
 import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
@@ -25,6 +26,8 @@ export default function ProjectDashboard() {
   const isFocused = useIsFocused();
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState<Project | null>(null);
+
+  const { ready: dbReady, error: dbError } = useProjectActivation(project);
 
   useEffect(() => {
     loadProject();
@@ -85,6 +88,22 @@ export default function ProjectDashboard() {
     return (
       <SafeAreaView style={styles.centered}>
         <Text>Project not found.</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (dbError) {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <Text>Unable to open project database.</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!dbReady) {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <ActivityIndicator size="large" />
       </SafeAreaView>
     );
   }

@@ -9,6 +9,7 @@ export const GLOBAL_DATABASE_NAME = "accc_global.db";
 let database: SQLite.SQLiteDatabase | null = null;
 let activeProjectPath: string | null = null;
 let currentDbTarget: string | null = null;
+let activationSeq = 0;
 
 function cleanPath(dbPath: string): string {
   return dbPath.replace(/^file:\/\//, "");
@@ -29,11 +30,17 @@ async function ensureGlobalDb(): Promise<SQLite.SQLiteDatabase> {
   if (currentDbTarget === GLOBAL_DATABASE_NAME && database) {
     return database;
   }
+  const seq = ++activationSeq;
   if (activeProjectPath) {
     logger.warn(`[db.ts] ensureGlobalDb — switching away from active project DB`);
   }
   await closeCurrentDb();
-  database = await SQLite.openDatabaseAsync(GLOBAL_DATABASE_NAME);
+  const handle = await SQLite.openDatabaseAsync(GLOBAL_DATABASE_NAME);
+  if (seq !== activationSeq) {
+    await handle.closeAsync().catch(() => {});
+    throw new Error(`Superseded database activation: ${GLOBAL_DATABASE_NAME}`);
+  }
+  database = handle;
   currentDbTarget = GLOBAL_DATABASE_NAME;
   try {
     await database.execAsync(`PRAGMA journal_mode = DELETE;`);
@@ -76,9 +83,15 @@ async function ensureProjectDb(dbPath: string): Promise<SQLite.SQLiteDatabase> {
   if (currentDbTarget === cp && database) {
     return database;
   }
+  const seq = ++activationSeq;
   await closeCurrentDb();
   await migrateLegacyProjectDb(cp);
-  database = await SQLite.openDatabaseAsync(cp, undefined, "");
+  const handle = await SQLite.openDatabaseAsync(cp, undefined, "");
+  if (seq !== activationSeq) {
+    await handle.closeAsync().catch(() => {});
+    throw new Error(`Superseded project activation: ${cp}`);
+  }
+  database = handle;
   currentDbTarget = cp;
   try {
     await database.execAsync(`PRAGMA journal_mode = WAL;`);

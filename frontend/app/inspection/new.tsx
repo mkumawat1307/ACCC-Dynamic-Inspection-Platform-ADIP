@@ -1,6 +1,7 @@
 //frontend\app\inspection\new.tsx
 import React, {
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -52,6 +53,7 @@ import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecor
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
 import { validatePhotosForSave } from "@/src/components/inspection/photoUtils";
+import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 
 export default function NewInspectionScreen({
   title = "New Inspection",
@@ -122,6 +124,31 @@ export default function NewInspectionScreen({
     getPhotoStates,
   } = useInspection();
   inspectionIdRef.current = inspectionId;
+
+  const resolvedProject = useMemo<Project | null>(() => {
+    if (projectDataJson) {
+      try {
+        const parsed = JSON.parse(projectDataJson);
+        if (
+          parsed &&
+          typeof parsed.ProjectID === "number" &&
+          typeof parsed.ProjectName === "string"
+        ) {
+          return parsed as Project;
+        }
+      } catch {
+      }
+    }
+    if (
+      contextProject &&
+      contextProject.ProjectID === Number(projectId)
+    ) {
+      return contextProject;
+    }
+    return null;
+  }, [projectDataJson, contextProject, projectId]);
+
+  const { ready, error: activationError } = useProjectActivation(resolvedProject);
 
   const photosProcessing = usePhotosProcessing();
 
@@ -257,12 +284,13 @@ const validateBeforeExit = async (): Promise<boolean> => {
 
 useEffect(() => {
   if (initDoneRef.current) return;
+  if (!ready) return;
   initDoneRef.current = true;
   initialize();
   return () => {
     initDoneRef.current = false;
   };
-}, [projectId, routeInspectionId]);
+}, [projectId, routeInspectionId, ready]);
 
 useEffect(() => {
   const subscription = BackHandler.addEventListener(
@@ -542,6 +570,23 @@ const handleCancel = () => {
   );
 
 };
+
+if (activationError) {
+  return (
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["left", "right", "bottom"]}
+    >
+      <Appbar.Header>
+        <Appbar.BackAction onPress={handleBack} />
+        <Appbar.Content title={title} />
+      </Appbar.Header>
+      <Text variant="bodyMedium" style={{ textAlign: "center", marginTop: 40, color: "#666" }}>
+        Project not found.
+      </Text>
+    </SafeAreaView>
+  );
+}
 
 return (
   <SafeAreaView

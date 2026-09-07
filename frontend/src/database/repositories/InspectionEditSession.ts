@@ -21,6 +21,8 @@
 import InspectionValueRepository from "./InspectionValueRepository";
 import { InspectionRepository } from "./InspectionRepository";
 import { DeviceRecordsRepository, DeviceRecord } from "./DeviceRecordsRepository";
+import type { PendingRename as PoleRenameItem } from "./PoleRenameService";
+import { getDatabase } from "../db";
 import { logger } from "@/src/utils/logger";
 
 interface PendingRename {
@@ -36,9 +38,14 @@ export class InspectionEditSession {
   private static stagedPoleId: string | null = null;
   private static pendingRename: PendingRename | null = null;
   private static deviceRecords = new Map<string, DeviceRecord>();
+  private static committing = false;
 
   static isActive(inspectionId: number | null): boolean {
-    return inspectionId != null && this.activeInspectionId === inspectionId;
+    return (
+      !this.committing &&
+      inspectionId != null &&
+      this.activeInspectionId === inspectionId
+    );
   }
 
   static hasActiveSession(): boolean {
@@ -104,10 +111,11 @@ export class InspectionEditSession {
   }
 
   /**
-   * Persist every staged edit to the database. The session is deactivated
-   * first so the repository writes are not re-captured, then all staged field
-   * values, the Pole ID/rename, and device records are written. Returns false
-   * if a staged Pole ID rename is blocked by a duplicate (nothing is written).
+   * Persist every staged edit to the database in one transaction. The session
+   * stays active while committing (flushing writes to the database with no
+   * re-capture), and is only deactivated after the transaction commits. On any
+   * failure the transaction rolls back and the session is kept intact so the
+   * staged edits can be retried.
    */
   static async commit(): Promise<boolean> {
     if (this.activeInspectionId == null) return true;
@@ -118,43 +126,81 @@ export class InspectionEditSession {
     const pendingRename = this.pendingRename;
     const devices = [...this.deviceRecords.values()];
 
-    // Deactivate first so the repository calls below are not captured again.
-    this.clear();
-    this.activeInspectionId = null;
+    this.committing = true;
+
+    let pendingFileRenames: PoleRenameItem[] = [];
 
     try {
-      if (pendingRename) {
-        const { PoleRenameService } = await import("./PoleRenameService");
-        const result = await PoleRenameService.renamePoleId(
-          inspectionId,
-          pendingRename.oldPoleId,
-          pendingRename.newPoleId,
-          {
-            renameFiles: pendingRename.renameFiles,
-            updateReports: pendingRename.updateReports,
+      const db = await getDatabase();
+
+      let duplicate = false;
+      await db.withTransactionAsync(async () => {
+        if (pendingRename) {
+          const { PoleRenameService } = await import("./PoleRenameService");
+          const prepared = await PoleRenameService.prepareRename(
+            inspectionId,
+            pendingRename.oldPoleId,
+            pendingRename.newPoleId,
+            {
+              renameFiles: pendingRename.renameFiles,
+              updateReports: pendingRename.updateReports,
+            }
+          );
+          if (prepared.duplicatePoleId) {
+            duplicate = true;
+            return;
           }
-        );
-        if (result.duplicate) return false;
-      } else if (stagedPoleId != null) {
-        await InspectionRepository.updatePoleIdDirectSave(
-          inspectionId,
-          await this.resolvePoleIdFieldId(inspectionId),
-          stagedPoleId
-        );
-      }
+          pendingFileRenames = prepared.renames;
+          await PoleRenameService.writeRenameInTransaction(
+            db,
+            inspectionId,
+            pendingRename.oldPoleId,
+            pendingRename.newPoleId,
+            {
+              renameFiles: pendingRename.renameFiles,
+              updateReports: pendingRename.updateReports,
+            },
+            prepared.renames
+          );
+        } else if (stagedPoleId != null) {
+          await InspectionRepository.saveFieldValue(
+            inspectionId,
+            await this.resolvePoleIdFieldId(inspectionId),
+            stagedPoleId
+          );
+          await InspectionRepository.updateInspectionPoleId(
+            inspectionId,
+            stagedPoleId
+          );
+        }
 
-      for (const [fieldId, value] of fieldValues) {
-        await InspectionValueRepository.saveValue(inspectionId, fieldId, value);
-      }
+        for (const [fieldId, value] of fieldValues) {
+          await InspectionValueRepository.saveValue(
+            inspectionId,
+            fieldId,
+            value
+          );
+        }
 
-      for (const record of devices) {
-        await DeviceRecordsRepository.save(record);
-      }
+        for (const record of devices) {
+          await DeviceRecordsRepository.save(record);
+        }
+      });
 
+      if (duplicate) return false;
+
+      this.clear();
+      this.activeInspectionId = null;
       return true;
     } catch (error) {
       logger.error("[InspectionEditSession] commit failed:", error);
+      if (pendingFileRenames.length > 0) {
+        const { PoleRenameService } = await import("./PoleRenameService");
+        await PoleRenameService.reverseFileRenames(pendingFileRenames);
+      }
       return false;
+    } finally {
+      this.committing = false;
     }
   }
 
