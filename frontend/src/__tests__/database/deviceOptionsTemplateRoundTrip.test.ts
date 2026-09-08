@@ -5,8 +5,13 @@ import {
   buildTemplateExportData,
   applyTemplateImport,
 } from "@/src/utils/templateData";
-import type { TemplateExportData } from "@/src/utils/templateData";
+import type {
+  TemplateExportData,
+  TemplateExportDeviceType,
+  TemplateExportDeviceOption,
+} from "@/src/utils/templateData";
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
+import DeviceFieldDefinitionsRepository from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 
 const TID = 1;
 
@@ -150,6 +155,49 @@ async function seedDeviceOption(
   );
 }
 
+async function seedDeviceField(
+  deviceType: string,
+  fieldName: string,
+  label: string,
+  opts: { fieldType?: string; isRequired?: number; displayOrder?: number } = {}
+) {
+  await db.runAsync(
+    `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, IsActive)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1)`,
+    [
+      TID,
+      deviceType,
+      fieldName,
+      label,
+      opts.fieldType ?? "text",
+      opts.isRequired ?? 0,
+      opts.displayOrder ?? 1,
+    ]
+  );
+}
+
+function makeDeviceImport(
+  deviceTypes: TemplateExportDeviceType[],
+  deviceOptions: TemplateExportDeviceOption[],
+  templateName = "Default Template"
+): TemplateExportData {
+  return {
+    version: "2.0",
+    exportedAt: new Date().toISOString(),
+    templates: [
+      {
+        TemplateName: templateName,
+        Description: "Test",
+        IsDefault: 1,
+        sections: [],
+        deviceTypes,
+        deviceOptions,
+      },
+    ],
+    projectDeviceTypes: [],
+  };
+}
+
 describe("Template Export — IsDefault", () => {
   it("exports IsDefault=1 for default option", async () => {
     await seedDeviceOption("Camera", "CameraStatus", "Working", "Working", 1, 1);
@@ -281,5 +329,227 @@ describe("Template Import — IsDefault", () => {
 
     const defaultValue = await DeviceOptionsRepository.getDefaultOption("Camera", "CameraStatus");
     expect(defaultValue).toBe("Working");
+  });
+});
+
+describe("Template Import — Device Field/Option Deactivation", () => {
+  it("deactivates a device field removed from an imported template", async () => {
+    await seedDeviceField("Camera", "Vendor", "Vendor");
+    await seedDeviceField("Camera", "Resolution", "Resolution");
+
+    await applyTemplateImport(makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Resolution", Label: "Resolution", FieldType: "text", IsRequired: 0, DisplayOrder: 2 },
+      ],
+      []
+    ));
+
+    const active = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID);
+    expect(active.map((f) => f.FieldName)).toEqual(["Resolution"]);
+
+    const all = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID, true);
+    const vendor = all.find((f) => f.FieldName === "Vendor");
+    expect(vendor).toBeDefined();
+    expect(vendor!.IsActive).toBe(0);
+  });
+
+  it("deactivates a device option removed from an imported template", async () => {
+    await seedDeviceOption("Camera", "CameraStatus", "Online", "Online", 1, 1);
+    await seedDeviceOption("Camera", "CameraStatus", "Offline", "Offline", 0, 2);
+
+    await applyTemplateImport(makeDeviceImport(
+      [],
+      [{ DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "Online", OptionValue: "Online", DisplayOrder: 1, IsDefault: 1 }]
+    ));
+
+    const active = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID);
+    expect(active.map((o) => o.OptionLabel)).toEqual(["Online"]);
+
+    const all = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID, true);
+    const offline = all.find((o) => o.OptionLabel === "Offline");
+    expect(offline).toBeDefined();
+    expect(offline!.IsActive).toBe(0);
+  });
+
+  it("preserves historical device field values after the field is deactivated", async () => {
+    await seedDeviceField("Camera", "Vendor", "Vendor");
+    await seedDeviceField("Camera", "Resolution", "Resolution");
+    await db.runAsync(
+      `INSERT INTO DeviceRecords (InspectionID, DeviceType, DeviceNo, DeviceData, DisplayOrder, IsActive)
+       VALUES (?, ?, ?, ?, ?, 1)`,
+      [1, "Camera", 1, JSON.stringify({ Vendor: "OldCo", Resolution: "1080p" }), 1]
+    );
+
+    await applyTemplateImport(makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Resolution", Label: "Resolution", FieldType: "text", IsRequired: 0, DisplayOrder: 2 },
+      ],
+      []
+    ));
+
+    const record = await db.getFirstAsync<{ DeviceData: string }>(
+      `SELECT DeviceData FROM DeviceRecords WHERE InspectionID = 1 AND DeviceType = ? AND DeviceNo = 1`,
+      ["Camera"]
+    );
+    expect(record).toBeDefined();
+    expect(JSON.parse(record!.DeviceData)).toEqual({ Vendor: "OldCo", Resolution: "1080p" });
+
+    const all = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID, true);
+    expect(all.find((f) => f.FieldName === "Vendor")?.IsActive).toBe(0);
+  });
+
+  it("preserves historical device option values after the option is deactivated", async () => {
+    await seedDeviceOption("Camera", "CameraStatus", "Online", "Online", 1, 1);
+    await seedDeviceOption("Camera", "CameraStatus", "Offline", "Offline", 0, 2);
+    await db.runAsync(
+      `INSERT INTO DeviceRecords (InspectionID, DeviceType, DeviceNo, DeviceData, DisplayOrder, IsActive)
+       VALUES (?, ?, ?, ?, ?, 1)`,
+      [1, "Camera", 1, JSON.stringify({ CameraStatus: "Offline" }), 1]
+    );
+
+    await applyTemplateImport(makeDeviceImport(
+      [],
+      [{ DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "Online", OptionValue: "Online", DisplayOrder: 1, IsDefault: 1 }]
+    ));
+
+    const record = await db.getFirstAsync<{ DeviceData: string }>(
+      `SELECT DeviceData FROM DeviceRecords WHERE InspectionID = 1 AND DeviceType = ? AND DeviceNo = 1`,
+      ["Camera"]
+    );
+    expect(JSON.parse(record!.DeviceData)).toEqual({ CameraStatus: "Offline" });
+
+    const dropdown = await DeviceOptionsRepository.getDropdownData("Camera", "CameraStatus", TID, true);
+    const offline = dropdown.find((o) => o.label === "Offline");
+    expect(offline).toBeDefined();
+    expect(offline!.IsActive).toBe(0);
+  });
+
+  it("re-activates a removed device field and option when the original template is re-imported (A→B→A)", async () => {
+    const templateA = makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Vendor", Label: "Vendor", FieldType: "text", IsRequired: 0, DisplayOrder: 1 },
+        { DeviceType: "Camera", FieldName: "Resolution", Label: "Resolution", FieldType: "text", IsRequired: 0, DisplayOrder: 2 },
+      ],
+      [
+        { DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "Online", OptionValue: "Online", DisplayOrder: 1, IsDefault: 1 },
+        { DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "Offline", OptionValue: "Offline", DisplayOrder: 2, IsDefault: 0 },
+      ]
+    );
+
+    await applyTemplateImport(templateA);
+    const templateB = makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Resolution", Label: "Resolution", FieldType: "text", IsRequired: 0, DisplayOrder: 2 },
+      ],
+      [
+        { DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "Online", OptionValue: "Online", DisplayOrder: 1, IsDefault: 1 },
+      ]
+    );
+    await applyTemplateImport(templateB);
+
+    expect(DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID)).resolves.toHaveLength(1);
+    expect(DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID)).resolves.toHaveLength(1);
+
+    await applyTemplateImport(templateA);
+
+    const activeFields = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID);
+    expect(activeFields.map((f) => f.FieldName).sort()).toEqual(["Resolution", "Vendor"]);
+    const activeOptions = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID);
+    expect(activeOptions.map((o) => o.OptionLabel).sort()).toEqual(["Offline", "Online"]);
+  });
+
+  it("does not deactivate a field on an unrelated device type", async () => {
+    await seedDeviceField("Camera", "Serial", "Serial");
+    await seedDeviceField("NVR", "Serial", "Serial");
+
+    await applyTemplateImport(makeDeviceImport(
+      [
+        { DeviceType: "NVR", FieldName: "Serial", Label: "Serial", FieldType: "text", IsRequired: 0, DisplayOrder: 1 },
+      ],
+      []
+    ));
+
+    const nvr = await DeviceFieldDefinitionsRepository.getByDeviceType("NVR", TID);
+    expect(nvr.map((f) => f.FieldName)).toEqual(["Serial"]);
+    expect(nvr[0].IsActive).toBe(1);
+
+    const camera = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID, true);
+    const camSerial = camera.find((f) => f.FieldName === "Serial");
+    expect(camSerial).toBeDefined();
+    expect(camSerial!.IsActive).toBe(0);
+  });
+
+  it("is idempotent across repeated imports of the same template", async () => {
+    await seedDeviceField("Camera", "Vendor", "Vendor");
+    await seedDeviceField("Camera", "Resolution", "Resolution");
+
+    const data = makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Resolution", Label: "Resolution", FieldType: "text", IsRequired: 0, DisplayOrder: 2 },
+      ],
+      []
+    );
+
+    await applyTemplateImport(data);
+    await applyTemplateImport(data);
+
+    const all = await db.getAllAsync<{ FieldName: string; IsActive: number }>(
+      `SELECT FieldName, IsActive FROM DeviceFieldDefinitions WHERE TemplateID = ? ORDER BY FieldName`,
+      [TID]
+    );
+    expect(all).toHaveLength(2);
+    const vendor = all.find((r) => r.FieldName === "Vendor");
+    expect(vendor!.IsActive).toBe(0);
+    expect(all.find((r) => r.FieldName === "Resolution")!.IsActive).toBe(1);
+  });
+
+  it("removes a deactivated mandatory device field from new-inspection validation", async () => {
+    await seedDeviceField("Camera", "Serial", "Serial", { isRequired: 1, displayOrder: 1 });
+    await seedDeviceField("Camera", "Optional", "Optional", { isRequired: 0, displayOrder: 2 });
+
+    await applyTemplateImport(makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Optional", Label: "Optional", FieldType: "text", IsRequired: 0, DisplayOrder: 2 },
+      ],
+      []
+    ));
+
+    const active = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID);
+    expect(active.map((f) => f.FieldName)).toEqual(["Optional"]);
+    expect(active.some((f) => f.IsRequired === 1)).toBe(false);
+
+    const all = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID, true);
+    const removed = all.find((f) => f.FieldName === "Serial");
+    expect(removed).toBeDefined();
+    expect(removed!.IsActive).toBe(0);
+    expect(removed!.IsRequired).toBe(1);
+  });
+
+  it("never returns a removed default option for new records", async () => {
+    await seedDeviceOption("Camera", "CameraStatus", "Working", "Working", 1, 1);
+    await seedDeviceOption("Camera", "CameraStatus", "Broken", "Broken", 0, 2);
+
+    await applyTemplateImport(makeDeviceImport(
+      [],
+      [
+        { DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "Online", OptionValue: "Online", DisplayOrder: 1, IsDefault: 1 },
+      ]
+    ));
+
+    const defaultValue = await DeviceOptionsRepository.getDefaultOption("Camera", "CameraStatus", TID);
+    expect(defaultValue).toBe("Online");
+    expect(defaultValue).not.toBe("Working");
+
+    await applyTemplateImport(makeDeviceImport(
+      [],
+      [
+        { DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "Online", OptionValue: "Online", DisplayOrder: 1, IsDefault: 0 },
+      ]
+    ));
+
+    expect(await DeviceOptionsRepository.getDefaultOption("Camera", "CameraStatus", TID)).toBeNull();
+
+    const all = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID, true);
+    expect(all.find((o) => o.OptionLabel === "Working")!.IsActive).toBe(0);
   });
 });

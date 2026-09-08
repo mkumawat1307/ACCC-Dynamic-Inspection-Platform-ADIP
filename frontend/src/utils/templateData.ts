@@ -424,6 +424,19 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
         }
         templateIdByName.set(template.TemplateName, templateId);
 
+        if ((template.deviceTypes?.length ?? 0) > 0) {
+          await db.runAsync(
+            `UPDATE DeviceFieldDefinitions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE TemplateID = ?`,
+            [templateId]
+          );
+        }
+        if ((template.deviceOptions?.length ?? 0) > 0) {
+          await db.runAsync(
+            `UPDATE DeviceOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE TemplateID = ?`,
+            [templateId]
+          );
+        }
+
         for (const section of template.sections) {
           const existingSection = await db.getFirstAsync<{ SectionID: number }>(
             `SELECT SectionID FROM InspectionSections WHERE TemplateID = ? AND SectionKey = ?`,
