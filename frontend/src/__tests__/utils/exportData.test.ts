@@ -1,4 +1,5 @@
 import { getDatabase } from "@/src/database/db";
+import { logger } from "@/src/utils/logger";
 
 jest.mock("@/src/database/db");
 
@@ -1130,5 +1131,150 @@ describe("buildReportTable — cleared dropdown values export as empty (regressi
       table.rows.map((r: { cells: string[] }) => (r.cells as string[]).join("|")).join("|");
     expect(allText).not.toContain("Clear selection");
     expect(allText).not.toContain("__dropdown_clear__");
+  });
+});
+
+describe("getAllSafe error masking (regression)", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+  let logSpy: jest.SpyInstance;
+
+  const templateRows = [
+    { SectionID: 1, SectionKey: "general_information", SectionName: "General Information", IsRepeatable: 0, SectionDisplayOrder: 1, FieldID: 1, FieldKey: "pole_id", FieldName: "Pole ID", FieldDisplayOrder: 1 },
+    { SectionID: 2, SectionKey: "camera_information", SectionName: "Camera Information", IsRepeatable: 1, SectionDisplayOrder: 2, FieldID: 3, FieldKey: "camera_count", FieldName: "Camera Count", FieldDisplayOrder: 1 },
+  ];
+
+  const deviceDefs = [
+    { DeviceType: "Camera", FieldName: "CameraType", Label: "Camera Type", DisplayOrder: 1 },
+  ];
+
+  const inspections = [{ InspectionID: 1, Status: "Completed" }];
+  const values = [{ InspectionID: 1, FieldID: 1, FieldValue: "P001" }];
+
+  function legacyDeviceDb() {
+    return {
+      getAllAsync: jest.fn().mockImplementation(async (sql: string) => {
+        if (sql.includes("FROM DeviceFieldDefinitions")) {
+          throw new Error("no such table: DeviceFieldDefinitions");
+        }
+        if (sql.includes("FROM DeviceRecords")) {
+          throw new Error("no such table: DeviceRecords");
+        }
+        if (sql.includes("FROM DeviceOptions")) {
+          throw new Error("no such table: DeviceOptions");
+        }
+        if (sql.includes("FROM InspectionFields f") && sql.includes("JOIN InspectionSections")) {
+          return templateRows;
+        }
+        if (sql.includes("FROM InspectionValues") && sql.includes("JOIN Inspections")) {
+          return values;
+        }
+        if (/SELECT\s+FieldID\s+FROM\s+InspectionValues/i.test(sql)) {
+          return [];
+        }
+        if (sql.includes("FROM FieldOptions")) {
+          return [];
+        }
+        if (sql.includes("FROM Inspections")) {
+          return inspections;
+        }
+        return [];
+      }),
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+    logSpy = jest.spyOn(logger, "error").mockImplementation(() => {});
+  });
+
+  it("keeps the scalar report and flags device data as unavailable when device tables throw (legacy project state)", async () => {
+    (getDatabase as jest.Mock).mockResolvedValue(legacyDeviceDb());
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
+
+    expect(table.sections.map((s: { name: string }) => s.name)).toEqual([
+      "General Information",
+      "Camera Information",
+    ]);
+    expect(table.rows).toHaveLength(1);
+    const poleIdx = table.headers.indexOf("Pole ID");
+    expect(table.rows[0].cells[poleIdx]).toBe("P001");
+    expect(table.deviceDataErrors).toEqual([
+      "DeviceFieldDefinitions",
+      "DeviceRecords",
+      "DeviceOptions",
+    ]);
+    expect(logSpy).toHaveBeenCalled();
+  });
+
+  it("marks only the failing device query when device options cannot be read", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce(deviceDefs)
+      .mockResolvedValueOnce(inspections)
+      .mockResolvedValueOnce(values)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("no such table: DeviceOptions"));
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
+
+    expect(table.rows).toHaveLength(1);
+    expect(table.deviceDataErrors).toEqual(["DeviceOptions"]);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("DeviceOptions"),
+      expect.any(Error)
+    );
+  });
+
+  it("distinguishes a successful empty device result from a failure (no error flag on zero rows)", async () => {
+    mockDb.getAllAsync
+      .mockResolvedValueOnce(templateRows)
+      .mockResolvedValueOnce([])    // deviceDefs
+      .mockResolvedValueOnce(inspections)
+      .mockResolvedValueOnce(values)
+      .mockResolvedValueOnce([])    // records
+      .mockResolvedValueOnce([])    // fieldOptions
+      .mockResolvedValueOnce([])    // deviceOptions
+      .mockResolvedValueOnce([]);   // reportValueFieldIds
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    const table = await buildReportTable(1);
+
+    expect(table.rows).toHaveLength(1);
+    expect(table.deviceDataErrors).toEqual([]);
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it("never masks a failure in a core report query (rows) and propagates it", async () => {
+    (getDatabase as jest.Mock).mockResolvedValue({
+      ...createMockDb(),
+      getAllAsync: jest.fn().mockRejectedValue(new Error("SQLite database is unavailable")),
+    });
+
+    const { buildReportTable } = require("@/src/utils/exportData");
+    await expect(buildReportTable(1)).rejects.toThrow("SQLite database is unavailable");
+  });
+
+  it("exportInspections still exports the degraded report when device tables throw", async () => {
+    (getDatabase as jest.Mock).mockResolvedValue(legacyDeviceDb());
+
+    const { exportInspections } = require("@/src/utils/exportData");
+    const ok = await exportInspections(1, "Project", "csv");
+    expect(ok).toBe(true);
+  });
+
+  it("exportInspections rejects instead of writing a file when a core report query fails", async () => {
+    (getDatabase as jest.Mock).mockResolvedValue({
+      ...createMockDb(),
+      getAllAsync: jest.fn().mockRejectedValue(new Error("SQLite database is unavailable")),
+    });
+
+    const { exportInspections } = require("@/src/utils/exportData");
+    await expect(exportInspections(1, "Project", "csv")).rejects.toThrow("SQLite database is unavailable");
   });
 });

@@ -75,16 +75,22 @@ class DownloadStorageModule : Module() {
 
   // Keep these protections:
   // - remove leading /
-  // - block ../ traversal
+  // - reject any path segment that is exactly '..' (path traversal)
   // - collapse duplicate Download/Download/
   // Do NOT strip Download/ — it is required by MediaStore.Downloads.
+  // Backslash is NOT a path separator on Android — it is a literal filename
+  // character, so '..\\foo' is a single segment, not a traversal.
   private fun normalizeRelativePath(raw: String): String {
     var p = raw.trim()
-    while (p.startsWith("/") || p.startsWith("../")) {
-      p = if (p.startsWith("/")) p.substring(1) else p.substring(3)
+    while (p.startsWith("/")) {
+      p = p.substring(1)
     }
     p = p.replace(Regex("(?i)Download/Download/"), "Download/")
-    p = p.split('/').filter { it.isNotEmpty() }.joinToString("/")
+    val segments = p.split('/').filter { it.isNotEmpty() }
+    if (segments.any { it == ".." }) {
+      throw IllegalArgumentException("Relative path must not contain '..' segments: '$raw'")
+    }
+    p = segments.joinToString("/")
     if (p != raw) {
       nativeLog("normalizedRelativePath='$p'")
     }

@@ -98,4 +98,20 @@ describe("DatabaseService", () => {
     const { initializeDatabase } = require("@/src/database/DatabaseService");
     await expect(initializeDatabase()).resolves.toBeUndefined();
   });
+
+  it("allows retry after a failed initialization and clears initError on success", async () => {
+    jest.resetModules();
+    const schema1 = require("@/src/database/schema");
+    (schema1.createGlobalSchema as jest.Mock).mockRejectedValueOnce(new Error("transient schema error"));
+    let { initializeDatabase, getInitError } = require("@/src/database/DatabaseService");
+    await expect(initializeDatabase()).rejects.toThrow("transient schema error");
+    expect(getInitError()).toBe("transient schema error");
+
+    jest.resetModules();
+    const schema2 = require("@/src/database/schema");
+    (schema2.createGlobalSchema as jest.Mock).mockResolvedValue(undefined);
+    ({ initializeDatabase, getInitError } = require("@/src/database/DatabaseService"));
+    await expect(initializeDatabase()).resolves.toBeUndefined();
+    expect(getInitError()).toBeNull();
+  });
 });

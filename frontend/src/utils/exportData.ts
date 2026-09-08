@@ -8,6 +8,7 @@ import { INSPECTION_FINAL_STATUSES, isFieldValueEmpty } from "../database/reposi
 import { getCurrentInspectionDate } from "./date";
 import { ensureRootFolder } from "./storageManager";
 import { downloadStorage } from "./downloadStorage";
+import { logger } from "./logger";
 
 export type ExportFormat = "csv" | "excel";
 
@@ -55,6 +56,7 @@ export interface ReportTable {
   headers: string[];
   rows: ReportRow[];
   inspectionCount: number;
+  deviceDataErrors?: string[];
 }
 
 function normalizeDeviceType(deviceType: string): string {
@@ -171,11 +173,19 @@ async function buildReportTableInternal(
 ): Promise<{ table: ReportTable; inspectionCount: number }> {
   const db = await getDatabase();
 
-  const getAllSafe = async <T,>(sql: string, params: unknown[] = []): Promise<T[]> => {
+  const deviceErrors: string[] = [];
+
+  const getDeviceRows = async <T,>(
+    label: string,
+    sql: string,
+    params: unknown[] = []
+  ): Promise<T[]> => {
     try {
       const result = await db.getAllAsync<T>(sql, params as never);
       return result ?? [];
-    } catch {
+    } catch (error) {
+      deviceErrors.push(label);
+      logger.error(`Report device data unavailable (${label}):`, error);
       return [];
     }
   };
@@ -199,12 +209,13 @@ async function buildReportTableInternal(
      ORDER BY s.DisplayOrder, f.DisplayOrder`
   );
 
-  const deviceDefs = await getAllSafe<{
+  const deviceDefs = await getDeviceRows<{
     DeviceType: string;
     FieldName: string;
     Label: string;
     IsActive: number;
   }>(
+    "DeviceFieldDefinitions",
     `SELECT DeviceType, FieldName, Label, IsActive
      FROM DeviceFieldDefinitions
      ORDER BY DeviceType, DisplayOrder`
@@ -290,7 +301,8 @@ async function buildReportTableInternal(
     idList ? idList : [projectId]
   );
 
-  const records = await getAllSafe<{ InspectionID: number; DeviceType: string; DeviceNo: number; DeviceData: string | null }>(
+  const records = await getDeviceRows<{ InspectionID: number; DeviceType: string; DeviceNo: number; DeviceData: string | null }>(
+    "DeviceRecords",
     idList
       ? `SELECT InspectionID, DeviceType, DeviceNo, DeviceData FROM DeviceRecords WHERE InspectionID IN (${placeholders}) AND IsActive = 1 ORDER BY DeviceType, DeviceNo`
       : `SELECT r.InspectionID, r.DeviceType, r.DeviceNo, r.DeviceData FROM DeviceRecords r JOIN Inspections i ON r.InspectionID = i.InspectionID WHERE i.ProjectID = ? AND r.IsActive = 1 ORDER BY r.DeviceType, r.DeviceNo`,
@@ -310,7 +322,8 @@ async function buildReportTableInternal(
     byValue.set(o.OptionValue, o.OptionLabel);
   }
 
-  const deviceOptions = await getAllSafe<{ DeviceType: string; FieldName: string; OptionLabel: string; OptionValue: string }>(
+  const deviceOptions = await getDeviceRows<{ DeviceType: string; FieldName: string; OptionLabel: string; OptionValue: string }>(
+    "DeviceOptions",
     `SELECT DeviceType, FieldName, OptionLabel, OptionValue FROM DeviceOptions WHERE IsActive = 1`
   );
   const deviceOptionLabels = new Map<string, Map<string, Map<string, string>>>();
@@ -647,7 +660,7 @@ async function buildReportTableInternal(
     }
   }
 
-  return { table: { sections, headers, rows: rowsOut, inspectionCount: inspections.length }, inspectionCount: inspections.length };
+  return { table: { sections, headers, rows: rowsOut, inspectionCount: inspections.length, deviceDataErrors: deviceErrors }, inspectionCount: inspections.length };
 }
 
 function parseDeviceData(data: string | null): Record<string, string> {

@@ -274,18 +274,31 @@ export async function cloneProjectDb(
 }
 
 export async function openProjectDb(dbPath: string, projectId: number): Promise<void> {
-  await setActiveProject(dbPath);
+  try {
+    await setActiveProject(dbPath);
 
-  const db = await getDatabase();
-  const row = await db.getFirstAsync<{ cnt: number }>(
-    "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='InspectionTemplates'"
-  );
-  if (!row || row.cnt === 0) {
-    await clearActiveProject();
-    throw new Error(`Project database is empty or missing schema: ${dbPath}`);
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<{ cnt: number }>(
+      "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='InspectionTemplates'"
+    );
+    if (!row || row.cnt === 0) {
+      throw new Error(`Project database is empty or missing schema: ${dbPath}`);
+    }
+
+    await migrateProjectSchema(projectId);
+  } catch (originalError) {
+    if (getActiveProjectPath() === dbPath) {
+      try {
+        await clearActiveProject();
+      } catch (clearError) {
+        logger.error(
+          "[ProjectDBManager] openProjectDb — failed to clear active project:",
+          clearError
+        );
+      }
+    }
+    throw originalError;
   }
-
-  await migrateProjectSchema(projectId);
 }
 
 export async function updateProjectInspectorName(

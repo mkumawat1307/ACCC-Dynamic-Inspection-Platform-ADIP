@@ -2,7 +2,7 @@
 
 > Offline-First | Configuration-Driven | Android Inspection Platform
 
-![Version](https://img.shields.io/badge/version-1.3.2-blue)
+![Version](https://img.shields.io/badge/version-1.3.4-blue)
 ![Platform](https://img.shields.io/badge/platform-Android-success)
 ![Offline](https://img.shields.io/badge/offline-yes-green)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)
@@ -211,7 +211,7 @@ yarn test -- --watch    # Watch mode
 
 ## Android Build
 
-- **Config source of truth**: `app.json` — version `1.3.2`, Android `versionCode` 6, package `com.accc.dynamicinspection`. `android/app/build.gradle` reads versionCode/versionName from the Expo config.
+- **Config source of truth**: `app.json` — version `1.3.4`, Android `versionCode` 8, package `com.accc.dynamicinspection`. `android/app/build.gradle` reads versionCode/versionName from the Expo config.
 - **APK artifact**: `ACCC-Dynamic-Inspection-Platform-v<version>.apk`.
 - **EAS profiles** (`eas.json`):
 
@@ -290,8 +290,8 @@ frontend/
 
 | Where | Value |
 |-------|-------|
-| App version (`app.json`) | 1.3.2 |
-| Android versionCode | 6 |
+| App version (`app.json`) | 1.3.4 |
+| Android versionCode | 8 |
 | Package | com.accc.dynamicinspection |
 | `package.json` (dev) | 1.3.0 |
 

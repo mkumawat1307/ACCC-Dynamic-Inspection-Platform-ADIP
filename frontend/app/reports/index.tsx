@@ -41,6 +41,7 @@ export default function ReportsScreen() {
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [table, setTable] = useState<ReportTable | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -50,11 +51,13 @@ export default function ReportsScreen() {
 
   async function loadPreview() {
     setLoadingPreview(true);
+    setPreviewError(false);
     try {
       setTable(await buildReportTable(Number(projectId)));
     } catch (error) {
       logger.error("Preview load error:", error);
       setTable(null);
+      setPreviewError(true);
     } finally {
       setLoadingPreview(false);
     }
@@ -139,11 +142,18 @@ export default function ReportsScreen() {
         </Text>
         {loadingPreview ? (
           <ActivityIndicator style={styles.previewLoading} />
+        ) : previewError ? (
+          <Text style={styles.error}>Unable to load the report preview.</Text>
         ) : table && table.rows.length > 0 ? (
           <>
             <Text style={styles.summary}>
               Total Inspections: {table.inspectionCount} · Total Rows: {totalRows} · Total Columns: {columnCount}
             </Text>
+            {table.deviceDataErrors && table.deviceDataErrors.length > 0 ? (
+              <Text style={styles.warning}>
+                Some device data could not be loaded and is omitted from this report.
+              </Text>
+            ) : null}
             <ReportTablePreview table={table} />
           </>
         ) : (
@@ -165,4 +175,6 @@ const styles = StyleSheet.create({
   previewLoading: { marginTop: 20 },
   summary: { marginBottom: 10, fontSize: 13, color: "#555" },
   empty: { marginTop: 10, color: "#777" },
+  error: { marginTop: 10, color: "#B00020" },
+  warning: { marginTop: 8, marginBottom: 4, fontSize: 13, color: "#7F6000" },
 });

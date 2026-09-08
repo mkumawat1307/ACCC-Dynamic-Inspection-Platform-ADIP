@@ -1,11 +1,12 @@
 // frontend\app\_layout.tsx
 import { useEffect, useState } from "react";
+import { View } from "react-native";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import * as SplashScreen from "expo-splash-screen";
 import * as SystemUI from "expo-system-ui";
 import { StatusBar } from "expo-status-bar";
-import { PaperProvider } from "react-native-paper";
+import { PaperProvider, Text, Button } from "react-native-paper";
 import { InspectionProvider } from "@/src/context/InspectionContext";
 import { PhotoStatesProvider } from "@/src/context/PhotoStatesContext";
 import { WatermarkSettingsProvider } from "@/src/context/WatermarkSettingsContext";
@@ -22,6 +23,7 @@ export default function RootLayout() {
   const [loaded, error] = useIconFonts();
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     async function init() {
@@ -29,6 +31,7 @@ export default function RootLayout() {
 
       try {
         await initializeDatabase();
+        setDbError(null);
         setDbReady(true);
       } catch (e) {
         const msg = getInitError() || (e instanceof Error ? e.message : String(e));
@@ -45,7 +48,7 @@ export default function RootLayout() {
     }
 
     init();
-  }, []);
+  }, [retryKey]);
 
   useEffect(() => {
     if (loaded || error) {
@@ -66,14 +69,38 @@ export default function RootLayout() {
             translucent={false}
             backgroundColor="#D32F2F"
           />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: {
-                backgroundColor: "#F5F5F5",
-              },
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 24,
+              backgroundColor: "#F5F5F5",
             }}
-          />
+          >
+            <Text
+              variant="titleLarge"
+              style={{ color: "#D32F2F", fontWeight: "700", marginBottom: 12, textAlign: "center" }}
+            >
+              Database Initialization Failed
+            </Text>
+            <Text
+              variant="bodyMedium"
+              style={{ color: "#666", marginBottom: 24, textAlign: "center" }}
+            >
+              {dbError}
+            </Text>
+            <Button
+              mode="contained"
+              onPress={() => {
+                setDbError(null);
+                setDbReady(false);
+                setRetryKey((k) => k + 1);
+              }}
+            >
+              Retry
+            </Button>
+          </View>
         </SafeAreaProvider>
       </PaperProvider>
     );
