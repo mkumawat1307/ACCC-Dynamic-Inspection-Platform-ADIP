@@ -111,6 +111,16 @@ export async function setActiveProject(dbPath: string): Promise<void> {
   await ensureProjectDb(dbPath);
 }
 
+export async function openProjectDbForBackup(
+  dbPath: string
+): Promise<SQLite.SQLiteDatabase> {
+  return ensureProjectDb(dbPath);
+}
+
+export function getActiveProjectPath(): string | null {
+  return activeProjectPath;
+}
+
 export async function clearActiveProject(): Promise<void> {
   activeProjectPath = null;
   await ensureGlobalDb();

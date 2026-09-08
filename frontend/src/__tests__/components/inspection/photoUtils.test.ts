@@ -120,7 +120,7 @@ describe("formatLatLngWM hemisphere", () => {
 describe("generateFileName", () => {
   it("generates filename from valid inputs", () => {
     const result = generateFileName("North", "BlockA", "P001", "2024-06-15T10:30:00");
-    expect(result).toMatch(/^North_BlockA_P001_\d{2}[A-Z]{3}\d{4}_\d{6}\.jpg$/);
+    expect(result).toMatch(/^North_BlockA_P001_\d{2}[A-Z]{3}\d{4}_\d{6}_[a-z0-9]{6}\.jpg$/);
   });
 
   it("sanitizes special characters from district", () => {
@@ -157,6 +157,21 @@ describe("generateFileName", () => {
     const long = "A".repeat(30);
     const result = generateFileName(long, "BlockA", "P001", "2024-06-15T10:30:00");
     expect(result).toMatch(new RegExp(`^A{20}_BlockA_P001_`));
+  });
+
+  it("appends a unique suffix so rapid captures never share a filename", () => {
+    const a = generateFileName("North", "BlockA", "P001", "2024-06-15T10:30:00");
+    const b = generateFileName("North", "BlockA", "P001", "2024-06-15T10:30:00");
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^North_BlockA_P001_\d{2}[A-Z]{3}\d{4}_\d{6}_[a-z0-9]{6}\.jpg$/);
+    expect(b).toMatch(/^North_BlockA_P001_\d{2}[A-Z]{3}\d{4}_\d{6}_[a-z0-9]{6}\.jpg$/);
+  });
+
+  it("keeps the sanitized prefix when the random suffix repeats", () => {
+    const first = generateFileName("North/1", "BlockA", "P-001", "2024-06-15T10:30:00");
+    const second = generateFileName("North/1", "BlockA", "P-001", "2024-06-15T10:30:00");
+    expect(first).toMatch(/^North1_BlockA_P001_/);
+    expect(second).toMatch(/^North1_BlockA_P001_/);
   });
 });
 
@@ -226,6 +241,12 @@ describe("renamePoleTokenInFileName", () => {
     expect(renamePoleTokenInFileName("Sikar_Project_OLDID_112948.jpg", "OLDID", "NEWID")).toBe(
       "Sikar_Project_NEWID_112948.jpg"
     );
+  });
+
+  it("preserves the unique suffix when renaming the pole token", () => {
+    expect(
+      renamePoleTokenInFileName("Sikar_SIK001_14AUG2026_112948_a1b2c3.jpg", "SIK001", "SIK101")
+    ).toBe("Sikar_SIK101_14AUG2026_112948_a1b2c3.jpg");
   });
 });
 

@@ -2,7 +2,11 @@ jest.mock("@/src/database/helpers/ProjectDBManager");
 jest.mock("@/src/database/db");
 jest.mock("@/src/database/repositories/PhotoRepository", () => ({
   __esModule: true,
-  default: { updateFilePathAndStoragePath: jest.fn() },
+  default: {
+    updateFilePathAndStoragePath: jest.fn(),
+    updateFileNameAndPath: jest.fn(),
+    updateStoragePath: jest.fn(),
+  },
 }));
 jest.mock("@react-native-async-storage/async-storage", () => ({
   __esModule: true,
@@ -20,7 +24,7 @@ jest.mock("expo-file-system/legacy", () => ({
   deleteAsync: jest.fn(),
 }));
 jest.mock("@/src/utils/storageManager", () => ({
-  writePhoto: jest.fn(),
+  writePhotoUnique: jest.fn(),
   buildPhotoFolderDisplayPath: (label: string) =>
     `Download/ACCC Dynamic Inspection/${label}/`,
 }));
@@ -43,7 +47,7 @@ import { PhotoStatesProvider, usePhotoStates } from "@/src/context/PhotoStatesCo
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
 import { Project } from "@/src/models/Project";
-import { writePhoto } from "@/src/utils/storageManager";
+import { writePhotoUnique } from "@/src/utils/storageManager";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
@@ -123,7 +127,7 @@ describe("useWatermarkProcessor folder target", () => {
     const projectDir = "New Delhi_Project Alpha";
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
 
-    (writePhoto as jest.Mock).mockResolvedValue(fileUri);
+    (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: fileUri, fileName: "photo.jpg" });
     (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
 
@@ -146,7 +150,7 @@ describe("useWatermarkProcessor folder target", () => {
       await new Promise(r => setTimeout(r, 0));
     });
 
-    expect(writePhoto).toHaveBeenCalledWith(projectDir, "photo.jpg", "BASE64DATA");
+    expect(writePhotoUnique).toHaveBeenCalledWith(projectDir, "photo.jpg", "BASE64DATA");
     expect(PhotoRepository.updateFilePathAndStoragePath).toHaveBeenCalledWith(
       1,
       fileUri,
@@ -221,7 +225,7 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
 
   it("handles the renderer diag payload and completes the save", async () => {
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
-    (writePhoto as jest.Mock).mockResolvedValue("content://tree/root/p.jpg");
+    (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: "content://tree/root/p.jpg", fileName: "photo.jpg" });
     (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const { result, unmount } = renderHook(() =>
@@ -280,7 +284,7 @@ describe("useWatermarkProcessor persistent renderer protocol", () => {
       await new Promise(r => setTimeout(r, 150));
     });
 
-    expect(writePhoto).toHaveBeenCalled();
+    expect(writePhotoUnique).toHaveBeenCalled();
     expect(PhotoRepository.updateFilePathAndStoragePath).toHaveBeenCalled();
     unmount();
   });
@@ -336,7 +340,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     );
     const projectDir = "New Delhi_Project Alpha";
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
-    (writePhoto as jest.Mock).mockResolvedValue(fileUri);
+    (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: fileUri, fileName: "photo.jpg" });
     (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const onPhotosUpdated = jest.fn();
@@ -380,7 +384,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     expect(encodeWatermarkJpeg).toHaveBeenCalledWith(
       4000, 3000, "RGBA_B64", 95, "file:///tmp/t.jpg.wm.jpg"
     );
-    expect(writePhoto).toHaveBeenCalledWith(projectDir, "photo.jpg", "WM_BASE64");
+    expect(writePhotoUnique).toHaveBeenCalledWith(projectDir, "photo.jpg", "WM_BASE64");
     expect(PhotoRepository.updateFilePathAndStoragePath).toHaveBeenCalledWith(
       1,
       fileUri,
@@ -399,7 +403,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
     const projectDir = "New Delhi_Project Alpha";
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
-    (writePhoto as jest.Mock).mockResolvedValue(fileUri);
+    (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: fileUri, fileName: "photo.jpg" });
     (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const injectJavaScript = jest.fn();
@@ -435,7 +439,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     });
 
     expect(encodeWatermarkJpeg).not.toHaveBeenCalled();
-    expect(writePhoto).toHaveBeenCalledWith(projectDir, "photo.jpg", "BASE64DATA");
+    expect(writePhotoUnique).toHaveBeenCalledWith(projectDir, "photo.jpg", "BASE64DATA");
 
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 150));
@@ -451,7 +455,7 @@ describe("useWatermarkProcessor native encoder path", () => {
     );
     const projectDir = "New Delhi_Project Alpha";
     const fileUri = "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg";
-    (writePhoto as jest.Mock).mockResolvedValue(fileUri);
+    (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: fileUri, fileName: "photo.jpg" });
     (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
 
     const injectJavaScript = jest.fn();
@@ -528,9 +532,10 @@ describe("useWatermarkProcessor overlay encoder stage", () => {
   }
 
   function mockSaveChain() {
-    (writePhoto as jest.Mock).mockResolvedValue(
-      "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg"
-    );
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo.jpg",
+      fileName: "photo.jpg",
+    });
     (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
   }
 
@@ -617,7 +622,7 @@ mockOverlayHappyPath();
       95,
       "file:///tmp/t.jpg.wm.jpg"
     );
-    expect(writePhoto).toHaveBeenCalledWith(
+    expect(writePhotoUnique).toHaveBeenCalledWith(
       "New Delhi_Project Alpha",
       "photo.jpg",
       "WM_BASE64"
@@ -1118,6 +1123,110 @@ describe("useWatermarkProcessor style flow", () => {
       expect.stringContaining('"style":{"fontScale":1.25')
     );
     jest.useRealTimers();
+    unmount();
+  });
+});
+
+describe("useWatermarkProcessor unique filename persistence", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("persists the actually-written filename when writePhotoUnique must de-duplicate", async () => {
+    const storedName = "photo_abc123.jpg";
+    const fileUri =
+      "content://media/Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/photo_abc123.jpg";
+
+    (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: fileUri, fileName: storedName });
+    (PhotoRepository.updateFileNameAndPath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateStoragePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+
+    const onPhotosUpdated = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated })
+    );
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "BASE64DATA" }) },
+      });
+    });
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    expect(writePhotoUnique).toHaveBeenCalledWith(
+      "New Delhi_Project Alpha",
+      "photo.jpg",
+      "BASE64DATA"
+    );
+    expect(PhotoRepository.updateFileNameAndPath).toHaveBeenCalledWith(1, storedName, fileUri);
+    expect(PhotoRepository.updateStoragePath).toHaveBeenCalledWith(
+      1,
+      "Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/"
+    );
+    expect(PhotoRepository.updateFilePathAndStoragePath).not.toHaveBeenCalled();
+    expect(onPhotosUpdated).toHaveBeenCalled();
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    unmount();
+  });
+
+  it("records no DB photo reference and marks the photo failed when unique-write allocation is exhausted", async () => {
+    (writePhotoUnique as jest.Mock).mockRejectedValue(
+      new Error("Cannot allocate a unique photo filename after 5 attempts: 'photo.jpg'")
+    );
+    (PhotoRepository.updateFileNameAndPath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateStoragePath as jest.Mock).mockResolvedValue(undefined);
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+
+    const onPhotosUpdated = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated })
+    );
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "BASE64DATA" }) },
+      });
+    });
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(writePhotoUnique).toHaveBeenCalledTimes(1);
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "BASE64DATA" }) },
+      });
+    });
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 50));
+    });
+
+    expect(PhotoRepository.updateFileNameAndPath).not.toHaveBeenCalled();
+    expect(PhotoRepository.updateStoragePath).not.toHaveBeenCalled();
+    expect(PhotoRepository.updateFilePathAndStoragePath).not.toHaveBeenCalled();
+    expect(writePhotoUnique).toHaveBeenCalledTimes(2);
+    expect(result.current.watermarkState[1]).toBe("failed");
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 100));
+    });
     unmount();
   });
 });

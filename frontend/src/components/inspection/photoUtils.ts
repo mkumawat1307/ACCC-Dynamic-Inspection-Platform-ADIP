@@ -3,6 +3,10 @@ import type { WatermarkDateFormat, WatermarkTimeFormat } from "@/src/utils/water
 
 export type WatermarkState = "pending" | "processing" | "completed" | "failed";
 
+export function uniqueFileNameSuffix(): string {
+  return Math.floor(Math.random() * 0xffffff).toString(36).padStart(6, "0");
+}
+
 export type PhotoSaveBlockReason =
   | "no_photos"
   | "processing"
@@ -134,7 +138,7 @@ export function generateFileName(
     .replace(/[^a-zA-Z0-9]/g, "")
     .substring(0, 20);
 
-  return `${cleanDistrict}_${cleanBlock}_${cleanPole}_${day}${month}${year}_${time}.jpg`;
+  return `${cleanDistrict}_${cleanBlock}_${cleanPole}_${day}${month}${year}_${time}_${uniqueFileNameSuffix()}.jpg`;
 }
 
 export function cleanPoleToken(pole: string): string {

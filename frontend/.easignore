@@ -6,8 +6,10 @@
 #   android/           - bare native Android project. MainApplication.kt registers
 #                        AndroidBackupModule (AndroidBackupModule.kt / .kt in
 #                        app/src/main/java). build.gradle reads ../app.json for
-#                        versionCode/versionName and falls back to debug.keystore
-#                        for release signing when keystore.properties is absent.
+#                        versionCode/versionName. Release signing REQUIRES
+#                        android/keystore.properties (all four fields present);
+#                        missing/incomplete config fails the release build with a
+#                        clear error - it never falls back to debug.keystore.
 #   modules/download-storage/ - local native Expo module (expo-module.config.json
 #                        declares DownloadStorageModule.kt; autolinked and consumed
 #                        by src/utils/downloadStorage.ts). Excluding it breaks the

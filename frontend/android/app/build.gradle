@@ -92,6 +92,42 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+def releaseSigningRequiredKeys = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+
+def requireValidReleaseSigningConfig(File propertiesFile, Properties properties, List requiredKeys) {
+    if (!propertiesFile.exists()) {
+        throw new GradleException(
+            "Release builds require a production signing config.\n" +
+            "Create ${propertiesFile} from ${rootProject.file('keystore.properties.example')}\n" +
+            "with all four fields: storeFile, storePassword, keyAlias, keyPassword.\n" +
+            "keystore.properties is gitignored - never commit real credentials.\n" +
+            "Debug builds are unaffected and keep using debug.keystore.")
+    }
+    def missingKeys = requiredKeys.findAll { key ->
+        def value = properties.getProperty(key)
+        value == null || value.trim().isEmpty()
+    }
+    if (!missingKeys.isEmpty()) {
+        throw new GradleException(
+            "keystore.properties is missing required property(ies): ${missingKeys.join(', ')}.\n" +
+            "Copy ${rootProject.file('keystore.properties.example')} to ${propertiesFile} and fill in all four fields.")
+    }
+    def configuredStoreFile = file("${rootProject.projectDir}/${properties.getProperty('storeFile')}")
+    if (configuredStoreFile.name.equalsIgnoreCase('debug.keystore')) {
+        throw new GradleException(
+            "Release builds must never sign with debug.keystore.\n" +
+            "Point storeFile at a production keystore in ${propertiesFile}.")
+    }
+    if (!configuredStoreFile.exists()) {
+        throw new GradleException(
+            "keystore.properties storeFile does not exist: ${configuredStoreFile}")
+    }
+}
+
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach { task ->
+    task.doFirst { requireValidReleaseSigningConfig(keystorePropertiesFile, keystoreProperties, releaseSigningRequiredKeys) }
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -117,10 +153,10 @@ android {
             keyPassword 'android'
         }
         release {
-            storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile'] ?: 'debug.keystore'}")
-            storePassword keystoreProperties['storePassword'] ?: ''
-            keyAlias keystoreProperties['keyAlias'] ?: ''
-            keyPassword keystoreProperties['keyPassword'] ?: ''
+            storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
+            storePassword keystoreProperties['storePassword']
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
         }
     }
     buildTypes {

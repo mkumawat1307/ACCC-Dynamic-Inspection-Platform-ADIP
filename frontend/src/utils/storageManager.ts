@@ -46,6 +46,38 @@ export async function writePhoto(
   return downloadStorage.writeBase64(projectLabel, fileName, "image/jpeg", base64data);
 }
 
+export const MAX_PHOTO_WRITE_ATTEMPTS = 5;
+
+export function withUniquePhotoSuffix(fileName: string, suffix?: string): string {
+  const dot = fileName.lastIndexOf(".");
+  const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+  const ext = dot > 0 ? fileName.slice(dot) : "";
+  const token =
+    suffix ?? Math.floor(Math.random() * 0xffffff).toString(36).padStart(6, "0");
+  return `${stem}_${token}${ext}`;
+}
+
+export async function writePhotoUnique(
+  projectLabel: string,
+  fileName: string,
+  base64data: string
+): Promise<{ contentUri: string; fileName: string }> {
+  let candidate = fileName;
+  for (let attempt = 0; attempt < MAX_PHOTO_WRITE_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      candidate = withUniquePhotoSuffix(fileName);
+    }
+    const existing = await downloadStorage.findFile(projectLabel, candidate);
+    if (existing == null) {
+      const contentUri = await writePhoto(projectLabel, candidate, base64data);
+      return { contentUri, fileName: candidate };
+    }
+  }
+  throw new Error(
+    `[Storage] Cannot allocate a unique photo filename after ${MAX_PHOTO_WRITE_ATTEMPTS} attempts: '${fileName}'`
+  );
+}
+
 export async function deletePhoto(fileUri: string): Promise<void> {
   try {
     await downloadStorage.deleteFile(fileUri);

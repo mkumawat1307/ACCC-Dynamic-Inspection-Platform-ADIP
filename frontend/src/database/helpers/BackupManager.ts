@@ -2,9 +2,11 @@ import * as FileSystem from "expo-file-system/legacy";
 import type { SQLiteDatabase } from "expo-sqlite";
 import {
   closeAllDatabases,
+  getActiveProjectPath,
   getDatabase,
   getGlobalDatabase,
   GLOBAL_DATABASE_NAME,
+  openProjectDbForBackup,
   setActiveProject,
 } from "../db";
 import { listProjectFolders } from "./ProjectDBManager";
@@ -31,6 +33,28 @@ const BASE64_CHUNK_SIZE = 0x8000;
 const RESTORE_ENTRY_RE =
   /^(SQLite\/accc_global\.db(-wal|-shm)?|Projects\/[^/]+\/inspection\.db(-wal|-shm)?)$/;
 
+const RESTORE_STAGING_DIR = `${FileSystem.cacheDirectory}accc_restore/`;
+const RESTORE_EXTRACT_DIR = `${RESTORE_STAGING_DIR}extract/`;
+const RESTORE_OLD_DIR = `${RESTORE_STAGING_DIR}old/`;
+
+const SQLITE_MAGIC_HEADER = new Uint8Array([
+  0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74,
+  0x20, 0x33, 0x00,
+]);
+
+function hasSqliteMagicHeader(bytes: Uint8Array): boolean {
+  if (bytes.length < SQLITE_MAGIC_HEADER.length) return false;
+  for (let i = 0; i < SQLITE_MAGIC_HEADER.length; i += 1) {
+    if (bytes[i] !== SQLITE_MAGIC_HEADER[i]) return false;
+  }
+  return true;
+}
+
+function projectFolderFromPath(dbPath: string): string | null {
+  const m = dbPath.match(/\/Projects\/([^/]+)\/inspection\.db$/);
+  return m ? m[1] : null;
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i += BASE64_CHUNK_SIZE) {
@@ -40,6 +64,12 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 let snapshotCounter = 0;
+
+let backupInProgress = false;
+
+async function restoreActiveDatabase(): Promise<void> {
+  await getDatabase();
+}
 
 function nextSnapshotUri(): string {
   const cache = FileSystem.cacheDirectory ?? "";
@@ -79,6 +109,10 @@ async function snapshotDatabase(
 }
 
 export async function backupNow(): Promise<BackupResult> {
+  if (backupInProgress) {
+    return { ok: false, message: "Backup already in progress" };
+  }
+  backupInProgress = true;
   try {
     await ensureRootFolder();
     const files: Record<string, Uint8Array> = {};
@@ -96,8 +130,7 @@ export async function backupNow(): Promise<BackupResult> {
       if (!info.exists) {
         throw new Error(`Project database is missing: ${projectDbPath}`);
       }
-      await setActiveProject(projectDbPath);
-      const projectDb = await getDatabase();
+      const projectDb = await openProjectDbForBackup(projectDbPath);
       files[`Projects/${folder}/inspection.db`] = await snapshotDatabase(
         projectDb,
         `project "${folder}"`
@@ -110,6 +143,9 @@ export async function backupNow(): Promise<BackupResult> {
   } catch (e) {
     logger.error("[BackupManager] backupNow failed:", e);
     return { ok: false, message: String(e) };
+  } finally {
+    backupInProgress = false;
+    await restoreActiveDatabase().catch(() => {});
   }
 }
 
@@ -139,47 +175,89 @@ export async function validateBackupFile(
 }
 
 async function restoreEntries(entries: Record<string, Uint8Array>): Promise<void> {
-  await closeAllDatabases();
+  for (const [relPath, bytes] of Object.entries(entries)) {
+    if (!relPath.endsWith(".db")) continue;
+    if (!hasSqliteMagicHeader(bytes)) {
+      throw new Error(`Backup entry is not a valid SQLite database: ${relPath}`);
+    }
+  }
 
-  // Delete stale WAL/SHM sidecars for every restored database that the backup
-  // does not provide, so a restored .db is never opened against a sidecar
-  // that belongs to the previous database.
   const restoredBases = new Set<string>();
+  const restoredFolders = new Set<string>();
   for (const relPath of Object.keys(entries)) {
     const m = relPath.match(/^(.*\.db)(-wal|-shm)?$/);
     if (m) restoredBases.add(m[1]);
-  }
-  for (const base of restoredBases) {
-    for (const suffix of ["-wal", "-shm"]) {
-      const sidecarRel = base + suffix;
-      if (entries[sidecarRel]) continue;
-      try {
-        await FileSystem.deleteAsync(`${FileSystem.documentDirectory}${sidecarRel}`, {
-          idempotent: true,
-        });
-      } catch {
-        // sidecar absent — fine
-      }
-    }
+    const f = relPath.match(/^Projects\/([^/]+)\//);
+    if (f) restoredFolders.add(f[1]);
   }
 
-  const restoredFolders = new Set<string>();
+  await FileSystem.deleteAsync(RESTORE_STAGING_DIR, { idempotent: true }).catch(() => {});
+  await FileSystem.makeDirectoryAsync(RESTORE_EXTRACT_DIR, { intermediates: true });
+  await FileSystem.makeDirectoryAsync(RESTORE_OLD_DIR, { intermediates: true });
+
   for (const [relPath, bytes] of Object.entries(entries)) {
-    const target = `${FileSystem.documentDirectory}${relPath}`;
-    const parent = target.slice(0, target.lastIndexOf("/"));
-    await FileSystem.makeDirectoryAsync(parent, { intermediates: true });
+    const target = `${RESTORE_EXTRACT_DIR}${relPath}`;
+    await FileSystem.makeDirectoryAsync(target.slice(0, target.lastIndexOf("/")), {
+      intermediates: true,
+    });
     await FileSystem.writeAsStringAsync(target, bytesToBase64(bytes), {
       encoding: FileSystem.EncodingType.Base64,
     });
-    const m = relPath.match(/^Projects\/([^/]+)\//);
-    if (m) restoredFolders.add(m[1]);
   }
 
-  const onDisk = await listProjectFolders();
-  for (const folder of onDisk) {
-    if (!restoredFolders.has(folder)) {
-      await FileSystem.deleteAsync(`${FileSystem.documentDirectory}Projects/${folder}/`);
+  const onDiskFolders = await listProjectFolders();
+  await closeAllDatabases();
+
+  let placed: string[] = [];
+  const preserved: { from: string; to: string }[] = [];
+
+  try {
+    for (const base of restoredBases) {
+      for (const suffix of ["", "-wal", "-shm"]) {
+        const rel = base + suffix;
+        const live = `${FileSystem.documentDirectory}${rel}`;
+        const info = await FileSystem.getInfoAsync(live);
+        if (!info.exists) continue;
+        const old = `${RESTORE_OLD_DIR}${rel}`;
+        await FileSystem.makeDirectoryAsync(old.slice(0, old.lastIndexOf("/")), {
+          intermediates: true,
+        });
+        await FileSystem.moveAsync({ from: live, to: old });
+        preserved.push({ from: live, to: old });
+      }
     }
+
+    await FileSystem.makeDirectoryAsync(`${RESTORE_OLD_DIR}Projects/`, {
+      intermediates: true,
+    });
+    for (const folder of onDiskFolders) {
+      if (restoredFolders.has(folder)) continue;
+      const live = `${FileSystem.documentDirectory}Projects/${folder}/`;
+      const old = `${RESTORE_OLD_DIR}Projects/${folder}/`;
+      await FileSystem.moveAsync({ from: live, to: old });
+      preserved.push({ from: live, to: old });
+    }
+
+    for (const relPath of Object.keys(entries)) {
+      const live = `${FileSystem.documentDirectory}${relPath}`;
+      await FileSystem.makeDirectoryAsync(live.slice(0, live.lastIndexOf("/")), {
+        intermediates: true,
+      });
+      await FileSystem.moveAsync({ from: `${RESTORE_EXTRACT_DIR}${relPath}`, to: live });
+      placed.push(live);
+    }
+
+    await FileSystem.deleteAsync(RESTORE_STAGING_DIR, { idempotent: true }).catch(() => {});
+  } catch (e) {
+    for (const live of placed) {
+      await FileSystem.deleteAsync(live, { idempotent: true }).catch(() => {});
+    }
+    for (let i = preserved.length - 1; i >= 0; i -= 1) {
+      const entry = preserved[i];
+      await FileSystem.moveAsync({ from: entry.to, to: entry.from }).catch(() => {});
+    }
+    await FileSystem.deleteAsync(RESTORE_STAGING_DIR, { idempotent: true }).catch(() => {});
+    throw e;
   }
 }
 
@@ -227,6 +305,43 @@ async function reloadAfterRestore(): Promise<number> {
   return projects.length;
 }
 
+async function performRestore(entries: Record<string, Uint8Array>): Promise<BackupResult> {
+  const structure = validateRestoreEntries(entries);
+  if (!structure.ok) return { ok: false, message: structure.message ?? "Invalid backup" };
+
+  const restoredFolders = new Set<string>();
+  for (const relPath of Object.keys(entries)) {
+    const m = relPath.match(/^Projects\/([^/]+)\//);
+    if (m) restoredFolders.add(m[1]);
+  }
+
+  const activePath = getActiveProjectPath();
+
+  try {
+    await restoreEntries(entries);
+  } catch (e) {
+    if (activePath) {
+      await setActiveProject(activePath).catch(() => {});
+    }
+    logger.error("[BackupManager] restore failed:", e);
+    return { ok: false, message: String(e) };
+  }
+
+  try {
+    const count = await reloadAfterRestore();
+    if (activePath) {
+      const folder = projectFolderFromPath(activePath);
+      if (folder && restoredFolders.has(folder)) {
+        await setActiveProject(activePath);
+      }
+    }
+    return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
+  } catch (e) {
+    logger.error("[BackupManager] reload after restore failed:", e);
+    return { ok: false, message: String(e) };
+  }
+}
+
 export async function restoreBackup(
   onConfirm: () => Promise<boolean>
 ): Promise<BackupResult> {
@@ -243,13 +358,7 @@ export async function restoreBackup(
     const b64 = await downloadStorage.readBase64(fileUri);
     const entries = await unzipBase64(b64);
 
-    const structure = validateRestoreEntries(entries);
-    if (!structure.ok) return { ok: false, message: structure.message ?? "Invalid backup" };
-
-    await restoreEntries(entries);
-    const count = await reloadAfterRestore();
-
-    return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
+    return await performRestore(entries);
   } catch (e) {
     logger.error("[BackupManager] restoreBackup failed:", e);
     return { ok: false, message: String(e) };
@@ -303,16 +412,7 @@ export async function restoreBackupFromUri(
 
     const entries = await unzipBase64(b64);
 
-    const structure = validateRestoreEntries(entries);
-    if (!structure.ok) {
-      const message = structure.message ?? "Invalid backup";
-      return { ok: false, message };
-    }
-
-    await restoreEntries(entries);
-    const count = await reloadAfterRestore();
-
-    return { ok: true, message: `Restore completed. ${count} project(s) loaded.` };
+    return await performRestore(entries);
   } catch (e) {
     return { ok: false, message: String(e) };
   }

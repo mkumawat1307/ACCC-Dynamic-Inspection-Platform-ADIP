@@ -2,12 +2,14 @@ jest.mock("@/src/database/db", () => ({
   GLOBAL_DATABASE_NAME: "accc_global.db",
   closeAllDatabases: jest.fn().mockResolvedValue(undefined),
   getGlobalDatabase: jest.fn().mockResolvedValue(undefined),
+  getActiveProjectPath: jest.fn().mockReturnValue(null),
   setActiveProject: jest.fn().mockResolvedValue(undefined),
   getDatabase: jest.fn().mockResolvedValue(undefined),
+  openProjectDbForBackup: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/src/database/helpers/ProjectDBManager", () => ({
-  listProjectFolders: jest.fn().mockResolvedValue(["Alpha", "Beta"]),
+  listProjectFolders: jest.fn(mockListProjectFolders),
 }));
 
 jest.mock("@/src/database/repositories/ProjectRepository", () => ({
@@ -17,6 +19,22 @@ jest.mock("@/src/database/repositories/ProjectRepository", () => ({
 }));
 
 const mockFsEntries = new Map<string, { type: "file" | "dir"; content: string }>();
+
+let mockFailMoveTo: string | null = null;
+
+const mockProjectsPrefix = "file:///mock/documents/Projects/";
+
+async function mockListProjectFolders(): Promise<string[]> {
+  const folders = new Set<string>();
+  for (const key of mockFsEntries.keys()) {
+    if (key.startsWith(mockProjectsPrefix)) {
+      const rest = key.slice(mockProjectsPrefix.length);
+      const folder = rest.split("/")[0];
+      if (folder) folders.add(folder);
+    }
+  }
+  return Array.from(folders).sort();
+}
 
 jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///mock/documents/",
@@ -50,6 +68,37 @@ jest.mock("expo-file-system/legacy", () => ({
     const source = mockFsEntries.get(from);
     if (source === undefined) throw new Error(`File not found: ${from}`);
     mockFsEntries.set(to, { type: "file", content: source.content });
+  }),
+  moveAsync: jest.fn(async ({ from, to }: { from: string; to: string }) => {
+    if (mockFailMoveTo !== null && to === mockFailMoveTo) {
+      mockFailMoveTo = null;
+      throw new Error(`move failed: ${to}`);
+    }
+    const entry = mockFsEntries.get(from);
+    const childPrefix = from.endsWith("/") ? from : `${from}/`;
+    const hasChildren = Array.from(mockFsEntries.keys()).some((key) =>
+      key.startsWith(childPrefix)
+    );
+    if (entry === undefined && !hasChildren) {
+      throw new Error(`File not found: ${from}`);
+    }
+    if (entry?.type === "dir" || (entry === undefined && hasChildren)) {
+      mockFsEntries.set(to, { type: "dir", content: "" });
+      mockFsEntries.delete(from);
+      const toPrefix = to.endsWith("/") ? to : `${to}/`;
+      for (const key of Array.from(mockFsEntries.keys())) {
+        if (key.startsWith(childPrefix)) {
+          const rest = key.slice(childPrefix.length);
+          const value = mockFsEntries.get(key);
+          if (value) mockFsEntries.set(toPrefix + rest, value);
+          mockFsEntries.delete(key);
+        }
+      }
+    } else {
+      const file = entry as { type: "file"; content: string };
+      mockFsEntries.set(to, { type: "file", content: file.content });
+      mockFsEntries.delete(from);
+    }
   }),
   deleteAsync: jest.fn(async (fileUri: string) => {
     mockFsEntries.delete(fileUri);
@@ -124,6 +173,14 @@ function toB64(bytes: number[]): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
+const SQLITE_MAGIC_BYTES = [
+  0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,
+];
+
+function sqlite(...bytes: number[]): number[] {
+  return [...SQLITE_MAGIC_BYTES, ...bytes];
+}
+
 type DbHandle = {
   execAsync: jest.Mock;
   isInTransactionAsync: jest.Mock;
@@ -165,6 +222,7 @@ describe("BackupManager backupNow", () => {
     jest.clearAllMocks();
     mockFsEntries.clear();
     mockDownloadStore.clear();
+    mockFailMoveTo = null;
     projectHandles.clear();
     activeProjectPath = null;
 
@@ -181,14 +239,21 @@ describe("BackupManager backupNow", () => {
         activeProjectPath = projectDbPath;
       }
     );
+    (dbModule.openProjectDbForBackup as jest.Mock).mockImplementation(
+      async (projectDbPath: string) => {
+        const handle = projectHandles.get(projectDbPath);
+        if (!handle) throw new Error(`No handle for ${projectDbPath}`);
+        return handle;
+      }
+    );
     (dbModule.getDatabase as jest.Mock).mockImplementation(async () => {
-      if (activeProjectPath === null) throw new Error("No active project selected");
+      if (activeProjectPath === null) return globalHandle;
       const handle = projectHandles.get(activeProjectPath);
       if (!handle) throw new Error(`No handle for ${activeProjectPath}`);
       return handle;
     });
 
-    (listProjectFolders as jest.Mock).mockResolvedValue(["Alpha", "Beta"]);
+    (listProjectFolders as jest.Mock).mockImplementation(mockListProjectFolders);
     BackupManager = require("@/src/database/helpers/BackupManager");
   });
 
@@ -232,15 +297,16 @@ describe("BackupManager backupNow", () => {
 
     const dbModule = require("@/src/database/db");
     expect(dbModule.getGlobalDatabase).toHaveBeenCalledTimes(1);
-    expect(dbModule.setActiveProject).toHaveBeenNthCalledWith(
+    expect(dbModule.openProjectDbForBackup).toHaveBeenNthCalledWith(
       1,
       `${DOC}Projects/Alpha/inspection.db`
     );
-    expect(dbModule.setActiveProject).toHaveBeenNthCalledWith(
+    expect(dbModule.openProjectDbForBackup).toHaveBeenNthCalledWith(
       2,
       `${DOC}Projects/Beta/inspection.db`
     );
-    expect(dbModule.getDatabase).toHaveBeenCalledTimes(2);
+    expect(dbModule.setActiveProject).not.toHaveBeenCalled();
+    expect(dbModule.getDatabase).toHaveBeenCalledTimes(1);
 
     const sqls = [globalHandle, ...Array.from(projectHandles.values())].flatMap((handle) =>
       handle.execAsync.mock.calls.map((call) => call[0] as string)
@@ -289,6 +355,113 @@ describe("BackupManager backupNow", () => {
     }
   });
 
+  it("keeps the user's active project active across a full backup", async () => {
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(true);
+    expect(activeProjectPath).toBe(activePath);
+    const dbModule = require("@/src/database/db");
+    const activeDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(activeDb).toBe(projectHandles.get(activePath));
+  });
+
+  it("iterates every project DB while the active project stays active", async () => {
+    projectHandles.set(
+      `${DOC}Projects/Charlie/inspection.db`,
+      makeDbHandle("CHARLIE-CONTENT")
+    );
+    mockFsEntries.set(`${DOC}Projects/Charlie/inspection.db`, {
+      type: "file",
+      content: "DUMMY",
+    });
+    (listProjectFolders as jest.Mock).mockResolvedValue(["Alpha", "Beta", "Charlie"]);
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(true);
+    const dbModule = require("@/src/database/db");
+    expect(dbModule.openProjectDbForBackup).toHaveBeenCalledWith(
+      `${DOC}Projects/Alpha/inspection.db`
+    );
+    expect(dbModule.openProjectDbForBackup).toHaveBeenCalledWith(
+      `${DOC}Projects/Beta/inspection.db`
+    );
+    expect(dbModule.openProjectDbForBackup).toHaveBeenCalledWith(
+      `${DOC}Projects/Charlie/inspection.db`
+    );
+    expect(activeProjectPath).toBe(activePath);
+
+    const entries = await unzipBase64(storedBackupB64());
+    expect(Object.keys(entries).sort()).toEqual([
+      "Projects/Alpha/inspection.db",
+      "Projects/Beta/inspection.db",
+      "Projects/Charlie/inspection.db",
+      "SQLite/accc_global.db",
+    ]);
+
+    const activeDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(activeDb).toBe(projectHandles.get(activePath));
+  });
+
+  it("leaves no active project after a backup that started with none", async () => {
+    activeProjectPath = null;
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(true);
+    expect(activeProjectPath).toBeNull();
+    const dbModule = require("@/src/database/db");
+    const restoredDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(restoredDb).toBe(globalHandle);
+  });
+
+  it("preserves the active project when a project snapshot fails midway", async () => {
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
+    const betaHandle = projectHandles.get(`${DOC}Projects/Beta/inspection.db`);
+    betaHandle?.execAsync.mockRejectedValueOnce(new Error("VACUUM failed: disk I/O error"));
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("disk I/O error");
+    expect(storedBackupAbsent()).toBe(true);
+    expect(activeProjectPath).toBe(activePath);
+    const dbModule = require("@/src/database/db");
+    const activeDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(activeDb).toBe(projectHandles.get(activePath));
+  });
+
+  it("rejects a second backup while one is in progress and preserves state", async () => {
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
+    let releaseGlobal: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGlobal = resolve;
+    });
+    const dbModule = require("@/src/database/db");
+    (dbModule.getGlobalDatabase as jest.Mock).mockReturnValueOnce(
+      gate.then(() => globalHandle)
+    );
+
+    const first = BackupManager.backupNow();
+    await Promise.resolve();
+    const second = await BackupManager.backupNow();
+
+    expect(second.ok).toBe(false);
+    expect(second.message).toMatch(/in progress/i);
+
+    releaseGlobal?.();
+    const firstResult = await first;
+    expect(firstResult.ok).toBe(true);
+    expect(activeProjectPath).toBe(activePath);
+  });
+
   it("takes the global snapshot from its live handle, not from the file on disk", async () => {
     mockFsEntries.set(`${DOC}SQLite/accc_global.db`, { type: "file", content: "OLD" });
 
@@ -303,6 +476,8 @@ describe("BackupManager backupNow", () => {
 
   it("fails explicitly when a listed project folder is missing its inspection.db", async () => {
     (listProjectFolders as jest.Mock).mockResolvedValue(["Ghost"]);
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
 
     const result = await BackupManager.backupNow();
 
@@ -312,6 +487,8 @@ describe("BackupManager backupNow", () => {
     expect(downloadStorage.writeBase64).not.toHaveBeenCalled();
     const dbModule = require("@/src/database/db");
     expect(dbModule.setActiveProject).not.toHaveBeenCalled();
+    expect(dbModule.openProjectDbForBackup).not.toHaveBeenCalled();
+    expect(activeProjectPath).toBe(activePath);
   });
 
   it("fails atomically when a snapshot fails — no backup and no temp files left behind", async () => {
@@ -397,7 +574,8 @@ describe("BackupManager restore", () => {
     jest.clearAllMocks();
     mockFsEntries.clear();
     mockDownloadStore.clear();
-    (listProjectFolders as jest.Mock).mockResolvedValue(["Alpha", "Beta"]);
+    mockFailMoveTo = null;
+    (listProjectFolders as jest.Mock).mockImplementation(mockListProjectFolders);
     BackupManager = require("@/src/database/helpers/BackupManager");
   });
 
@@ -437,8 +615,8 @@ describe("BackupManager restore", () => {
 
   it("restoreBackup extracts entries and closes DBs before writing", async () => {
     await seedBackupZip({
-      "SQLite/accc_global.db": [1, 2, 3, 4],
-      "Projects/Alpha/inspection.db": [9, 8, 7],
+      "SQLite/accc_global.db": sqlite(1, 2, 3, 4),
+      "Projects/Alpha/inspection.db": sqlite(9, 8, 7),
     });
     const dbModule = require("@/src/database/db");
 
@@ -451,7 +629,7 @@ describe("BackupManager restore", () => {
       encoding: FileSystem.EncodingType.Base64,
     });
     expect(Uint8Array.from(atob(globalB64), (c) => c.charCodeAt(0))).toEqual(
-      new Uint8Array([1, 2, 3, 4])
+      new Uint8Array(sqlite(1, 2, 3, 4))
     );
 
     const alphaB64 = await FileSystem.readAsStringAsync(
@@ -459,12 +637,12 @@ describe("BackupManager restore", () => {
       { encoding: FileSystem.EncodingType.Base64 }
     );
     expect(Uint8Array.from(atob(alphaB64), (c) => c.charCodeAt(0))).toEqual(
-      new Uint8Array([9, 8, 7])
+      new Uint8Array(sqlite(9, 8, 7))
     );
   });
 
   it("restoreBackup deletes project folders absent from the backup", async () => {
-    await seedBackupZip({ "SQLite/accc_global.db": [5] });
+    await seedBackupZip({ "SQLite/accc_global.db": sqlite(5) });
     mockFsEntries.set(`${DOC}Projects/Gamma/inspection.db`, {
       type: "file",
       content: "GAMMA",
@@ -512,7 +690,8 @@ describe("BackupManager restoreBackupFromUri", () => {
     jest.clearAllMocks();
     mockFsEntries.clear();
     mockDownloadStore.clear();
-    (listProjectFolders as jest.Mock).mockResolvedValue(["Alpha", "Beta"]);
+    mockFailMoveTo = null;
+    (listProjectFolders as jest.Mock).mockImplementation(mockListProjectFolders);
     BackupManager = require("@/src/database/helpers/BackupManager");
   });
 
@@ -539,8 +718,8 @@ describe("BackupManager restoreBackupFromUri", () => {
 
   it("copies a content:// pick to cache, validates, and restores", async () => {
     await seedPickedZip({
-      "SQLite/accc_global.db": [1, 2, 3, 4],
-      "Projects/Alpha/inspection.db": [9, 8, 7],
+      "SQLite/accc_global.db": sqlite(1, 2, 3, 4),
+      "Projects/Alpha/inspection.db": sqlite(9, 8, 7),
     });
     const dbModule = require("@/src/database/db");
 
@@ -557,7 +736,7 @@ describe("BackupManager restoreBackupFromUri", () => {
       encoding: FileSystem.EncodingType.Base64,
     });
     expect(Uint8Array.from(atob(globalB64), (c) => c.charCodeAt(0))).toEqual(
-      new Uint8Array([1, 2, 3, 4])
+      new Uint8Array(sqlite(1, 2, 3, 4))
     );
   });
 
@@ -566,7 +745,7 @@ describe("BackupManager restoreBackupFromUri", () => {
     const { zipBase64 } = require("@/src/utils/backupZip");
     mockFsEntries.set(localUri, {
       type: "file",
-      content: await zipBase64({ "SQLite/accc_global.db": Uint8Array.from([7, 7]) }),
+      content: await zipBase64({ "SQLite/accc_global.db": sqlite(7, 7) }),
     });
 
     const result = await BackupManager.restoreBackupFromUri(localUri, async () => true);
@@ -671,9 +850,10 @@ describe("BackupManager restoreBackupFromUri", () => {
   it("restores a large database file without stack overflows", async () => {
     const big = new Uint8Array(300000);
     for (let i = 0; i < big.length; i++) big[i] = i % 251;
+    for (let i = 0; i < SQLITE_MAGIC_BYTES.length; i++) big[i] = SQLITE_MAGIC_BYTES[i];
     await seedPickedZip({
       "SQLite/accc_global.db": Array.from(big),
-      "Projects/Alpha/inspection.db": [9, 8, 7],
+      "Projects/Alpha/inspection.db": sqlite(9, 8, 7),
     });
 
     const result = await BackupManager.restoreBackupFromUri(CONTENT_URI, async () => true);
@@ -685,5 +865,349 @@ describe("BackupManager restoreBackupFromUri", () => {
     const restored = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
     expect(restored.length).toBe(big.length);
     expect(restored[123456]).toBe(big[123456]);
+  });
+});
+
+describe("BackupManager restore atomicity", () => {
+  let BackupManager: typeof import("@/src/database/helpers/BackupManager");
+  let activeProjectPath: string | null;
+  const projectHandles = new Map<string, DbHandle>();
+  const ACTIVE_PATH = `${DOC}Projects/Alpha/inspection.db`;
+
+  async function seedAtomBackupZip(entries: Record<string, number[]>): Promise<void> {
+    const { zipBase64 } = require("@/src/utils/backupZip");
+    const files: Record<string, Uint8Array> = {};
+    for (const [name, nums] of Object.entries(entries)) {
+      files[name] = Uint8Array.from(nums);
+    }
+    mockDownloadStore.set(BACKUP_STORE_KEY, await zipBase64(files));
+  }
+
+  function seedAtomLiveDb(relPath: string, content: string): void {
+    mockFsEntries.set(`${DOC}${relPath}`, {
+      type: "file",
+      content: toB64(Array.from(content, (c) => c.charCodeAt(0))),
+    });
+  }
+
+  function liveBytes(relPath: string): number[] {
+    const entry = mockFsEntries.get(`${DOC}${relPath}`);
+    if (entry === undefined) return [];
+    return Array.from(atob(entry.content), (c) => c.charCodeAt(0));
+  }
+
+  function liveAbsent(relPath: string): boolean {
+    return !mockFsEntries.has(`${DOC}${relPath}`);
+  }
+
+  function leftoverTempKeys(): string[] {
+    return Array.from(mockFsEntries.keys()).filter((key) =>
+      /accc_restore|\.(bak|tmp)$/.test(key)
+    );
+  }
+
+  function seedThreeWayBackup(): Promise<void> {
+    return seedAtomBackupZip({
+      "SQLite/accc_global.db": sqlite(1, 2, 3, 4),
+      "Projects/Alpha/inspection.db": sqlite(9, 8, 7),
+      "Projects/Beta/inspection.db": sqlite(6, 6, 6),
+    });
+  }
+
+  function seedThreeWayLive(): void {
+    seedAtomLiveDb("SQLite/accc_global.db", "OLD-GLOBAL");
+    seedAtomLiveDb("Projects/Alpha/inspection.db", "OLD-ALPHA");
+    seedAtomLiveDb("Projects/Beta/inspection.db", "OLD-BETA");
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFsEntries.clear();
+    mockDownloadStore.clear();
+    mockFailMoveTo = null;
+    activeProjectPath = null;
+    projectHandles.clear();
+
+    const globalHandle = makeDbHandle("GLOBAL-CONTENT");
+    projectHandles.set(`${DOC}Projects/Alpha/inspection.db`, makeDbHandle("ALPHA-CONTENT"));
+    projectHandles.set(`${DOC}Projects/Beta/inspection.db`, makeDbHandle("BETA-CONTENT"));
+
+    const dbModule = require("@/src/database/db");
+    (dbModule.getGlobalDatabase as jest.Mock).mockResolvedValue(globalHandle);
+    (dbModule.openProjectDbForBackup as jest.Mock).mockImplementation(
+      async (projectDbPath: string) => {
+        const handle = projectHandles.get(projectDbPath);
+        if (!handle) throw new Error(`No handle for ${projectDbPath}`);
+        return handle;
+      }
+    );
+    (dbModule.getDatabase as jest.Mock).mockImplementation(async () => {
+      if (activeProjectPath === null) return globalHandle;
+      const handle = projectHandles.get(activeProjectPath);
+      if (!handle) throw new Error(`No handle for ${activeProjectPath}`);
+      return handle;
+    });
+    (dbModule.getActiveProjectPath as jest.Mock).mockImplementation(
+      () => activeProjectPath
+    );
+    (dbModule.setActiveProject as jest.Mock).mockImplementation(
+      async (projectDbPath: string) => {
+        activeProjectPath = projectDbPath;
+      }
+    );
+    (dbModule.closeAllDatabases as jest.Mock).mockImplementation(async () => {
+      activeProjectPath = null;
+    });
+
+    (listProjectFolders as jest.Mock).mockImplementation(mockListProjectFolders);
+    BackupManager = require("@/src/database/helpers/BackupManager");
+  });
+
+  it("atomically replaces every live database on a successful restore", async () => {
+    await seedThreeWayBackup();
+    seedThreeWayLive();
+    seedAtomLiveDb("Projects/Alpha/inspection.db-wal", "OLD-ALPHA-WAL");
+    seedAtomLiveDb("Projects/Beta/inspection.db-shm", "OLD-BETA-SHM");
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(true);
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(sqlite(1, 2, 3, 4));
+    expect(liveBytes("Projects/Alpha/inspection.db")).toEqual(sqlite(9, 8, 7));
+    expect(liveBytes("Projects/Beta/inspection.db")).toEqual(sqlite(6, 6, 6));
+    expect(liveAbsent("Projects/Alpha/inspection.db-wal")).toBe(true);
+    expect(liveAbsent("Projects/Beta/inspection.db-shm")).toBe(true);
+    expect(leftoverTempKeys()).toEqual([]);
+  });
+
+  it("restores the exact pre-restore databases when replacing Project B fails midway", async () => {
+    await seedThreeWayBackup();
+    seedThreeWayLive();
+    seedAtomLiveDb("Projects/Beta/inspection.db-wal", "OLD-BETA-WAL");
+    seedAtomLiveDb("Projects/Beta/inspection.db-shm", "OLD-BETA-SHM");
+    activeProjectPath = ACTIVE_PATH;
+    mockFailMoveTo = `${DOC}Projects/Beta/inspection.db`;
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("move failed");
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(
+      Array.from("OLD-GLOBAL", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Alpha/inspection.db")).toEqual(
+      Array.from("OLD-ALPHA", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Beta/inspection.db")).toEqual(
+      Array.from("OLD-BETA", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Beta/inspection.db-wal")).toEqual(
+      Array.from("OLD-BETA-WAL", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Beta/inspection.db-shm")).toEqual(
+      Array.from("OLD-BETA-SHM", (c) => c.charCodeAt(0))
+    );
+    expect(leftoverTempKeys()).toEqual([]);
+  });
+
+  it("restores the original databases when the global replace fails", async () => {
+    await seedThreeWayBackup();
+    seedThreeWayLive();
+    activeProjectPath = ACTIVE_PATH;
+    mockFailMoveTo = `${DOC}SQLite/accc_global.db`;
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("move failed");
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(
+      Array.from("OLD-GLOBAL", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Alpha/inspection.db")).toEqual(
+      Array.from("OLD-ALPHA", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Beta/inspection.db")).toEqual(
+      Array.from("OLD-BETA", (c) => c.charCodeAt(0))
+    );
+    expect(leftoverTempKeys()).toEqual([]);
+  });
+
+  it("rejects a non-SQLite database entry before touching any live file", async () => {
+    await seedAtomBackupZip({
+      "SQLite/accc_global.db": sqlite(1, 2, 3, 4),
+      "Projects/Alpha/inspection.db": [9, 8, 7],
+    });
+    seedThreeWayLive();
+    activeProjectPath = ACTIVE_PATH;
+    const dbModule = require("@/src/database/db");
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("not a valid SQLite");
+    expect(dbModule.closeAllDatabases).not.toHaveBeenCalled();
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(
+      Array.from("OLD-GLOBAL", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Alpha/inspection.db")).toEqual(
+      Array.from("OLD-ALPHA", (c) => c.charCodeAt(0))
+    );
+    expect(liveBytes("Projects/Beta/inspection.db")).toEqual(
+      Array.from("OLD-BETA", (c) => c.charCodeAt(0))
+    );
+    expect(leftoverTempKeys()).toEqual([]);
+  });
+
+  it("removes project folders absent from the backup on success", async () => {
+    await seedAtomBackupZip({ "SQLite/accc_global.db": sqlite(5) });
+    seedThreeWayLive();
+    seedAtomLiveDb("Projects/Beta/inspection.db-wal", "OLD-BETA-WAL");
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(true);
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(sqlite(5));
+    expect(liveAbsent("Projects/Alpha/inspection.db")).toBe(true);
+    expect(liveAbsent("Projects/Beta/inspection.db")).toBe(true);
+    expect(liveAbsent("Projects/Beta/inspection.db-wal")).toBe(true);
+    expect(leftoverTempKeys()).toEqual([]);
+  });
+
+  it("rejects absolute, drive, and traversal paths before any write", async () => {
+    for (const bad of [
+      "/etc/passwd",
+      "C:/evil.db",
+      "../../evil.db",
+      "Projects\\Beta\\inspection.db",
+    ]) {
+      mockFsEntries.clear();
+      mockDownloadStore.clear();
+      const files: Record<string, number[]> = { "SQLite/accc_global.db": sqlite(1) };
+      files[bad] = sqlite(2);
+      await seedAtomBackupZip(files);
+      seedAtomLiveDb("SQLite/accc_global.db", "OLD-GLOBAL");
+
+      const result = await BackupManager.restoreBackup(async () => true);
+
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain("invalid entry");
+      expect(liveBytes("SQLite/accc_global.db")).toEqual(
+        Array.from("OLD-GLOBAL", (c) => c.charCodeAt(0))
+      );
+      expect(mockFsEntries.has(`${DOC}${bad}`)).toBe(false);
+    }
+  });
+
+  it("removes stale WAL/SHM sidecars on a successful restore", async () => {
+    await seedAtomBackupZip({
+      "SQLite/accc_global.db": sqlite(1, 2),
+      "Projects/Alpha/inspection.db": sqlite(9),
+    });
+    seedAtomLiveDb("SQLite/accc_global.db", "OLD-GLOBAL");
+    seedAtomLiveDb("Projects/Alpha/inspection.db", "OLD-ALPHA");
+    seedAtomLiveDb("Projects/Alpha/inspection.db-wal", "OLD-WAL");
+    seedAtomLiveDb("Projects/Alpha/inspection.db-shm", "OLD-SHM");
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(true);
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(sqlite(1, 2));
+    expect(liveBytes("Projects/Alpha/inspection.db")).toEqual(sqlite(9));
+    expect(liveAbsent("Projects/Alpha/inspection.db-wal")).toBe(true);
+    expect(liveAbsent("Projects/Alpha/inspection.db-shm")).toBe(true);
+  });
+
+  it("keeps the active project active and usable after a failed restore", async () => {
+    await seedThreeWayBackup();
+    seedThreeWayLive();
+    activeProjectPath = ACTIVE_PATH;
+    mockFailMoveTo = `${DOC}SQLite/accc_global.db`;
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(false);
+    expect(activeProjectPath).toBe(ACTIVE_PATH);
+    const dbModule = require("@/src/database/db");
+    const activeDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(activeDb).toBe(projectHandles.get(ACTIVE_PATH));
+  });
+
+  it("keeps the previously active project active after a successful restore that includes it", async () => {
+    await seedThreeWayBackup();
+    seedThreeWayLive();
+    activeProjectPath = ACTIVE_PATH;
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(true);
+    expect(activeProjectPath).toBe(ACTIVE_PATH);
+    const dbModule = require("@/src/database/db");
+    const activeDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(activeDb).toBe(projectHandles.get(ACTIVE_PATH));
+  });
+
+  it("clears the active project after a successful restore that removes it", async () => {
+    await seedAtomBackupZip({ "SQLite/accc_global.db": sqlite(5) });
+    seedThreeWayLive();
+    activeProjectPath = ACTIVE_PATH;
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(true);
+    expect(liveAbsent("Projects/Alpha/inspection.db")).toBe(true);
+    expect(activeProjectPath).toBeNull();
+  });
+
+  it("restores repeatedly to the same final state with no leftover staging", async () => {
+    await seedAtomBackupZip({
+      "SQLite/accc_global.db": sqlite(1, 2, 3),
+      "Projects/Alpha/inspection.db": sqlite(7),
+    });
+    seedAtomLiveDb("SQLite/accc_global.db", "OLD-GLOBAL");
+    seedAtomLiveDb("Projects/Alpha/inspection.db", "OLD-ALPHA");
+
+    const first = await BackupManager.restoreBackup(async () => true);
+    expect(first.ok).toBe(true);
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(sqlite(1, 2, 3));
+
+    const second = await BackupManager.restoreBackup(async () => true);
+    expect(second.ok).toBe(true);
+    expect(liveBytes("SQLite/accc_global.db")).toEqual(sqlite(1, 2, 3));
+    expect(liveBytes("Projects/Alpha/inspection.db")).toEqual(sqlite(7));
+    expect(leftoverTempKeys()).toEqual([]);
+  });
+
+  it("removes all temporary and staging files after a mid-restore failure", async () => {
+    await seedThreeWayBackup();
+    seedThreeWayLive();
+    activeProjectPath = ACTIVE_PATH;
+    mockFailMoveTo = `${DOC}Projects/Beta/inspection.db`;
+
+    const result = await BackupManager.restoreBackup(async () => true);
+
+    expect(result.ok).toBe(false);
+    for (const key of mockFsEntries.keys()) {
+      expect(key).not.toMatch(/accc_restore|\.(bak|tmp)$/);
+    }
+  });
+
+  it("backs up successfully after a failed restore with the active project intact", async () => {
+    await seedThreeWayBackup();
+    seedThreeWayLive();
+    activeProjectPath = ACTIVE_PATH;
+    mockFailMoveTo = `${DOC}Projects/Beta/inspection.db`;
+
+    const failed = await BackupManager.restoreBackup(async () => true);
+    expect(failed.ok).toBe(false);
+
+    const backup = await BackupManager.backupNow();
+    expect(backup.ok).toBe(true);
+    expect(activeProjectPath).toBe(ACTIVE_PATH);
+    const entries = await unzipBase64(storedBackupB64());
+    expect(Object.keys(entries).sort()).toEqual([
+      "Projects/Alpha/inspection.db",
+      "Projects/Beta/inspection.db",
+      "SQLite/accc_global.db",
+    ]);
   });
 });

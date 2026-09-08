@@ -143,4 +143,31 @@ describe("db activation staleness guard", () => {
     const dbAAgain = await dbModule.getDatabase();
     expect(dbAAgain).toBe(dbA);
   });
+
+  it("openProjectDbForBackup snapshots another project without changing the active project", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+
+    await dbModule.setActiveProject(PROJECT_A);
+    const dbA = await dbModule.getDatabase();
+
+    const dbB = await dbModule.openProjectDbForBackup(PROJECT_B);
+
+    expect(dbB).toBeDefined();
+    const restored = await dbModule.getDatabase();
+    expect(restored).toBe(dbA);
+  });
+
+  it("openProjectDbForBackup sequentially closes the previous handle before opening", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+
+    await dbModule.setActiveProject(PROJECT_A);
+    const dbA = await dbModule.getDatabase();
+    const closeSpy = jest.spyOn(dbA, "closeAsync");
+
+    await dbModule.openProjectDbForBackup(PROJECT_B);
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    const restored = await dbModule.getDatabase();
+    expect(restored).toBe(dbA);
+  });
 });

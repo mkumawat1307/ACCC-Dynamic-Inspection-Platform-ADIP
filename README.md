@@ -222,6 +222,7 @@ eas build --platform android                            # production build
 ```
 
 - The checked-in `android/` bare project is required for APK builds (see `.easignore`); custom native code lives in `android/app/src/main/java/com/accc/dynamicinspection/` and the local module `modules/download-storage/`.
+- **Release signing** (never secrets-in-git): a release build requires `frontend/android/keystore.properties` with all four fields (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). Copy `frontend/android/keystore.properties.example` and fill in real values. The file and keystore files are gitignored and excluded from the EAS archive; if the config is missing, incomplete, or points at `debug.keystore`, the release build fails with a clear error. Debug builds are unaffected and keep using `debug.keystore`.
 - New Architecture (`react-native-worklets`) is enabled in `android/gradle.properties`; SDK compile/target/min levels follow the Expo SDK 54 gradle plugin defaults.
 
 ## Project Structure

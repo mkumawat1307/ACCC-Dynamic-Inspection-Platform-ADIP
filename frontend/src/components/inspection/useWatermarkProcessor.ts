@@ -5,7 +5,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import { writePhoto, buildPhotoFolderDisplayPath } from "@/src/utils/storageManager";
+import { writePhotoUnique, buildPhotoFolderDisplayPath } from "@/src/utils/storageManager";
 import { canonicalProjectLabel } from "@/src/utils/folderNaming";
 import {
   buildRenderWatermarkScript,
@@ -347,15 +347,21 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
       uiPerfStage("overlayDone", `photo=${job.photoId}`);
 
       uiPerfStage("safWriteStart", `photo=${job.photoId}`);
-      const contentUri = await writePhoto(label, job.fileName, base64);
+      const { contentUri, fileName: storedFileName } = await writePhotoUnique(
+        label,
+        job.fileName,
+        base64
+      );
       uiPerfStage("safWriteDone", `photo=${job.photoId}`);
       if (perfRef.current) perfStage(perfRef.current, "safWrite");
 
-      await PhotoRepository.updateFilePathAndStoragePath(
-        job.photoId,
-        contentUri,
-        buildPhotoFolderDisplayPath(label)
-      );
+      const displayPath = buildPhotoFolderDisplayPath(label);
+      if (storedFileName !== job.fileName) {
+        await PhotoRepository.updateFileNameAndPath(job.photoId, storedFileName, contentUri);
+        await PhotoRepository.updateStoragePath(job.photoId, displayPath);
+      } else {
+        await PhotoRepository.updateFilePathAndStoragePath(job.photoId, contentUri, displayPath);
+      }
       if (perfRef.current) perfStage(perfRef.current, "sqliteUpdate");
 
       onPhotosUpdated();
