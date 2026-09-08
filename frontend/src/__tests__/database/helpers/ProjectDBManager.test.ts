@@ -22,7 +22,7 @@ jest.mock("expo-file-system/legacy", () => ({
   readDirectoryAsync: jest.fn(),
 }));
 
-import { getDatabase, setActiveProject, clearActiveProject } from "@/src/database/db";
+import { getDatabase, setActiveProject, clearActiveProject, getActiveProjectPath } from "@/src/database/db";
 import { createProjectSchema } from "@/src/database/schema";
 import * as FileSystem from "expo-file-system/legacy";
 
@@ -37,13 +37,18 @@ function createMockDb() {
 
 describe("ProjectDBManager", () => {
   let mockDb: ReturnType<typeof createMockDb>;
+  let currentActivePath: string | null = null;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    currentActivePath = null;
     mockDb = createMockDb();
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
-    (setActiveProject as jest.Mock).mockResolvedValue(undefined);
-    (clearActiveProject as jest.Mock).mockResolvedValue(undefined);
+    (setActiveProject as jest.Mock).mockImplementation(
+      async (path: string) => { currentActivePath = path; }
+    );
+    (clearActiveProject as jest.Mock).mockImplementation(async () => { currentActivePath = null; });
+    (getActiveProjectPath as jest.Mock).mockImplementation(() => currentActivePath);
     (createProjectSchema as jest.Mock).mockResolvedValue(undefined);
     (FileSystem.readDirectoryAsync as jest.Mock).mockResolvedValue([]);
   });
@@ -106,6 +111,47 @@ describe("ProjectDBManager", () => {
 
       expect(FileSystem.makeDirectoryAsync).not.toHaveBeenCalled();
       expect(setActiveProject).not.toHaveBeenCalled();
+      expect(clearActiveProject).not.toHaveBeenCalled();
+    });
+
+    it("still clears the active project when a seed fails", async () => {
+      const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
+      const { createProjectDb } = require("@/src/database/helpers/ProjectDBManager");
+      const dbPath = "/mock/documents/Projects/TestProject/inspection.db";
+      (seedDashboardCards as jest.Mock).mockRejectedValue(new Error("seed boom"));
+
+      await expect(createProjectDb("TestProject", dbPath, 2)).rejects.toThrow("seed boom");
+
+      expect(setActiveProject).toHaveBeenCalledWith(dbPath);
+      expect(clearActiveProject).toHaveBeenCalled();
+    });
+
+    it("preserves the original failure when clearing the active project also fails", async () => {
+      const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
+      const { createProjectDb } = require("@/src/database/helpers/ProjectDBManager");
+      (clearActiveProject as jest.Mock).mockRejectedValueOnce(new Error("clear boom"));
+      (seedDashboardCards as jest.Mock).mockRejectedValue(new Error("seed boom"));
+
+      await expect(
+        createProjectDb("TestProject", "/mock/documents/Projects/TestProject/inspection.db", 2)
+      ).rejects.toThrow("seed boom");
+
+      expect(clearActiveProject).toHaveBeenCalled();
+    });
+
+    it("does not clear a newer activation that superseded the failed creation", async () => {
+      const { seedDashboardCards } = require("@/src/database/seeds/dashboard-cards.seed");
+      const { createProjectDb } = require("@/src/database/helpers/ProjectDBManager");
+      (getActiveProjectPath as jest.Mock).mockReturnValue(
+        "/mock/documents/Projects/OtherProject/inspection.db"
+      );
+      (seedDashboardCards as jest.Mock).mockRejectedValue(new Error("seed boom"));
+
+      await expect(
+        createProjectDb("TestProject", "/mock/documents/Projects/TestProject/inspection.db", 2)
+      ).rejects.toThrow("seed boom");
+
+      expect(clearActiveProject).not.toHaveBeenCalled();
     });
   });
 

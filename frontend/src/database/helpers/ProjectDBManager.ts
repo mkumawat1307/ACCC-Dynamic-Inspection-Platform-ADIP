@@ -1,9 +1,11 @@
 // src/database/helpers/ProjectDBManager.ts
 
 import * as FileSystem from "expo-file-system/legacy";
+import { logger } from "@/src/utils/logger";
 import {
   setActiveProject,
   clearActiveProject,
+  getActiveProjectPath,
   getDatabase,
 } from "../db";
 import { createProjectSchema, migrateProjectSchema } from "../schema";
@@ -99,21 +101,32 @@ export async function createProjectDb(
   }
   await FileSystem.makeDirectoryAsync(folderPath, { intermediates: true });
 
-  await setActiveProject(projectDbPath);
+  try {
+    await setActiveProject(projectDbPath);
 
-  await createProjectSchema();
+    await createProjectSchema();
 
-  await seedInspectionTemplate();
-  await seedInspectionSections();
-  await seedInspectionFields();
-  await seedFieldOptions();
-  await seedRepeatableGroups();
-  await seedRepeatableGroupFields();
-  await seedDeviceOptions();
-  await seedDeviceFieldDefinitions();
-  await seedDashboardCards(projectId);
-
-  await clearActiveProject();
+    await seedInspectionTemplate();
+    await seedInspectionSections();
+    await seedInspectionFields();
+    await seedFieldOptions();
+    await seedRepeatableGroups();
+    await seedRepeatableGroupFields();
+    await seedDeviceOptions();
+    await seedDeviceFieldDefinitions();
+    await seedDashboardCards(projectId);
+  } finally {
+    if (getActiveProjectPath() === projectDbPath) {
+      try {
+        await clearActiveProject();
+      } catch (clearError) {
+        logger.error(
+          "[ProjectDBManager] createProjectDb — failed to clear active project:",
+          clearError
+        );
+      }
+    }
+  }
 }
 
 export async function cloneProjectDb(
