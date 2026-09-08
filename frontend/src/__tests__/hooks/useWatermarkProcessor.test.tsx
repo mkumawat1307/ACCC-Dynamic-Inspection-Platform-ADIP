@@ -163,6 +163,51 @@ describe("useWatermarkProcessor folder target", () => {
     });
     unmount();
   });
+
+  it("keeps writing to the creation-time folder after the project is renamed or its district changes", async () => {
+    const renamedProject = {
+      ...project,
+      ProjectName: "Renamed Project",
+      DistrictName: "New District",
+      DBPath: "/mock/documents/Projects/Jaipur_Jaipur_1234abcd/inspection.db",
+    } as unknown as Project;
+    const fileUri = "content://media/Download/ACCC Dynamic Inspection/Jaipur_Jaipur/photo.jpg";
+
+    (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: fileUri, fileName: "photo.jpg" });
+    (PhotoRepository.updateFilePathAndStoragePath as jest.Mock).mockResolvedValue(undefined);
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+
+    const onPhotosUpdated = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project: renamedProject, onPhotosUpdated })
+    );
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "BASE64DATA" }) },
+      });
+    });
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    expect(writePhotoUnique).toHaveBeenCalledWith("Jaipur_Jaipur", "photo.jpg", "BASE64DATA");
+    expect(PhotoRepository.updateFilePathAndStoragePath).toHaveBeenCalledWith(
+      1,
+      fileUri,
+      "Download/ACCC Dynamic Inspection/Jaipur_Jaipur/"
+    );
+
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    unmount();
+  });
 });
 
 describe("useWatermarkProcessor persistent renderer protocol", () => {

@@ -4,6 +4,7 @@ import {
   canonicalProjectLabel,
   legacyProjectOnlyLabel,
   legacyStrippedLabel,
+  photoStorageLabelForProject,
   sanitizeFolderName,
 } from "@/src/utils/folderNaming";
 
@@ -135,5 +136,90 @@ describe("canonical vs legacy labels", () => {
       ProjectName: "Project Alpha",
     });
     expect(canonicalProjectLabel(project)).not.toBe(legacyStrippedLabel(project));
+  });
+});
+
+describe("photoStorageLabelForProject", () => {
+  const dbPath = (folder: string) =>
+    `file:///data/user/0/com.accc.app/files/Projects/${folder}/inspection.db`;
+
+  it("extracts the creation-time label from a valid project DBPath", () => {
+    const project = makeProject({
+      DBPath: dbPath("Jaipur_Jaipur_1234abcd"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_Jaipur");
+  });
+
+  it("accepts a relative Projects/ DBPath without a file:// prefix", () => {
+    const project = makeProject({
+      DBPath: "Projects/Karnal_Highway_00ffee77/inspection.db",
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Karnal_Highway");
+  });
+
+  it("returns the creation-time label even after the project was renamed", () => {
+    const project = makeProject({
+      ProjectName: "Renamed Project",
+      DistrictName: "Renamed District",
+      DBPath: dbPath("Jaipur_Jaipur_1234abcd"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_Jaipur");
+  });
+
+  it("preserves a label that itself ends with _<8hex> by stripping only the final hash", () => {
+    const project = makeProject({
+      DBPath: dbPath("Foo_1a2b3c4d_abcdef12"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Foo_1a2b3c4d");
+  });
+
+  it("falls back to canonicalProjectLabel when DBPath is null", () => {
+    const project = makeProject({ DBPath: null });
+    expect(photoStorageLabelForProject(project)).toBe(canonicalProjectLabel(project));
+    expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
+  });
+
+  it("falls back to canonicalProjectLabel when DBPath is undefined", () => {
+    const project = makeProject({ DBPath: undefined });
+    expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
+  });
+
+  it("falls back safely when DBPath is empty or missing the hash", () => {
+    const project = makeProject({ DBPath: "" });
+    expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
+    const noHash = makeProject({ DBPath: dbPath("Jaipur_Jaipur") });
+    expect(photoStorageLabelForProject(noHash)).toBe("New Delhi_Project Alpha");
+  });
+
+  it.each([
+    "not a path",
+    "file:///data/user/0/com.accc.app/files/Projects/Jaipur_Jaipur_1234abcd",
+    `file:///data/user/0/com.accc.app/files/Projects/Jaipur_Jaipur_GGGGGGGG/inspection.db`,
+    `file:///data/user/0/com.accc.app/files/Projects/Jaipur/inspection.db`,
+    `file:///data/user/0/com.accc.app/files/Other/Jaipur_Jaipur_1234abcd/inspection.db`,
+    `file:///data/user/0/com.accc.app/files/Projects/_1234abcd/inspection.db`,
+    `file:///data/user/0/com.accc.app/files/Projects/Jaipur_Jaipur_1234ab/inspection.db`,
+  ])("falls back safely on malformed DBPath %p", (badPath) => {
+    const project = makeProject({
+      DistrictName: "New Delhi",
+      ProjectName: "Project Alpha",
+      DBPath: badPath,
+    });
+    expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
+  });
+
+  it("never throws on malformed DBPath", () => {
+    expect(() => {
+      photoStorageLabelForProject(
+        makeProject({ DBPath: "::::" as unknown as string })
+      );
+    }).not.toThrow();
+  });
+
+  it("sanitized extraction matches the canonical label scheme", () => {
+    const project = makeProject({ DBPath: dbPath("N_ew__A_B_1a2b3c4d") });
+    expect(photoStorageLabelForProject(project)).toBe(
+      buildProjectFolderLabel("N<ew>", "A/B")
+    );
   });
 });

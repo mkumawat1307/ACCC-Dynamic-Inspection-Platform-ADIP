@@ -44,7 +44,7 @@ import {
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { logger } from "@/src/utils/logger";
 import { ensureRootFolder, ensureProjectFolder } from "@/src/utils/storageManager";
-import { canonicalProjectLabel } from "@/src/utils/folderNaming";
+import { photoStorageLabelForProject } from "@/src/utils/folderNaming";
 import { perfNow, perfLog, uiPerfReset, uiPerfStage, uiPerfProbeSummary, uiPerfStageIfProbe } from "@/src/utils/perf";
 
 export default function CaptureScreen() {
@@ -162,7 +162,7 @@ export default function CaptureScreen() {
       try {
         await ensureRootFolder();
         if (project) {
-          await ensureProjectFolder(canonicalProjectLabel(project));
+          await ensureProjectFolder(photoStorageLabelForProject(project));
         }
       } catch (e) {
         logger.error("[Storage] cameraFolderReady=false", e);

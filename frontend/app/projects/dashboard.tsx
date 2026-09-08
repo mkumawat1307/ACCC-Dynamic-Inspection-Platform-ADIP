@@ -13,7 +13,7 @@ import DashboardActionCard from "@/src/components/dashboard/DashboardActionCard"
 import DashboardCardGrid from "@/src/components/dashboard/DashboardCardGrid";
 import { COLORS, RADIUS, SPACING } from "@/src/constants/ui";
 import { ensureProjectFolder } from "@/src/utils/storageManager";
-import { canonicalProjectLabel } from "@/src/utils/folderNaming";
+import { photoStorageLabelForProject } from "@/src/utils/folderNaming";
 
 export default function ProjectDashboard() {
   const { projectId, projectData: projectDataJson } = useLocalSearchParams<{
@@ -35,9 +35,9 @@ export default function ProjectDashboard() {
 
   useEffect(() => {
     if (!project) return;
-    // Auto-create Download/ACCC Dynamic Inspection/<District>_<Project> when an
-    // existing project is opened. Failure is logged, not fatal.
-    ensureProjectFolder(canonicalProjectLabel(project)).catch((e) =>
+    // Auto-create the project's stable photo folder when an existing project is
+    // opened. Failure is logged, not fatal.
+    ensureProjectFolder(photoStorageLabelForProject(project)).catch((e) =>
       logger.error("[Storage] dashboard ensureProjectFolder failed:", e)
     );
   }, [project]);

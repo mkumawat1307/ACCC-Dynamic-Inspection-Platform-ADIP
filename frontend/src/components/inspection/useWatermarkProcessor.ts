@@ -6,7 +6,7 @@ import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { writePhotoUnique, buildPhotoFolderDisplayPath } from "@/src/utils/storageManager";
-import { canonicalProjectLabel } from "@/src/utils/folderNaming";
+import { photoStorageLabelForProject } from "@/src/utils/folderNaming";
 import {
   buildRenderWatermarkScript,
   buildRenderOverlayScript,
@@ -343,7 +343,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
 function saveAndComplete(job: WatermarkJob, base64: string) {
     return (async () => {
       clearWatchdog();
-      const label = project ? canonicalProjectLabel(project) : "";
+      const label = project ? photoStorageLabelForProject(project) : "";
       uiPerfStage("overlayDone", `photo=${job.photoId}`);
 
       uiPerfStage("safWriteStart", `photo=${job.photoId}`);
