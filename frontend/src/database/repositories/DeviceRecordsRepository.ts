@@ -1,5 +1,6 @@
-import { getDatabase } from "../db";
+import { getActiveProjectPath, getDatabase } from "../db";
 import { InspectionEditSession } from "./InspectionEditSession";
+import { logger } from "@/src/utils/logger";
 
 export interface DeviceRecord {
   RecordID?: number;
@@ -83,6 +84,7 @@ export class DeviceRecordsRepository {
     record: DeviceRecord,
     onPersisted?: (recordId: number) => void
   ): Promise<void> {
+    const startDbPath = getActiveProjectPath();
     if (record.RecordID != null) {
       await this.update(record);
       return;
@@ -94,6 +96,16 @@ export class DeviceRecordsRepository {
        LIMIT 1`,
       [record.InspectionID, record.DeviceType, record.DeviceNo]
     );
+    if (getActiveProjectPath() !== startDbPath) {
+      logger.warn("[DeviceRecords] Project switched during device save; skipping persist", {
+        inspectionId: record.InspectionID,
+        deviceType: record.DeviceType,
+        deviceNo: record.DeviceNo,
+        active: getActiveProjectPath(),
+        expected: startDbPath,
+      });
+      return;
+    }
     if (existing[0]) {
       record.RecordID = existing[0].RecordID;
       await this.update(record);

@@ -146,6 +146,17 @@ describe("schema.ts schema functions", () => {
     ).toBeDefined();
   });
 
+  it("migrateProjectSchema emits the Photos ProcessingStatus ALTER migration", async () => {
+    const { migrateProjectSchema } = require("@/src/database/schema");
+    await migrateProjectSchema(1);
+    const emitted = mockExecAsync.mock.calls.map((call) => String(call[0]));
+    expect(
+      emitted.find((sql) =>
+        sql.includes("ALTER TABLE Photos ADD COLUMN ProcessingStatus TEXT NOT NULL DEFAULT 'completed'")
+      )
+    ).toBeDefined();
+  });
+
   describe("migrateProjectUniqueness", () => {
     it("creates the unique index on clean data and returns []", async () => {
       const { migrateProjectUniqueness } = require("@/src/database/schema");

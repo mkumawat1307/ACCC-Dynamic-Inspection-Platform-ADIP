@@ -61,6 +61,9 @@ jest.mock("@/src/database/repositories/PoleRenameService", () => ({
 
 jest.mock("@/src/utils/location", () => ({ getCurrentLocation: jest.fn() }));
 jest.mock("@/src/utils/geo", () => ({ reverseGeocode: jest.fn() }));
+jest.mock("@/src/utils/date", () => ({
+  getTodayDateString: jest.fn(() => "10-Sep-2026"),
+}));
 
 jest.mock("@/src/components/inspection/FieldRenderer", () => {
   const ReactMock = require("react");
@@ -866,5 +869,164 @@ describe("GeneralInformation duplicate Site ID -> Create New", () => {
     const values = renderedFieldValues(tree);
     expect(values[0]).toBe("");
     expect(values[0]).not.toBe("OLD-REPO");
+  });
+});
+
+describe("GeneralInformation locked fields (date, division, district)", () => {
+  const dateField: InspectionField = {
+    FieldID: 30,
+    SectionID: 1,
+    FieldName: "Date",
+    FieldKey: "date",
+    FieldType: "DATE_AUTO",
+    Placeholder: null,
+    DefaultValue: null,
+    HelpText: null,
+    ValidationRule: null,
+    DisplayOrder: 1,
+    IsRequired: 1,
+    IsVisible: 1,
+    IsActive: 1,
+    CreatedAt: "2026-01-01T00:00:00",
+    UpdatedAt: "2026-01-01T00:00:00",
+  };
+
+  const districtField: InspectionField = {
+    FieldID: 31,
+    SectionID: 1,
+    FieldName: "District",
+    FieldKey: "district",
+    FieldType: "text",
+    Placeholder: null,
+    DefaultValue: null,
+    HelpText: null,
+    ValidationRule: null,
+    DisplayOrder: 3,
+    IsRequired: 1,
+    IsVisible: 1,
+    IsActive: 1,
+    CreatedAt: "2026-01-01T00:00:00",
+    UpdatedAt: "2026-01-01T00:00:00",
+  };
+
+  const inspectorField: InspectionField = {
+    FieldID: 32,
+    SectionID: 1,
+    FieldName: "Inspector Name",
+    FieldKey: "inspector_name",
+    FieldType: "text",
+    Placeholder: null,
+    DefaultValue: null,
+    HelpText: null,
+    ValidationRule: null,
+    DisplayOrder: 4,
+    IsRequired: 1,
+    IsVisible: 1,
+    IsActive: 1,
+    CreatedAt: "2026-01-01T00:00:00",
+    UpdatedAt: "2026-01-01T00:00:00",
+  };
+
+  function editableOf(
+    tree: ReturnType<typeof TestRenderer.create>,
+    index: number
+  ): boolean | undefined {
+    const nodes = tree.root.findAll((n) => (n as { type?: unknown }).type === FieldRenderer);
+    const props = nodes[index]?.props as { editable?: boolean } | undefined;
+    return props?.editable;
+  }
+
+  function renderedFieldValues(
+    tree: ReturnType<typeof TestRenderer.create>
+  ): string[] {
+    return tree.root
+      .findAll((n) => (n as { type?: unknown }).type === FieldRenderer)
+      .map((n) => (n.props as { value?: string }).value ?? "");
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setPoleId.mockReset();
+    setInspectionId.mockReset();
+    getPhotoStates.mockReset();
+    getPhotoStates.mockReturnValue({});
+    repo.getInspectionPoleId.mockResolvedValue("");
+    repo.getInspectionByPoleId.mockResolvedValue(null);
+    repo.saveFieldValue.mockResolvedValue(undefined);
+    repo.updateInspectionPoleId.mockResolvedValue(undefined);
+    repo.updatePoleIdDirectSave.mockResolvedValue(undefined);
+    photoRepo.getByInspection.mockResolvedValue([]);
+    service.renamePoleId.mockResolvedValue({
+      renamedFiles: 0,
+      updatedRecords: 0,
+      missingFiles: 0,
+    });
+  });
+
+  it("NEW inspection: date/division/district are non-editable and app values auto-populate", async () => {
+    mockContext({ inspectionId: null });
+    repo.getFieldsByKey.mockResolvedValue([dateField, divisionField, districtField, inspectorField]);
+    repo.getInspectionValues.mockResolvedValue({});
+    const tree = await renderComponent();
+
+    expect(editableOf(tree, 0)).toBe(false);
+    expect(editableOf(tree, 1)).toBe(false);
+    expect(editableOf(tree, 2)).toBe(false);
+
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("14-Aug-2026");
+    expect(values[1]).toBe("Sikar");
+    expect(values[2]).toBe("Sikar");
+  });
+
+  it("auto-assigns today's date when the context date is empty (app-driven fallback)", async () => {
+    mockContext({ inspectionId: null, inspectionDate: "" });
+    repo.getFieldsByKey.mockResolvedValue([dateField]);
+    repo.getInspectionValues.mockResolvedValue({});
+    const tree = await renderComponent();
+
+    expect(editableOf(tree, 0)).toBe(false);
+    expect(renderedFieldValues(tree)[0]).toBe("10-Sep-2026");
+  });
+
+  it("EDIT/unlocked inspection: locked fields stay non-editable while other fields unlock", async () => {
+    mockContext({ inspectionId: 42 });
+    repo.getFieldsByKey.mockResolvedValue([dateField, divisionField, districtField, inspectorField, poleField]);
+    repo.getInspectionValues.mockResolvedValue({
+      pole_id: "OLD",
+      date: "01-Aug-2026",
+      division: "Jaipur",
+      district: "Jaipur",
+      inspector_name: "Inspector",
+    });
+    const tree = await renderComponent();
+
+    expect(editableOf(tree, 0)).toBe(false);
+    expect(editableOf(tree, 1)).toBe(false);
+    expect(editableOf(tree, 2)).toBe(false);
+    expect(editableOf(tree, 3)).toBe(true);
+    expect(editableOf(tree, 4)).toBe(true);
+
+    const values = renderedFieldValues(tree);
+    expect(values[0]).toBe("01-Aug-2026");
+    expect(values[1]).toBe("Jaipur");
+    expect(values[2]).toBe("Jaipur");
+    expect(values[3]).toBe("Inspector");
+  });
+
+  it("typing a Site ID unlocks the form but the locked fields remain non-editable", async () => {
+    mockContext({ inspectionId: null });
+    repo.getFieldsByKey.mockResolvedValue([poleField, dateField, divisionField, districtField, inspectorField]);
+    repo.getInspectionValues.mockResolvedValue({});
+    const ensureDraft = jest.fn().mockResolvedValue(101);
+    const tree = await renderComponent({ ensureDraft });
+
+    await changePoleId(tree, "SIK9");
+
+    expect(editableOf(tree, 0)).toBe(true);
+    expect(editableOf(tree, 1)).toBe(false);
+    expect(editableOf(tree, 2)).toBe(false);
+    expect(editableOf(tree, 3)).toBe(false);
+    expect(editableOf(tree, 4)).toBe(true);
   });
 });

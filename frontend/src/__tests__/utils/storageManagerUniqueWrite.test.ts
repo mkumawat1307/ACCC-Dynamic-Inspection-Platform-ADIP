@@ -1,7 +1,6 @@
 import {
   writePhotoUnique,
   withUniquePhotoSuffix,
-  MAX_PHOTO_WRITE_ATTEMPTS,
 } from "@/src/utils/storageManager";
 import { downloadStorage } from "@/src/utils/downloadStorage";
 
@@ -9,8 +8,8 @@ type Unit = { uri: string; bytes: string };
 
 type State = {
   rows: Map<string, Unit>;
-  writes: Array<{ label: string; name: string; bytes: string }>;
-  overwrites: Array<{ label: string; name: string }>;
+  writes: { label: string; name: string; bytes: string }[];
+  overwrites: { label: string; name: string }[];
   blockFinds: number;
   failNextWrite: boolean;
 };
@@ -95,18 +94,18 @@ describe("writePhotoUnique", () => {
     expect(getBytes("Proj A", base)).toBe("B64A");
   });
 
-  it("TEST 2 — forced collision is resolved to a different name and the existing photo is untouched", async () => {
+  it("TEST 2 — idempotent retry reuses the existing final file instead of creating a duplicate", async () => {
     const base = "Sikar_SIK001_14AUG2026_112948.jpg";
-    seed("Proj A", base, "OLD_BYTES");
+    const existingUri = seed("Proj A", base, "OLD_BYTES");
 
     const result = await writePhotoUnique("Proj A", base, "NEW_BYTES");
 
-    expect(result.fileName).not.toBe(base);
-    expect(result.fileName).toMatch(/^Sikar_SIK001_14AUG2026_112948_[a-z0-9]{6}\.jpg$/);
-    expect(result.contentUri).toMatch(/^content:\/\/media/);
-    expect(getBytes("Proj A", base)).toBe("OLD_BYTES");
-    expect(state.writes.every(w => w.name !== base)).toBe(true);
+    expect(result.contentUri).toBe(existingUri);
+    expect(result.fileName).toBe(base);
+    expect(downloadStorage.findFile).toHaveBeenCalledWith("Proj A", base);
+    expect(state.writes).toHaveLength(0);
     expect(state.overwrites).toHaveLength(0);
+    expect(getBytes("Proj A", base)).toBe("OLD_BYTES");
   });
 
   it("TEST 3 — byte content of the pre-existing photo is preserved byte-for-byte", async () => {
@@ -114,28 +113,27 @@ describe("writePhotoUnique", () => {
     const legacyBytes = "LEGACY_PHOTO_BYTES_0011223344";
     seed("Proj A", base, legacyBytes);
 
-    await writePhotoUnique("Proj A", base, "NEW_PHOTO_BYTES");
+    const result = await writePhotoUnique("Proj A", base, "NEW_PHOTO_BYTES");
 
+    expect(result.fileName).toBe(base);
     expect(getBytes("Proj A", base)).toBe(legacyBytes);
-    const newName = state.writes[0].name;
-    expect(getBytes("Proj A", newName)).toBe("NEW_PHOTO_BYTES");
+    expect(state.writes).toHaveLength(0);
     expect(state.overwrites).toHaveLength(0);
   });
 
-  it("TEST 4 — rapid captures at the same second all get unique file names and uris", async () => {
-    const base = "North_BlockA_P001_14AUG2026_112948.jpg";
+  it("TEST 4 — same final name always resolves to the same uri; distinct names write distinct files", async () => {
+    const baseA = "North_BlockA_P001_14AUG2026_112948_abc123.jpg";
+    const baseB = "North_BlockA_P001_14AUG2026_112948_xyz789.jpg";
 
-    const a = await writePhotoUnique("Proj A", base, "B1");
-    const b = await writePhotoUnique("Proj A", base, "B2");
-    const c = await writePhotoUnique("Proj A", base, "B3");
+    const first = await writePhotoUnique("Proj A", baseA, "B1");
+    const retried = await writePhotoUnique("Proj A", baseA, "B1");
+    const other = await writePhotoUnique("Proj A", baseB, "B2");
 
-    const names = [a.fileName, b.fileName, c.fileName];
-    expect(new Set(names).size).toBe(3);
-    expect(new Set([a.contentUri, b.contentUri, c.contentUri]).size).toBe(3);
-    expect(names[0]).toBe(base);
-    expect(names[1]).toMatch(/^North_BlockA_P001_14AUG2026_112948_[a-z0-9]{6}\.jpg$/);
-    expect(names[2]).toMatch(/^North_BlockA_P001_14AUG2026_112948_[a-z0-9]{6}\.jpg$/);
-    expect(state.writes).toHaveLength(3);
+    expect(retried.contentUri).toBe(first.contentUri);
+    expect(retried.fileName).toBe(baseA);
+    expect(other.contentUri).not.toBe(first.contentUri);
+    expect(new Set([first.contentUri, retried.contentUri, other.contentUri]).size).toBe(2);
+    expect(state.writes).toHaveLength(2);
     expect(state.overwrites).toHaveLength(0);
   });
 
@@ -150,33 +148,30 @@ describe("writePhotoUnique", () => {
     expect(state.overwrites).toHaveLength(0);
   });
 
-  it("TEST 6 — repeated collision is retried (bounded) until a free name is found", async () => {
+  it("TEST 6 — a blocked/found result on the first call is reused (no retry loop, no duplicate write)", async () => {
     const base = "photo.jpg";
     seed("Proj A", base, "OLD");
     state.blockFinds = 2;
 
     const result = await writePhotoUnique("Proj A", base, "NEW");
 
-    expect(downloadStorage.findFile).toHaveBeenCalledTimes(3);
-    expect(state.writes).toHaveLength(1);
+    expect(downloadStorage.findFile).toHaveBeenCalledTimes(1);
+    expect(state.writes).toHaveLength(0);
     expect(state.overwrites).toHaveLength(0);
-    expect(result.fileName).not.toBe(base);
-    expect(result.fileName).toMatch(/^photo_[a-z0-9]{6}\.jpg$/);
+    expect(result.fileName).toBe(base);
     expect(getBytes("Proj A", base)).toBe("OLD");
   });
 
-  it("TEST 7 — collision exhaustion fails clearly, writes nothing, leaves existing files alone", async () => {
+  it("TEST 7 — reuse is one-look-up: no suffix probing or exhaustion path remains", async () => {
     const base = "photo.jpg";
     seed("Proj A", base, "OLD");
-    state.blockFinds = Number.MAX_SAFE_INTEGER;
 
-    await expect(writePhotoUnique("Proj A", base, "NEW")).rejects.toThrow(
-      /Cannot allocate a unique photo filename after 5 attempts/
-    );
+    const result = await writePhotoUnique("Proj A", base, "NEW");
 
-    expect(downloadStorage.findFile).toHaveBeenCalledTimes(MAX_PHOTO_WRITE_ATTEMPTS);
+    expect(downloadStorage.findFile).toHaveBeenCalledTimes(1);
     expect(state.writes).toHaveLength(0);
     expect(state.overwrites).toHaveLength(0);
+    expect(result.contentUri).toMatch(/^content:\/\/media/);
     expect(getBytes("Proj A", base)).toBe("OLD");
     expect(state.rows.size).toBe(1);
   });
@@ -199,16 +194,16 @@ describe("writePhotoUnique", () => {
   });
 
   it("TEST 9 — a write failure propagates and leaves no new file and no partial entry", async () => {
-    seed("Proj A", "photo.jpg", "OLD");
     state.failNextWrite = true;
 
     await expect(writePhotoUnique("Proj A", "photo.jpg", "NEW")).rejects.toThrow(
       "E_IO_FAILED"
     );
 
+    expect(downloadStorage.findFile).toHaveBeenCalledWith("Proj A", "photo.jpg");
     expect(state.writes).toHaveLength(0);
-    expect(state.rows.size).toBe(1);
-    expect(getBytes("Proj A", "photo.jpg")).toBe("OLD");
+    expect(state.rows.size).toBe(0);
+    expect(getBytes("Proj A", "photo.jpg")).toBeUndefined();
   });
 
   it("TEST 10 — extension handling preserves non-jpg suffixes and supports no-extension names", () => {
@@ -219,14 +214,14 @@ describe("writePhotoUnique", () => {
     expect(withUniquePhotoSuffix("photo.tar.gz", "a1b2c3")).toBe("photo.tar_a1b2c3.gz");
   });
 
-  it("TEST 10 — non-jpg collision is resolved while preserving the extension", async () => {
+  it("TEST 10 — non-jpg collision reuses the existing file while preserving the extension", async () => {
     seed("Proj A", "photo.png", "OLD");
 
     const result = await writePhotoUnique("Proj A", "photo.png", "NEW");
 
-    expect(result.fileName).toMatch(/^photo_[a-z0-9]{6}\.png$/);
-    expect(result.fileName).not.toBe("photo.png");
+    expect(result.fileName).toBe("photo.png");
     expect(getBytes("Proj A", "photo.png")).toBe("OLD");
+    expect(state.writes).toHaveLength(0);
     expect(state.overwrites).toHaveLength(0);
   });
 });

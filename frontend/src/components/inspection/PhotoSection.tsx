@@ -19,6 +19,11 @@ import { Photo } from "@/src/models/Photo";
 import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import { deletePhoto as safDelete } from "@/src/utils/storageManager";
+import { reconcileProjectPhotos } from "@/src/database/services/PhotoReconciliationService";
+import { composeWatermarkLines } from "@/src/utils/watermarkLayout";
+import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
+import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
+import { usePhotoStates } from "@/src/context/PhotoStatesContext";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "./useWatermarkProcessor";
 import PhotoCard from "./PhotoCard";
@@ -34,6 +39,8 @@ interface Props {
 
 export default function PhotoSection({ inspectionId, locked = false }: Props) {
   const { project, poleId: contextPoleId } = useInspection();
+  const { settings } = useWatermarkSettings();
+  const { setPhotoStates } = usePhotoStates();
   const router = useRouter();
 
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -57,15 +64,35 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
     }
   }
 
+  const seedStatesFromDb = useCallback((data: Photo[]) => {
+    setPhotoStates(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const photo of data) {
+        const id = photo.PhotoID;
+        if (id == null || next[id] !== undefined) continue;
+        next[id] = photo.ProcessingStatus === "completed" ? "completed" : "failed";
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [setPhotoStates]);
+
   const loadPhotos = useCallback(async () => {
     try {
       setLoading(true);
+      if (project) {
+        await reconcileProjectPhotos(project).catch((error) => {
+          logger.warn("[PhotoSection] Reconciliation failed:", error);
+        });
+      }
       const data = await PhotoRepository.getByInspection(inspectionId);
       setPhotos(data);
+      seedStatesFromDb(data);
     } finally {
       setLoading(false);
     }
-  }, [inspectionId]);
+  }, [inspectionId, project, seedStatesFromDb]);
 
   useFocusEffect(
     useCallback(() => {
@@ -79,7 +106,26 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
     handleWebViewMessage,
     clearWatermarkState,
     retryWatermark,
+    enqueueWatermark,
   } = useWatermarkProcessor({ project, onPhotosUpdated: loadPhotos });
+
+  const handleRetry = useCallback((photoId: number) => {
+    if (retryWatermark(photoId)) return;
+    const photo = photos.find((p) => p.PhotoID === photoId);
+    if (!photo || !project) return;
+    const lines = composeWatermarkLines({
+      siteId: contextPoleId || "",
+      district: project.DistrictName || "",
+      block,
+      timestampIso: photo.CapturedAt || "",
+      latitude: photo.Latitude,
+      longitude: photo.Longitude,
+      accuracyM: null,
+      addressLines: [],
+      settings,
+    });
+    enqueueWatermark(photoId, photo.FilePath, photo.FileName, lines, toWatermarkStyleConfig(settings));
+  }, [block, contextPoleId, project, settings, photos, retryWatermark, enqueueWatermark]);
 
   const handleCapture = useCallback(() => {
     if (locked) {
@@ -183,7 +229,7 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
           state={watermarkState[photo.PhotoID!]}
           onPreview={setPreviewPhoto}
           onDelete={deletePhoto}
-          onRetry={retryWatermark}
+          onRetry={handleRetry}
         />
       ))}
     </View>

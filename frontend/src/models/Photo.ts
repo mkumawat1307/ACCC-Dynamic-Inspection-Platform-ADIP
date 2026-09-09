@@ -19,5 +19,7 @@ export interface Photo {
 
   StoragePath?: string;
 
+  ProcessingStatus?: string;
+
   CreatedAt?: string;
 }

@@ -144,4 +144,119 @@ describe("PhotoRepository", () => {
       await dbModule.clearActiveProject();
     });
   });
+
+  describe("PhotoRepository processing status", () => {
+    it("creates a photo with ProcessingStatus captured", async () => {
+      const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+      await dbModule.setActiveProject(PROJECT);
+      const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
+
+      const id = await PhotoRepository.create({
+        InspectionID: 1,
+        PhotoType: "Pole",
+        FileName: "pole.jpg",
+        FilePath: "file:///tmp/pole.jpg",
+        Latitude: null,
+        Longitude: null,
+        CapturedAt: null,
+        Remarks: null,
+      });
+      const created = await PhotoRepository.getById(id);
+      expect(created?.ProcessingStatus).toBe("captured");
+
+      await dbModule.clearActiveProject();
+    });
+
+    it("setProcessingStatus updates the status of a photo", async () => {
+      const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+      await dbModule.setActiveProject(PROJECT);
+      const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
+
+      const id = await PhotoRepository.create({
+        InspectionID: 1,
+        PhotoType: "Pole",
+        FileName: "pole.jpg",
+        FilePath: "file:///tmp/pole.jpg",
+        Latitude: null,
+        Longitude: null,
+        CapturedAt: null,
+        Remarks: null,
+      });
+
+      await PhotoRepository.setProcessingStatus(id, "failed");
+      expect((await PhotoRepository.getById(id))?.ProcessingStatus).toBe("failed");
+
+      await PhotoRepository.setProcessingStatus(id, "completed");
+      expect((await PhotoRepository.getById(id))?.ProcessingStatus).toBe("completed");
+
+      await dbModule.clearActiveProject();
+    });
+
+    it("getPhotosNeedingReconciliation queries both status and path conditions", async () => {
+      const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+      await dbModule.setActiveProject(PROJECT);
+      const db = await dbModule.getDatabase();
+      const getAllSpy = jest.spyOn(db, "getAllAsync");
+
+      const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
+      await PhotoRepository.getPhotosNeedingReconciliation();
+
+      const sql = getAllSpy.mock.calls[0][0] as string;
+      expect(sql).toContain("ProcessingStatus != 'completed'");
+      expect(sql).toContain("FilePath NOT LIKE 'content://%'");
+
+      getAllSpy.mockRestore();
+      await dbModule.clearActiveProject();
+    });
+
+    it("getPhotosNeedingReconciliation picks the right rows on real SQLite", async () => {
+      const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+      await dbModule.setActiveProject(PROJECT);
+      const db = await dbModule.getDatabase();
+      const getAllSpy = jest.spyOn(db, "getAllAsync");
+
+      const PhotoRepository = require("@/src/database/repositories/PhotoRepository").default;
+      await PhotoRepository.getPhotosNeedingReconciliation();
+      const sql = getAllSpy.mock.calls[0][0] as string;
+      getAllSpy.mockRestore();
+
+      const { DatabaseSync } = require("node:sqlite");
+      const real = new DatabaseSync(":memory:");
+      real.exec(`
+        CREATE TABLE Photos (
+          PhotoID INTEGER PRIMARY KEY AUTOINCREMENT,
+          InspectionID INTEGER NOT NULL,
+          PhotoType TEXT,
+          FileName TEXT NOT NULL,
+          FilePath TEXT NOT NULL,
+          Latitude REAL,
+          Longitude REAL,
+          CapturedAt TEXT,
+          Remarks TEXT,
+          StoragePath TEXT,
+          ProcessingStatus TEXT NOT NULL DEFAULT 'completed',
+          CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      const insert = real.prepare(
+        `INSERT INTO Photos (InspectionID, PhotoType, FileName, FilePath, ProcessingStatus)
+         VALUES (?, ?, ?, ?, ?)`
+      );
+      insert.run(1, "Pole", "a.jpg", "content://media/x/a.jpg", "captured");
+      insert.run(1, "Pole", "b.jpg", "content://media/x/b.jpg", "completed");
+      insert.run(1, "Pole", "c.jpg", "file:///tmp/c.jpg", "failed");
+      insert.run(1, "Pole", "d.jpg", "file:///tmp/d.jpg", "completed");
+      insert.run(1, "Pole", "e.jpg", "content://media/x/e.jpg", "captured");
+
+      const selected = real
+        .prepare(sql)
+        .all() as { FileName: string }[];
+      expect(selected.map((r) => r.FileName).sort()).toEqual(
+        ["a.jpg", "c.jpg", "d.jpg", "e.jpg"]
+      );
+      real.close();
+
+      await dbModule.clearActiveProject();
+    });
+  });
 });

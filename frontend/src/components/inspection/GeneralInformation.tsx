@@ -13,6 +13,7 @@ import { InspectionRepository } from "@/src/database/repositories/InspectionRepo
 import { InspectionField } from "@/src/database/repositories/InspectionTypes";
 import { getCurrentLocation } from "@/src/utils/location";
 import { reverseGeocode } from "@/src/utils/geo";
+import { getTodayDateString } from "@/src/utils/date";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { PoleRenameService } from "@/src/database/repositories/PoleRenameService";
 import { cleanPoleToken, decidePoleIdChange } from "./photoUtils";
@@ -168,7 +169,7 @@ async function loadInspectionValues(
     } else {
         switch (key) {
         case "date":
-          result[key] = inspectionDate || "";
+          result[key] = inspectionDate || getTodayDateString();
           break;
         case "division":
           result[key] = project?.DivisionName || "";
@@ -248,6 +249,14 @@ async function fetchCurrentLocation() {
   } catch (error) {
     logger.error("GPS Save Error:", error);
   }
+}
+
+function isLockedField(fieldKey: string) {
+  return (
+    fieldKey === "date" ||
+    fieldKey === "division" ||
+    fieldKey === "district"
+  );
 }
 
 function isReadOnly(fieldKey: string) {
@@ -425,12 +434,13 @@ return (
           editable={
             field.FieldKey === "pole_id"
               ? true
-              : isReadOnly(field.FieldKey)
+              : isLockedField(field.FieldKey) || isReadOnly(field.FieldKey)
                 ? false
                 : formUnlocked
           }
           showLockedMessage={
             !formUnlocked &&
+            !isLockedField(field.FieldKey) &&
             !isReadOnly(field.FieldKey) &&
             field.FieldKey !== "pole_id"
           }

@@ -8,4 +8,10 @@ describe("photos.table", () => {
   it("keeps StoragePath nullable (no NOT NULL constraint)", () => {
     expect(createPhotosTable).toMatch(/StoragePath TEXT,?\s*$/m);
   });
+
+  it("includes the ProcessingStatus column defaulting to completed", () => {
+    expect(createPhotosTable).toContain(
+      "ProcessingStatus TEXT NOT NULL DEFAULT 'completed'"
+    );
+  });
 });

@@ -15,7 +15,6 @@ import { useInspection } from "@/src/context/InspectionContext";
 import { usePhotoStates } from "@/src/context/PhotoStatesContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import InspectionValueRepository from "@/src/database/repositories/InspectionValueRepository";
 import { Photo } from "@/src/models/Photo";
 import { generateFileName } from "@/src/components/inspection/photoUtils";
 import { useGpsTracker } from "@/src/components/camera/useGpsTracker";
@@ -24,6 +23,7 @@ import { useCaptureFlow } from "@/src/components/camera/useCaptureFlow";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { useAddressLookup } from "@/src/components/camera/useAddressLookup";
+import { saveLocationAddress } from "@/src/components/camera/saveLocationAddress";
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { pickExpectedPhotoSize } from "@/src/components/camera/expectedPhotoSize";
@@ -219,9 +219,6 @@ export default function CaptureScreen() {
     savedTimeoutRef.current();
   }, [flow.phase]);
 
-  useEffect(() => {
-  }, [flow.phase]);
-
   const cleanupPending = useCallback(async () => {
     const pending = flow.pending;
     if (!pending) return;
@@ -393,22 +390,9 @@ export default function CaptureScreen() {
 
       // Save full formatted address to InspectionValues (field key: "location") - fire and forget
       if (fullAddress) {
-        (async () => {
-          try {
-            const db = await (await import("@/src/database/db")).getDatabase();
-            const locationField = await db.getFirstAsync<{ FieldID: number }>(
-              `SELECT FieldID FROM InspectionFields WHERE FieldKey = ? AND IsActive = 1`,
-              ["location"]
-            );
-            if (locationField) {
-              await InspectionValueRepository.saveValue(inspectionId, locationField.FieldID, fullAddress);
-            } else {
-              logger.warn("[Capture] Location field not found in InspectionFields");
-            }
-          } catch (e) {
-            logger.warn("[Capture] Failed to save full address:", e);
-          }
-        })();
+        saveLocationAddress(inspectionId, fullAddress).catch((e) => {
+          logger.warn("[Capture] Failed to save full address:", e);
+        });
       }
     } catch (error) {
       logger.error("Capture Error:", error);

@@ -42,6 +42,17 @@ export default function ProjectDashboard() {
     );
   }, [project]);
 
+  useEffect(() => {
+    if (!dbReady || !project) return;
+    // Reconcile any photos stuck in a non-final state (crashed watermark flow or
+    // interrupted save). Runs against the now-active project DB; non-blocking.
+    import("@/src/database/services/PhotoReconciliationService")
+      .then(({ reconcileProjectPhotos }) => reconcileProjectPhotos(project))
+      .catch((e) =>
+        logger.warn("[Dashboard] photo reconciliation failed:", e)
+      );
+  }, [dbReady, project]);
+
   useFocusEffect(
     React.useCallback(() => {
       setStatReloadKey((k) => k + 1);

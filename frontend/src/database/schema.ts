@@ -404,6 +404,12 @@ export async function migrateProjectSchema(projectId: number) {
     }
 
     try {
+        await db.execAsync(`ALTER TABLE Photos ADD COLUMN ProcessingStatus TEXT NOT NULL DEFAULT 'completed';`);
+    } catch {
+        // column already exists
+    }
+
+    try {
         await db.execAsync(`ALTER TABLE DeviceFieldDefinitions ADD COLUMN Placeholder TEXT;`);
     } catch {
         // column already exists

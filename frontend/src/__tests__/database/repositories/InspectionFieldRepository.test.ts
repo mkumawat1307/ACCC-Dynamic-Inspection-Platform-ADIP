@@ -21,32 +21,107 @@ describe("InspectionFieldRepository", () => {
   });
 
   describe("getFieldOptions", () => {
-    it("returns options including IsDefault", async () => {
-      mockDb.getAllAsync.mockResolvedValue([
-        { OptionID: 1, FieldID: 1, OptionLabel: "Yes", OptionValue: "Y", DisplayOrder: 1, IsDefault: 1 },
-        { OptionID: 2, FieldID: 1, OptionLabel: "No", OptionValue: "N", DisplayOrder: 2, IsDefault: 0 },
-      ]);
+    const option = (over: Partial<{
+      OptionID: number; FieldID: number; OptionLabel: string; OptionValue: string;
+      DisplayOrder: number; IsDefault: number; IsActive?: number;
+    }>) => ({
+      OptionID: 1,
+      FieldID: 1,
+      OptionLabel: "Label",
+      OptionValue: "V",
+      DisplayOrder: 1,
+      IsDefault: 0,
+      IsActive: 1,
+      ...over,
+    });
+
+    let rows: Record<string, unknown>[];
+
+    beforeEach(() => {
+      rows = [];
+      mockDb.getAllAsync.mockImplementation((sql: string) => {
+        let result = sql.includes("IsActive = 1")
+          ? rows.filter((r) => (r.IsActive as number) !== 0)
+          : rows;
+        if (sql.includes("ORDER BY DisplayOrder")) {
+          result = [...result].sort(
+            (a, b) => (a.DisplayOrder as number) - (b.DisplayOrder as number)
+          );
+        }
+        return Promise.resolve(result);
+      });
+    });
+
+    it("returns active options preserving ordering, labels, values, and IsDefault", async () => {
+      rows = [
+        option({ OptionID: 1, OptionLabel: "No", OptionValue: "N", DisplayOrder: 2, IsDefault: 0 }),
+        option({ OptionID: 2, OptionLabel: "Yes", OptionValue: "Y", DisplayOrder: 1, IsDefault: 1 }),
+      ];
 
       const { default: InspectionFieldRepository } = require(
         "@/src/database/repositories/InspectionFieldRepository"
       );
       const options = await InspectionFieldRepository.getFieldOptions(1);
 
-      expect(options).toHaveLength(2);
-      expect(options[0].IsDefault).toBe(1);
-      expect(options[1].IsDefault).toBe(0);
+      expect(options.map((o: { OptionValue: string }) => o.OptionValue)).toEqual(["Y", "N"]);
+      expect(options.map((o: { OptionLabel: string }) => o.OptionLabel)).toEqual(["Yes", "No"]);
+      expect(options.map((o: { IsDefault: number }) => o.IsDefault)).toEqual([1, 0]);
+    });
 
-      const query = (mockDb.getAllAsync as jest.Mock).mock.calls[0][0];
-      expect(query).toContain("IsDefault");
+    it("excludes inactive options", async () => {
+      rows = [option({ OptionID: 1, OptionValue: "Old", IsActive: 0 })];
+
+      const { default: InspectionFieldRepository } = require(
+        "@/src/database/repositories/InspectionFieldRepository"
+      );
+      const options = await InspectionFieldRepository.getFieldOptions(1);
+
+      expect(options).toEqual([]);
+    });
+
+    it("returns only active options from a mixed set", async () => {
+      rows = [
+        option({ OptionID: 1, OptionValue: "Old", DisplayOrder: 1, IsActive: 0 }),
+        option({ OptionID: 2, OptionValue: "New", DisplayOrder: 2, IsActive: 1 }),
+        option({ OptionID: 3, OptionValue: "Mid", DisplayOrder: 3, IsActive: 1 }),
+      ];
+
+      const { default: InspectionFieldRepository } = require(
+        "@/src/database/repositories/InspectionFieldRepository"
+      );
+      const options = await InspectionFieldRepository.getFieldOptions(1);
+
+      expect(options.map((o: { OptionValue: string }) => o.OptionValue)).toEqual(["New", "Mid"]);
     });
 
     it("returns empty array when field has no options", async () => {
-      mockDb.getAllAsync.mockResolvedValue([]);
+      rows = [];
+
       const { default: InspectionFieldRepository } = require(
         "@/src/database/repositories/InspectionFieldRepository"
       );
       const options = await InspectionFieldRepository.getFieldOptions(999);
+
       expect(options).toEqual([]);
+    });
+
+    it("queries the field's options filtered by IsActive = 1 with the existing columns and ordering", async () => {
+      rows = [option({})];
+
+      const { default: InspectionFieldRepository } = require(
+        "@/src/database/repositories/InspectionFieldRepository"
+      );
+      await InspectionFieldRepository.getFieldOptions(7);
+
+      const [sql, params] = (mockDb.getAllAsync as jest.Mock).mock.calls[0];
+      expect(sql).toContain("FROM FieldOptions");
+      expect(sql).toContain("WHERE FieldID = ?");
+      expect(sql).toContain("AND IsActive = 1");
+      expect(sql).toContain("ORDER BY DisplayOrder");
+      expect(sql).toContain("OptionLabel");
+      expect(sql).toContain("OptionValue");
+      expect(sql).toContain("IsDefault");
+      expect(params).toEqual([7]);
     });
   });
 

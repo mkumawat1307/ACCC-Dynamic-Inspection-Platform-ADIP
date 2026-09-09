@@ -54,10 +54,11 @@ export default class PhotoRepository {
         Latitude,
         Longitude,
         CapturedAt,
-        Remarks
+        Remarks,
+        ProcessingStatus
       )
       VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?);
+      (?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       [
         photo.InspectionID,
@@ -68,6 +69,7 @@ export default class PhotoRepository {
         photo.Longitude,
         photo.CapturedAt,
         photo.Remarks,
+        "captured",
       ]
     );
 
@@ -87,6 +89,19 @@ export default class PhotoRepository {
     );
   }
 
+  static async updateFinalPath(
+    photoId: number,
+    fileName: string,
+    filePath: string,
+    storagePath: string
+  ): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(
+      `UPDATE Photos SET FileName = ?, FilePath = ?, StoragePath = ? WHERE PhotoID = ?`,
+      [fileName, filePath, storagePath, photoId]
+    );
+  }
+
   static async updateStoragePath(photoId: number, storagePath: string): Promise<void> {
     const db = await getDatabase();
     await db.runAsync(`UPDATE Photos SET StoragePath = ? WHERE PhotoID = ?`, [
@@ -100,6 +115,27 @@ export default class PhotoRepository {
     await db.runAsync(
       `UPDATE Photos SET FileName = ?, FilePath = ? WHERE PhotoID = ?`,
       [fileName, filePath, photoId]
+    );
+  }
+
+  static async setProcessingStatus(photoId: number, status: string): Promise<void> {
+    const db = await getDatabase();
+    await db.runAsync(`UPDATE Photos SET ProcessingStatus = ? WHERE PhotoID = ?`, [
+      status,
+      photoId,
+    ]);
+  }
+
+  static async getPhotosNeedingReconciliation(): Promise<Photo[]> {
+    const db = await getDatabase();
+    return await db.getAllAsync<Photo>(
+      `
+      SELECT *
+      FROM Photos
+      WHERE ProcessingStatus != 'completed'
+         OR FilePath NOT LIKE 'content://%'
+      ORDER BY PhotoID;
+      `
     );
   }
 

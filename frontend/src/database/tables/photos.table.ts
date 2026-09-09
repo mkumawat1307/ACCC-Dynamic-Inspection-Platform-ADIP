@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS Photos (
 
     StoragePath TEXT,
 
+    ProcessingStatus TEXT NOT NULL DEFAULT 'completed',
+
     CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (InspectionID)

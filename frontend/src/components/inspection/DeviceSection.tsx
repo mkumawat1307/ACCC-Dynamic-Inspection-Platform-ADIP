@@ -8,6 +8,8 @@ import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositori
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
 import { sanitizeNumberInput } from "@/src/utils/fieldInput";
 import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
+import { getActiveProjectPath } from "@/src/database/db";
+import { logger } from "@/src/utils/logger";
 import { TOUCH_TARGETS } from "@/src/utils/touchTargets";
 import DropdownField from "./DropdownField";
 
@@ -18,6 +20,18 @@ interface Props {
   templateId?: number;
   locked?: boolean;
   existing?: boolean;
+}
+
+function deviceDbStillValid(expectedDbPath?: string | null): boolean {
+  const activeDbPath = getActiveProjectPath();
+  if (activeDbPath === null || activeDbPath !== expectedDbPath) {
+    logger.warn("[DeviceSection] Project DB changed; skipping device record write", {
+      active: activeDbPath,
+      expected: expectedDbPath,
+    });
+    return false;
+  }
+  return true;
 }
 
 interface DropdownItem {
@@ -42,6 +56,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
 
   useEffect(() => {
     (async () => {
+      const expectedDbPath = getActiveProjectPath();
       setLoading(true);
       persistedIds.current = new Map();
       const fieldDefs = await DeviceFieldDefinitionsRepository.getByDeviceType(deviceType, templateId, existing);
@@ -92,6 +107,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       setOpts(loaded);
 
       if (list.length < count) {
+        if (!deviceDbStillValid(expectedDbPath)) return;
         for (let i = list.length + 1; i <= count; i++) {
           const emptyData: Record<string, string | null> = {};
           fieldDefs.forEach((f) => {
@@ -133,7 +149,10 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       setRecords((prev) => (prev.length > count ? prev.slice(0, count) : prev));
 
       countOpsRef.current = countOpsRef.current.then(async () => {
+        const expectedDbPath = getActiveProjectPath();
+        if (!deviceDbStillValid(expectedDbPath)) return;
         await DeviceRecordsRepository.flushPendingDeviceSaves();
+        if (!deviceDbStillValid(expectedDbPath)) return;
         await DeviceRecordsRepository.deactivateBeyond(inspectionId, deviceType, count);
       });
 
@@ -143,14 +162,20 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     if (count > records.length) {
       const growCount = count;
       countOpsRef.current = countOpsRef.current.then(async () => {
+        const expectedDbPath = getActiveProjectPath();
+        if (!deviceDbStillValid(expectedDbPath)) return undefined;
         await DeviceRecordsRepository.flushPendingDeviceSaves();
+        if (!deviceDbStillValid(expectedDbPath)) return undefined;
         const restored = await DeviceRecordsRepository.restorePendingDeactivatedRecords(
           inspectionId, deviceType, growCount,
         );
         return restored;
       }).then(async (restored) => {
+        const expectedDbPath = getActiveProjectPath();
+        if (!deviceDbStillValid(expectedDbPath) || !restored) return;
         const target = countRef.current;
         if (target < growCount && restored.length > 0) {
+          if (!deviceDbStillValid(expectedDbPath)) return;
           await DeviceRecordsRepository.deactivateBeyond(inspectionId, deviceType, target);
         }
         const kept = restored.filter((r) => r.DeviceNo <= target);
@@ -159,6 +184,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         }
 
         const activeRecords = await DeviceRecordsRepository.getByInspection(inspectionId, deviceType);
+        if (!deviceDbStillValid(expectedDbPath)) return;
         const activeNos = new Set(activeRecords.map((r) => r.DeviceNo));
         for (const r of activeRecords) {
           if (r.RecordID) persistedIds.current.set(r.DeviceNo, r.RecordID);
@@ -186,6 +212,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
               DisplayOrder: i,
               IsActive: 1,
             };
+            if (!deviceDbStillValid(expectedDbPath)) return;
             const newId = await DeviceRecordsRepository.save(newRec);
             newRec.RecordID = newId;
             persistedIds.current.set(i, newId);

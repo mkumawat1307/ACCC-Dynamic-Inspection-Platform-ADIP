@@ -4,8 +4,9 @@ import { logger } from "@/src/utils/logger";
 import * as FileSystem from "expo-file-system/legacy";
 import { WebView } from "react-native-webview";
 import { Project } from "@/src/models/Project";
+import { getActiveProjectPath } from "@/src/database/db";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import { writePhotoUnique, buildPhotoFolderDisplayPath } from "@/src/utils/storageManager";
+import { writePhotoUnique, buildPhotoFolderDisplayPath, deletePhoto } from "@/src/utils/storageManager";
 import { photoStorageLabelForProject } from "@/src/utils/folderNaming";
 import {
   buildRenderWatermarkScript,
@@ -56,6 +57,8 @@ interface WatermarkJob {
   previewWidth?: number;
   previewHeight?: number;
   layout?: WatermarkOverlayLayout;
+  projectDbPath?: string;
+  writeLabel?: string;
 }
 
 interface JsPerf {
@@ -97,6 +100,8 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const readyInstanceRef = useRef<string | null>(null);
   const warmupDoneRef = useRef(false);
   const warmupStartRef = useRef(0);
+  const cancelledRef = useRef<Set<number>>(new Set());
+  const finalizingRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     setWatermarkState(prev => {
@@ -119,6 +124,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   }, []);
 
   function clearWatermarkState(photoId: number) {
+    cancelledRef.current.add(photoId);
     setWatermarkState(prev => {
       const next = { ...prev };
       delete next[photoId];
@@ -148,25 +154,49 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     uiPerfSetProbe("setTimeoutActive", true);
   }
 
-  function retryWatermark(photoId: number) {
+function retryWatermark(photoId: number): boolean {
+    cancelledRef.current.delete(photoId);
     const job = failedJobsRef.current.get(photoId);
-    if (!job) return;
+    if (!job) return false;
     failedJobsRef.current.delete(photoId);
     const dims =
       job.width && job.height ? { width: job.width, height: job.height } : undefined;
     enqueueWatermark(job.photoId, job.inputPath, job.fileName, job.lines, job.style, undefined, dims);
-  }
+    persistStatus(job.photoId, "captured", job.projectDbPath);
+    return true;
+}
+
+function persistStatus(photoId: number, status: string, expectedDbPath?: string) {
+    if (expectedDbPath && getActiveProjectPath() !== expectedDbPath) {
+      logger.warn("[Watermark] Project switched before status persist; skipping", {
+        photoId,
+        status,
+        active: getActiveProjectPath(),
+        expected: expectedDbPath,
+      });
+      return;
+    }
+    PhotoRepository.setProcessingStatus(photoId, status).catch((error) => {
+      logger.warn("[Watermark] Failed to persist photo status:", photoId, status, error);
+    });
+}
 
 function handleJobFailure(job: WatermarkJob) {
     clearWatchdog();
+    if (cancelledRef.current.has(job.photoId)) return;
+    if (finalizingRef.current.has(job.photoId)) return;
+    const idx = queueRef.current.findIndex(j => j.photoId === job.photoId);
+    if (idx < 0) return;
     if (job.retries < 1) {
       const retry = { ...job, retries: job.retries + 1 };
-      queueRef.current[0] = retry;
+      queueRef.current[idx] = retry;
       setWatermarkState(prev => ({ ...prev, [job.photoId]: "pending" }));
+      persistStatus(job.photoId, "captured", job.projectDbPath);
     } else {
-      queueRef.current.shift();
+      queueRef.current.splice(idx, 1);
       failedJobsRef.current.set(job.photoId, job);
       setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
+      persistStatus(job.photoId, "failed", job.projectDbPath);
     }
     if (perfRef.current) perfReport(perfRef.current, "watermark-failed");
     perfRef.current = null;
@@ -318,10 +348,13 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
       return;
     }
 
+    const job = queueRef.current[0];
+    if (finalizingRef.current.has(job.photoId)) return;
+
     processingRef.current = true;
 
-    const job = queueRef.current[0];
     setWatermarkState(prev => ({ ...prev, [job.photoId]: "processing" }));
+    persistStatus(job.photoId, "processing", job.projectDbPath);
     uiPerfStage("overlayStart", `photo=${job.photoId} stage=${job.stage}`);
 
     const perf = perfStart(job.photoId);
@@ -338,36 +371,101 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
   }, []);
 
   const handleRenderProcessGone = useCallback((_event: any) => {
+    logger.warn("[Watermark] WebView render process gone — attempting recovery");
+    clearWatchdog();
+    readyRef.current = false;
+    setWebViewReady(false);
+    processingRef.current = false;
+    warmupDoneRef.current = false;
+    const head = queueRef.current[0];
+    if (head && !cancelledRef.current.has(head.photoId) && !finalizingRef.current.has(head.photoId)) {
+      if (head.retries < 1) {
+        const retry = { ...head, retries: head.retries + 1 };
+        const idx = queueRef.current.findIndex(j => j.photoId === head.photoId);
+        if (idx >= 0) {
+          queueRef.current[idx] = retry;
+          setWatermarkState(prev => ({ ...prev, [head.photoId]: "pending" }));
+          persistStatus(head.photoId, "captured", head.projectDbPath);
+        }
+      } else {
+        handleJobFailure(head);
+      }
+    }
+    try {
+      webViewRef.current?.reload?.();
+    } catch {}
   }, []);
 
 function saveAndComplete(job: WatermarkJob, base64: string) {
     return (async () => {
-      clearWatchdog();
-      const label = project ? photoStorageLabelForProject(project) : "";
-      uiPerfStage("overlayDone", `photo=${job.photoId}`);
+      if (cancelledRef.current.has(job.photoId)) return;
+      if (finalizingRef.current.has(job.photoId)) return;
+      finalizingRef.current.add(job.photoId);
+      try {
+        clearWatchdog();
 
-      uiPerfStage("safWriteStart", `photo=${job.photoId}`);
-      const { contentUri, fileName: storedFileName } = await writePhotoUnique(
-        label,
-        job.fileName,
-        base64
-      );
-      uiPerfStage("safWriteDone", `photo=${job.photoId}`);
-      if (perfRef.current) perfStage(perfRef.current, "safWrite");
+        const activeDbPath = getActiveProjectPath();
+        if (job.projectDbPath && activeDbPath !== job.projectDbPath) {
+          logger.warn("[Watermark] Project switched before save; skipping watermark write", {
+            photoId: job.photoId,
+            active: activeDbPath,
+            expected: job.projectDbPath,
+          });
+          queueRef.current = queueRef.current.filter(j => j.photoId !== job.photoId);
+          setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
+          persistStatus(job.photoId, "captured", job.projectDbPath);
+          processingRef.current = false;
+          processNext();
+          return;
+        }
 
-      const displayPath = buildPhotoFolderDisplayPath(label);
-      if (storedFileName !== job.fileName) {
-        await PhotoRepository.updateFileNameAndPath(job.photoId, storedFileName, contentUri);
-        await PhotoRepository.updateStoragePath(job.photoId, displayPath);
-      } else {
-        await PhotoRepository.updateFilePathAndStoragePath(job.photoId, contentUri, displayPath);
+        const label = job.writeLabel ?? (project ? photoStorageLabelForProject(project) : "");
+        uiPerfStage("overlayDone", `photo=${job.photoId}`);
+
+        uiPerfStage("safWriteStart", `photo=${job.photoId}`);
+        persistStatus(job.photoId, "saving", job.projectDbPath);
+        const { contentUri, fileName: storedFileName } = await writePhotoUnique(
+          label,
+          job.fileName,
+          base64
+        );
+        uiPerfStage("safWriteDone", `photo=${job.photoId}`);
+        if (perfRef.current) perfStage(perfRef.current, "safWrite");
+
+        if (cancelledRef.current.has(job.photoId)) {
+          try {
+            await deletePhoto(contentUri);
+          } catch {}
+          return;
+        }
+
+        const displayPath = buildPhotoFolderDisplayPath(label);
+        const activeDbPathAfterWrite = getActiveProjectPath();
+        if (job.projectDbPath && activeDbPathAfterWrite !== job.projectDbPath) {
+          logger.warn("[Watermark] Project switched mid-save; skipping DB finalize", {
+            photoId: job.photoId,
+            active: activeDbPathAfterWrite,
+            expected: job.projectDbPath,
+          });
+          queueRef.current = queueRef.current.filter(j => j.photoId !== job.photoId);
+          setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
+          persistStatus(job.photoId, "captured", job.projectDbPath);
+          processingRef.current = false;
+          processNext();
+          return;
+        }
+        await PhotoRepository.updateFinalPath(job.photoId, storedFileName, contentUri, displayPath);
+        if (perfRef.current) perfStage(perfRef.current, "sqliteUpdate");
+        persistStatus(job.photoId, "completed", job.projectDbPath);
+
+        onPhotosUpdated();
+        await handleJobComplete(job.photoId);
+      } finally {
+        finalizingRef.current.delete(job.photoId);
       }
-      if (perfRef.current) perfStage(perfRef.current, "sqliteUpdate");
-
-      onPhotosUpdated();
-      await handleJobComplete(job.photoId);
-    })().catch(() => {
+    })().catch((error) => {
       if (perfRef.current) perfStage(perfRef.current, "saveError");
+      logger.warn("[Watermark] saveAndComplete threw:", error);
       handleJobFailure(job);
     });
   }
@@ -579,6 +677,8 @@ function enqueueWatermark(
       startedAtMs: perfNow(),
       width: size?.width,
       height: size?.height,
+      projectDbPath: project?.DBPath ?? undefined,
+      writeLabel: project ? photoStorageLabelForProject(project) : "",
     };
     queueRef.current.push(job);
     setWatermarkState(prev => ({ ...prev, [photoId]: "pending" }));

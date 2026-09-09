@@ -62,20 +62,12 @@ export async function writePhotoUnique(
   fileName: string,
   base64data: string
 ): Promise<{ contentUri: string; fileName: string }> {
-  let candidate = fileName;
-  for (let attempt = 0; attempt < MAX_PHOTO_WRITE_ATTEMPTS; attempt++) {
-    if (attempt > 0) {
-      candidate = withUniquePhotoSuffix(fileName);
-    }
-    const existing = await downloadStorage.findFile(projectLabel, candidate);
-    if (existing == null) {
-      const contentUri = await writePhoto(projectLabel, candidate, base64data);
-      return { contentUri, fileName: candidate };
-    }
+  const existing = await downloadStorage.findFile(projectLabel, fileName);
+  if (existing != null) {
+    return { contentUri: existing, fileName };
   }
-  throw new Error(
-    `[Storage] Cannot allocate a unique photo filename after ${MAX_PHOTO_WRITE_ATTEMPTS} attempts: '${fileName}'`
-  );
+  const contentUri = await writePhoto(projectLabel, fileName, base64data);
+  return { contentUri, fileName };
 }
 
 export async function deletePhoto(fileUri: string): Promise<void> {

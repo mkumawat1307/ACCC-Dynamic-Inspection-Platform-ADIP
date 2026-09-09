@@ -118,6 +118,7 @@ export default class InspectionFieldRepository {
       SELECT OptionID, FieldID, OptionLabel, OptionValue, DisplayOrder, IsDefault
       FROM FieldOptions
       WHERE FieldID = ?
+        AND IsActive = 1
       ORDER BY DisplayOrder;
       `,
       [fieldId]

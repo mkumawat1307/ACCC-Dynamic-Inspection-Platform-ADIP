@@ -5,6 +5,10 @@ import DeviceFieldDefinitionsRepository from "@/src/database/repositories/Device
 import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositories/DeviceRecordsRepository";
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
 
+jest.mock("@/src/database/db", () => ({
+  getActiveProjectPath: jest.fn(() => "/mock/projects/active/inspection.db"),
+}));
+
 const numberField = {
   FieldDefID: 1,
   TemplateID: 1,
