@@ -167,7 +167,14 @@ export default function NewInspectionScreen({
   // Default Selection receive a value; existing saved values always win. Runs
   // once per inspection id (idempotent). See InspectionFieldRepository.
   useEffect(() => {
-    if (inspectionId == null) return;
+    // Only apply the configured defaults for the inspection THIS screen owns.
+    // During the load window the context inspectionId can still hold the
+    // previously-opened inspection; applying defaults to it (existing=false)
+    // would leak the template's default selections into an unrelated record.
+    const ownedInspectionId = routeInspectionId
+      ? Number(routeInspectionId)
+      : createdDraftIdRef.current;
+    if (inspectionId == null || inspectionId !== ownedInspectionId) return;
     if (hydratedInspectionIdRef.current === inspectionId) return;
     hydratedInspectionIdRef.current = inspectionId;
     InspectionFieldRepository.applyDefaultSelections(
@@ -197,7 +204,13 @@ export default function NewInspectionScreen({
   // keep their current autosave behaviour.
   useEffect(() => {
     const isExisting = Boolean(routeInspectionId);
-    if (isExisting && inspectionId != null) {
+    // Bind the edit session only to the inspection this screen is actually
+    // editing — never to a stale context inspectionId during the load window.
+    if (
+      isExisting &&
+      inspectionId != null &&
+      inspectionId === Number(routeInspectionId)
+    ) {
       InspectionEditSession.activate(inspectionId);
     } else {
       InspectionEditSession.discard();
@@ -651,6 +664,7 @@ return (
       <GeneralInformation
         ensureDraft={createDraftInspection}
         releaseAbandonedDraft={releaseAbandonedDraft}
+        existing={Boolean(routeInspectionId)}
       />
     ) : inspectionId ? (
       <SectionRenderer

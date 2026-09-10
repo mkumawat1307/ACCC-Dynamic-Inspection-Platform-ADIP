@@ -97,10 +97,11 @@ export default function SectionRenderer({
           )?.OptionValue;
         }
 
-        // Editing an existing inspection: the persisted InspectionValue is
-        // authoritative. A missing value stays empty — the field default must
-        // never be injected into an existing inspection just because a default
-        // is configured now, and no InspectionValue is created on open.
+        // Editing an existing inspection: only the persisted InspectionValue is
+        // authoritative and displayed. When there is no saved value the field
+        // renders empty — the current configured default (IsDefault option,
+        // then field DefaultValue) is never shown, staged, or written, so
+        // opening an existing inspection leaves the database untouched.
         if (existing) {
           valueMap[field.FieldID] = saved ?? "";
           continue;

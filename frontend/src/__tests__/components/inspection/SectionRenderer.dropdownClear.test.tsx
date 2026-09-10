@@ -185,7 +185,7 @@ describe("SectionRenderer dropdown clear selection", () => {
     ]);
   });
 
-  it("EXISTING: clearing a saved dropdown persists empty and reopening stays empty (no default re-injection)", async () => {
+  it("EXISTING: clearing a saved dropdown persists empty; reopen stays empty (current default NOT shown)", async () => {
     fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
     fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
     valueRepo.getValuesByInspection.mockResolvedValue([savedValue(10, "Overhead")]);

@@ -5,6 +5,7 @@ import DeviceSection from "@/src/components/inspection/DeviceSection";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
 import DeviceFieldDefinitionsRepository from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
+import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { setActiveProject, getDatabase } from "@/src/database/db";
 
 jest.mock("expo-sqlite");
@@ -423,5 +424,346 @@ describe("DeviceSection default persistence — Phase 7A regression (10 tests)",
     expect(rows99.length).toBe(1);
     expect(JSON.parse(rows42[0].DeviceData!).CameraType).toBe("PTZ");
     expect(JSON.parse(rows99[0].DeviceData!).CameraType).toBe("PTZ");
+  });
+});
+
+describe("DeviceSection existing inspection — defaults are NEVER shown or staged (saved-only display)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    DeviceRecordsRepository.cancelPendingSaves();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    DeviceRecordsRepository.cancelPendingSaves();
+    jest.useRealTimers();
+  });
+
+  async function seedCameraRecord(
+    db: SQLiteDatabase,
+    inspectionId: number,
+    deviceNo: number,
+    data: Record<string, string | null>
+  ): Promise<void> {
+    await DeviceRecordsRepository.save({
+      InspectionID: inspectionId,
+      DeviceType: "Camera",
+      DeviceNo: deviceNo,
+      DeviceData: JSON.stringify(data),
+      DisplayOrder: deviceNo,
+      IsActive: 1,
+    });
+    expect((await queryDeviceRows(db, "Camera")).length).toBe(deviceNo);
+  }
+
+  async function setup(db?: SQLiteDatabase) {
+    fieldDefsRepo.getByDeviceType.mockImplementation(async (_dt: string) => {
+      if (_dt === "Battery") return [batteryVoltageField, batteryDropdownField];
+      return [numberField, dropdownField];
+    });
+    optionsRepo.getDropdownData.mockImplementation(async (_dt: string, fieldName: string) => {
+      if (_dt === "Camera" && fieldName === "CameraType") {
+        return [
+          { label: "PTZ", value: "PTZ", isDefault: 1 },
+          { label: "Fixed", value: "Fixed", isDefault: 0 },
+        ];
+      }
+      if (_dt === "Battery" && fieldName === "BatteryType") {
+        return [
+          { label: "Li-Ion", value: "Li-Ion", isDefault: 1 },
+          { label: "Lead-Acid", value: "Lead-Acid", isDefault: 0 },
+        ];
+      }
+      return [];
+    });
+    if (!db) {
+      await setActiveProject(uniquePath());
+      return getDatabase();
+    }
+    return db;
+  }
+
+  function findDropdowns(tree: ReturnType<typeof TestRenderer.create>) {
+    return tree.root.findAll((n) => (n as any).type === "Dropdown");
+  }
+
+  it("existing + empty dropdown field: renders EMPTY (no default shown), DB DeviceData stays null", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: null, CameraType: null });
+
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    const dropdowns = findDropdowns(tree!);
+    expect(dropdowns.length).toBe(1);
+    expect(dropdowns[0].props.value).toBeNull();
+    expect(InspectionEditSession.getStagedDeviceRecords().length).toBe(0);
+
+    const rows = await queryDeviceRows(db, "Camera");
+    expect(rows.length).toBe(1);
+    expect(JSON.parse(rows[0].DeviceData!).CameraType).toBeNull();
+    expect(JSON.parse(rows[0].DeviceData!).Voltage).toBeNull();
+  });
+
+  it("existing + saved dropdown value: saved value wins over the current default", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: "12", CameraType: "Fixed" });
+
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    const dropdowns = findDropdowns(tree!);
+    expect(dropdowns[0].props.value).toBe("Fixed");
+
+    const rows = await queryDeviceRows(db, "Camera");
+    expect(JSON.parse(rows[0].DeviceData!).CameraType).toBe("Fixed");
+    expect(JSON.parse(rows[0].DeviceData!).Voltage).toBe("12");
+  });
+
+  it("existing inspection: opening never creates device records from the count alone", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: null, CameraType: null });
+
+    await act(async () => {
+      TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={2} existing />
+      );
+    });
+
+    await act(async () => {
+      jest.runAllTimers();
+    });
+
+    const rows = await queryDeviceRows(db, "Camera");
+    expect(rows.length).toBe(1);
+    expect(JSON.parse(rows[0].DeviceData!).CameraType).toBeNull();
+  });
+
+  it("existing inspection: device defaults stay per inspection (no cross-inspection leakage)", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: null, CameraType: null });
+
+    await act(async () => {
+      TestRenderer.create(
+        <DeviceSection inspectionId={99} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    await act(async () => {
+      jest.runAllTimers();
+    });
+
+    const rows42 = await db.getAllAsync<DeviceRow>(
+      `SELECT * FROM DeviceRecords WHERE InspectionID = 42 AND DeviceType = ? AND IsActive = 1`,
+      ["Camera"]
+    );
+    const rows99 = await db.getAllAsync<DeviceRow>(
+      `SELECT * FROM DeviceRecords WHERE InspectionID = 99 AND DeviceType = ? AND IsActive = 1`,
+      ["Camera"]
+    );
+    expect(rows42.length).toBe(1);
+    expect(rows99.length).toBe(0);
+  });
+});
+
+describe("DeviceSection existing inspection — explicit user edits persist on Save, cancel discards (defaults never auto-staged)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    DeviceRecordsRepository.cancelPendingSaves();
+    InspectionEditSession.discard();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    DeviceRecordsRepository.cancelPendingSaves();
+    InspectionEditSession.discard();
+    jest.useRealTimers();
+  });
+
+  async function seedCameraRecord(
+    db: SQLiteDatabase,
+    inspectionId: number,
+    deviceNo: number,
+    data: Record<string, string | null>
+  ): Promise<void> {
+    await DeviceRecordsRepository.save({
+      InspectionID: inspectionId,
+      DeviceType: "Camera",
+      DeviceNo: deviceNo,
+      DeviceData: JSON.stringify(data),
+      DisplayOrder: deviceNo,
+      IsActive: 1,
+    });
+    expect((await queryDeviceRows(db, "Camera")).length).toBe(deviceNo);
+  }
+
+  async function setup(db?: SQLiteDatabase) {
+    fieldDefsRepo.getByDeviceType.mockImplementation(async (_dt: string) => {
+      if (_dt === "Battery") return [batteryVoltageField, batteryDropdownField];
+      return [numberField, dropdownField];
+    });
+    optionsRepo.getDropdownData.mockImplementation(async (_dt: string, fieldName: string) => {
+      if (_dt === "Camera" && fieldName === "CameraType") {
+        return [
+          { label: "PTZ", value: "PTZ", isDefault: 1 },
+          { label: "Fixed", value: "Fixed", isDefault: 0 },
+        ];
+      }
+      if (_dt === "Battery" && fieldName === "BatteryType") {
+        return [
+          { label: "Li-Ion", value: "Li-Ion", isDefault: 1 },
+          { label: "Lead-Acid", value: "Lead-Acid", isDefault: 0 },
+        ];
+      }
+      return [];
+    });
+    if (!db) {
+      await setActiveProject(uniquePath());
+      return getDatabase();
+    }
+    return db;
+  }
+
+  function findDropdowns(tree: ReturnType<typeof TestRenderer.create>) {
+    return tree.root.findAll((n) => (n as any).type === "Dropdown");
+  }
+
+  it("NULL saved + default Yes: opens EMPTY with DB null and nothing staged; explicit selection + Save persists Yes; reopen shows Yes", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: null, CameraType: null });
+
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    const dropdowns = findDropdowns(tree!);
+    expect(dropdowns.length).toBe(1);
+    expect(dropdowns[0].props.value).toBeNull();
+    expect(InspectionEditSession.getStagedDeviceRecords().length).toBe(0);
+
+    const before = await queryDeviceRows(db, "Camera");
+    expect(JSON.parse(before[0].DeviceData!).CameraType).toBeNull();
+
+    // Explicit user selection stages through the edit session
+    InspectionEditSession.activate(42);
+    await act(async () => {
+      (dropdowns[0].props as any).onChange({ label: "PTZ", value: "PTZ" });
+    });
+    const committed = await InspectionEditSession.commit();
+    expect(committed).toBe(true);
+
+    const after = await queryDeviceRows(db, "Camera");
+    expect(JSON.parse(after[0].DeviceData!).CameraType).toBe("PTZ");
+    expect(JSON.parse(after[0].DeviceData!).Voltage).toBeNull();
+
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+    const reopened = findDropdowns(tree!);
+    expect(reopened[0].props.value).toBe("PTZ");
+    expect(InspectionEditSession.getStagedDeviceRecords().length).toBe(0);
+  });
+
+  it("user selects a value then Save: DB becomes that value", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: null, CameraType: null });
+    InspectionEditSession.activate(42);
+
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    let dropdowns = findDropdowns(tree!);
+    expect(dropdowns[0].props.value).toBeNull();
+
+    await act(async () => {
+      (dropdowns[0].props as any).onChange({ label: "Fixed", value: "Fixed" });
+    });
+
+    dropdowns = findDropdowns(tree!);
+    expect(dropdowns[0].props.value).toBe("Fixed");
+
+    const committed = await InspectionEditSession.commit();
+    expect(committed).toBe(true);
+
+    const rows = await queryDeviceRows(db, "Camera");
+    expect(JSON.parse(rows[0].DeviceData!).CameraType).toBe("Fixed");
+    expect(JSON.parse(rows[0].DeviceData!).Voltage).toBeNull();
+  });
+
+  it("user selects a value then Cancels: DB stays null, reopen stays EMPTY", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: null, CameraType: null });
+    InspectionEditSession.activate(42);
+
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    let dropdowns = findDropdowns(tree!);
+    expect(dropdowns[0].props.value).toBeNull();
+
+    await act(async () => {
+      (dropdowns[0].props as any).onChange({ label: "Fixed", value: "Fixed" });
+    });
+
+    dropdowns = findDropdowns(tree!);
+    expect(dropdowns[0].props.value).toBe("Fixed");
+
+    await InspectionEditSession.discard();
+
+    let rows = await queryDeviceRows(db, "Camera");
+    expect(JSON.parse(rows[0].DeviceData!).CameraType).toBeNull();
+
+    await act(async () => {
+      TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    rows = await queryDeviceRows(db, "Camera");
+    expect(JSON.parse(rows[0].DeviceData!).CameraType).toBeNull();
+  });
+
+  it("saved No + default Yes: opens No and Save keeps No (saved value always wins)", async () => {
+    const db = await setup();
+    await seedCameraRecord(db, 42, 1, { Voltage: null, CameraType: "Fixed" });
+    InspectionEditSession.activate(42);
+
+    let tree: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} existing />
+      );
+    });
+
+    const dropdowns = findDropdowns(tree!);
+    expect(dropdowns[0].props.value).toBe("Fixed");
+    expect(InspectionEditSession.getStagedDeviceRecords().length).toBe(0);
+
+    const committed = await InspectionEditSession.commit();
+    expect(committed).toBe(true);
+
+    const rows = await queryDeviceRows(db, "Camera");
+    expect(JSON.parse(rows[0].DeviceData!).CameraType).toBe("Fixed");
   });
 });

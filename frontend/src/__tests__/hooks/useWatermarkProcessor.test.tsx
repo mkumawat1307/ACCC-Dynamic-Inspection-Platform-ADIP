@@ -174,14 +174,15 @@ describe("useWatermarkProcessor folder target", () => {
     unmount();
   });
 
-  it("keeps writing to the creation-time folder after the project is renamed or its district changes", async () => {
+  it("writes to the current <District>_<ProjectName> folder after the project is renamed or its district changes, never the historical label", async () => {
     const renamedProject = {
       ...project,
       ProjectName: "Renamed Project",
       DistrictName: "New District",
       DBPath: "/mock/documents/Projects/Jaipur_Jaipur_1234abcd/inspection.db",
     } as unknown as Project;
-    const fileUri = "content://media/Download/ACCC Dynamic Inspection/Jaipur_Jaipur/photo.jpg";
+    const photoFolderLabel = "New District_Renamed Project";
+    const fileUri = `content://media/Download/ACCC Dynamic Inspection/${photoFolderLabel}/photo.jpg`;
 
     (getActiveProjectPath as jest.Mock).mockReturnValue(renamedProject.DBPath);
     (writePhotoUnique as jest.Mock).mockResolvedValue({ contentUri: fileUri, fileName: "photo.jpg" });
@@ -207,12 +208,12 @@ describe("useWatermarkProcessor folder target", () => {
       await new Promise(r => setTimeout(r, 0));
     });
 
-    expect(writePhotoUnique).toHaveBeenCalledWith("Jaipur_Jaipur", "photo.jpg", "BASE64DATA");
+    expect(writePhotoUnique).toHaveBeenCalledWith(photoFolderLabel, "photo.jpg", "BASE64DATA");
     expect(PhotoRepository.updateFinalPath).toHaveBeenCalledWith(
       1,
       "photo.jpg",
       fileUri,
-      "Download/ACCC Dynamic Inspection/Jaipur_Jaipur/"
+      `Download/ACCC Dynamic Inspection/${photoFolderLabel}/`
     );
 
     await TestRenderer.act(async () => {

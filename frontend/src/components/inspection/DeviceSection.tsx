@@ -50,6 +50,8 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   const persistedIds = useRef<Map<number, number>>(new Map());
   const countRef = useRef(count);
   countRef.current = count;
+  const prevCountRef = useRef(count);
+  const countEditedRef = useRef(false);
   const countOpsRef = useRef(Promise.resolve());
   const dropdownRefs = useRef<Record<string, View | null>>({});
   const { setDropdownOpen } = useInspectionScroll();
@@ -106,7 +108,12 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       }
       setOpts(loaded);
 
-      if (list.length < count) {
+      // Editing an existing inspection: a dropdown that has no saved value
+      // renders empty. The current IsDefault option is never shown, staged, or
+      // written when opening an existing inspection, so the database stays
+      // untouched until the user explicitly edits a value.
+
+      if (!existing && list.length < count) {
         if (!deviceDbStillValid(expectedDbPath)) return;
         for (let i = list.length + 1; i <= count; i++) {
           const emptyData: Record<string, string | null> = {};
@@ -141,6 +148,20 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
 
   useEffect(() => {
     if (loading) return;
+
+    if (count !== prevCountRef.current) {
+      countEditedRef.current = true;
+    }
+    prevCountRef.current = count;
+
+    // Editing an existing inspection: opening it must not write device records.
+    // Until the user actually changes the count, reconcile only the rendered
+    // list; database reconciliation (create/deactivate/restore) happens on an
+    // explicit edit, which is staged by the edit session.
+    if (existing && !countEditedRef.current) {
+      setRecords((prev) => (prev.length > count ? prev.slice(0, count) : prev));
+      return;
+    }
 
     if (count < records.length) {
       for (const no of persistedIds.current.keys()) {
@@ -236,7 +257,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       return;
     }
 
-  }, [count, loading, records.length, fields, inspectionId, deviceType]);
+  }, [count, loading, records.length, fields, inspectionId, deviceType, existing]);
 
   useEffect(() => {
     return () => {

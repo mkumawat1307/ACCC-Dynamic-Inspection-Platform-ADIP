@@ -35,8 +35,10 @@ const sampleProject = {
 describe("ProjectRepository", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetAllAsync.mockReset();
     mockGetFirstAsync.mockReset();
     mockRunAsync.mockReset();
+    mockGetAllAsync.mockResolvedValue([]);
     mockGetFirstAsync.mockResolvedValue(null);
   });
 
@@ -294,6 +296,36 @@ describe("ProjectRepository", () => {
       ).rejects.toBeInstanceOf(ProjectAlreadyExistsError);
       expect(first).toBe(5);
     });
+
+    it("rejects when the sanitized photo folder label collides with another project (lossy sanitization)", async () => {
+      mockGetFirstAsync
+        .mockResolvedValueOnce({ DistrictName: "SIKAR" })
+        .mockResolvedValueOnce(null);
+      mockGetAllAsync.mockResolvedValue([
+        { ProjectID: 4, ProjectName: "A_B", DistrictName: "SIKAR" },
+      ]);
+
+      const { ProjectRepository, ProjectAlreadyExistsError } = require("@/src/database/repositories/ProjectRepository");
+      await expect(
+        ProjectRepository.createProject({ ...createArgs, projectName: "A:B" })
+      ).rejects.toBeInstanceOf(ProjectAlreadyExistsError);
+      expect(mockRunAsync).not.toHaveBeenCalled();
+    });
+
+    it("allows creation when an existing project has a different photo folder label", async () => {
+      mockGetFirstAsync
+        .mockResolvedValueOnce({ DistrictName: "SIKAR" })
+        .mockResolvedValueOnce(null);
+      mockGetAllAsync.mockResolvedValue([
+        { ProjectID: 4, ProjectName: "Other", DistrictName: "SIKAR" },
+      ]);
+      mockRunAsync.mockResolvedValue({ lastInsertRowId: 6, changes: 1 });
+
+      const { ProjectRepository } = require("@/src/database/repositories/ProjectRepository");
+      const newId = await ProjectRepository.createProject(createArgs);
+
+      expect(newId).toBe(6);
+    });
   });
 
   describe("updateProject", () => {
@@ -368,6 +400,36 @@ describe("ProjectRepository", () => {
       ).rejects.toBeInstanceOf(ProjectAlreadyExistsError);
       expect(mockRunAsync).not.toHaveBeenCalled();
     });
+
+    it("rejects renaming when the new photo folder label collides with another project", async () => {
+      mockGetFirstAsync
+        .mockResolvedValueOnce({ DistrictName: "SIKAR" })
+        .mockResolvedValueOnce(null);
+      mockGetAllAsync.mockResolvedValue([
+        { ProjectID: 6, ProjectName: "Re:named", DistrictName: "SIKAR" },
+      ]);
+
+      const { ProjectRepository, ProjectAlreadyExistsError } = require("@/src/database/repositories/ProjectRepository");
+      await expect(
+        ProjectRepository.updateProject(1, { projectName: "Re_named", districtId: 1 })
+      ).rejects.toBeInstanceOf(ProjectAlreadyExistsError);
+      expect(mockRunAsync).not.toHaveBeenCalled();
+    });
+
+    it("allows renaming when the colliding row is the project itself (exclude self)", async () => {
+      mockGetFirstAsync
+        .mockResolvedValueOnce({ DistrictName: "SIKAR" })
+        .mockResolvedValueOnce(null);
+      mockGetAllAsync.mockResolvedValue([
+        { ProjectID: 5, ProjectName: "A_B", DistrictName: "SIKAR" },
+      ]);
+      mockRunAsync.mockResolvedValue({ lastInsertRowId: 0, changes: 1 });
+
+      const { ProjectRepository } = require("@/src/database/repositories/ProjectRepository");
+      await ProjectRepository.updateProject(5, { projectName: "A:B", districtId: 1 });
+
+      expect(mockRunAsync).toHaveBeenCalled();
+    });
   });
 
   describe("cloneProject", () => {
@@ -407,6 +469,21 @@ describe("ProjectRepository", () => {
       const { ProjectRepository, ProjectAlreadyExistsError } = require("@/src/database/repositories/ProjectRepository");
       await expect(
         ProjectRepository.cloneProject(1, "Test Project")
+      ).rejects.toBeInstanceOf(ProjectAlreadyExistsError);
+      expect(mockRunAsync).not.toHaveBeenCalled();
+    });
+
+    it("rejects cloning when the new name sanitizes to an existing photo folder label", async () => {
+      mockGetFirstAsync
+        .mockResolvedValueOnce(sampleProject)
+        .mockResolvedValueOnce(null);
+      mockGetAllAsync.mockResolvedValue([
+        { ProjectID: 7, ProjectName: "Cloned_Project", DistrictName: "District A" },
+      ]);
+
+      const { ProjectRepository, ProjectAlreadyExistsError } = require("@/src/database/repositories/ProjectRepository");
+      await expect(
+        ProjectRepository.cloneProject(1, "Cloned:Project")
       ).rejects.toBeInstanceOf(ProjectAlreadyExistsError);
       expect(mockRunAsync).not.toHaveBeenCalled();
     });

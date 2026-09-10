@@ -1,6 +1,7 @@
 import { Project } from "@/src/models/Project";
 import {
   buildProjectFolderLabel,
+  buildProjectPhotoFolderLabel,
   canonicalProjectLabel,
   legacyProjectOnlyLabel,
   legacyStrippedLabel,
@@ -139,38 +140,190 @@ describe("canonical vs legacy labels", () => {
   });
 });
 
+describe("buildProjectPhotoFolderLabel", () => {
+  it("is the human-readable district + project name with NO hash suffix", () => {
+    expect(buildProjectPhotoFolderLabel("Sikar", "AMC 2026")).toBe("Sikar_AMC 2026");
+  });
+
+  it("never depends on the DBPath (hash is internal to the DB path only)", () => {
+    expect(buildProjectPhotoFolderLabel("Sikar", "AMC 2026")).toBe("Sikar_AMC 2026");
+  });
+
+  it("treats null/undefined district and project as empty", () => {
+    expect(buildProjectPhotoFolderLabel(null, "OnlyProject")).toBe("OnlyProject");
+    expect(buildProjectPhotoFolderLabel(undefined, undefined)).toBe("");
+  });
+
+  it("delegates to buildProjectFolderLabel semantics", () => {
+    expect(buildProjectPhotoFolderLabel("  N<ew> ", "A/B")).toBe(
+      buildProjectFolderLabel("N<ew>", "A/B")
+    );
+  });
+
+  it("matches photoStorageLabelForProject for the same project", () => {
+    const project = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "AMC 2026",
+      DBPath: "Projects/Jaipur_AMC 2026_a1b2c3d4/inspection.db",
+    });
+    expect(
+      buildProjectPhotoFolderLabel(project.DistrictName, project.ProjectName)
+    ).toBe(photoStorageLabelForProject(project));
+  });
+});
+
 describe("photoStorageLabelForProject", () => {
   const dbPath = (folder: string) =>
     `file:///data/user/0/com.accc.app/files/Projects/${folder}/inspection.db`;
 
-  it("extracts the creation-time label from a valid project DBPath", () => {
+  it("returns the human-readable current district + project name (no hash)", () => {
     const project = makeProject({
-      DBPath: dbPath("Jaipur_Jaipur_1234abcd"),
+      DistrictName: "Jaipur",
+      ProjectName: "ABC",
+      DBPath: dbPath("Jaipur_ABC_1234abcd"),
     });
-    expect(photoStorageLabelForProject(project)).toBe("Jaipur_Jaipur");
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_ABC");
   });
 
   it("accepts a relative Projects/ DBPath without a file:// prefix", () => {
     const project = makeProject({
       DBPath: "Projects/Karnal_Highway_00ffee77/inspection.db",
     });
-    expect(photoStorageLabelForProject(project)).toBe("Karnal_Highway");
+    expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
   });
 
-  it("returns the creation-time label even after the project was renamed", () => {
+  it("uses the CURRENT project name after a rename (no hash)", () => {
     const project = makeProject({
-      ProjectName: "Renamed Project",
-      DistrictName: "Renamed District",
-      DBPath: dbPath("Jaipur_Jaipur_1234abcd"),
+      DistrictName: "Jaipur",
+      ProjectName: "XYZ",
+      DBPath: dbPath("Jaipur_ABC_a1b2c3d4"),
     });
-    expect(photoStorageLabelForProject(project)).toBe("Jaipur_Jaipur");
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_XYZ");
   });
 
-  it("preserves a label that itself ends with _<8hex> by stripping only the final hash", () => {
+  it("uses the CURRENT district after a district change (no hash)", () => {
     const project = makeProject({
+      DistrictName: "Sikar",
+      ProjectName: "ABC",
+      DBPath: dbPath("Jaipur_ABC_a1b2c3d4"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Sikar_ABC");
+  });
+
+  it("uses current district + name when both change (no hash)", () => {
+    const project = makeProject({
+      DistrictName: "Sikar",
+      ProjectName: "XYZ",
+      DBPath: dbPath("Jaipur_ABC_a1b2c3d4"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Sikar_XYZ");
+  });
+
+  it("rename-back deterministically resolves to the current name (no hash)", () => {
+    const project = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "ABC",
+      DBPath: dbPath("Jaipur_ABC_a1b2c3d4"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_ABC");
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_ABC");
+  });
+
+  it("never falls back to the historical DBPath label (no hash)", () => {
+    const project = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "ABC",
+      DBPath: dbPath("Jaipur_OLD_1234abcd"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_ABC");
+  });
+
+  it("preserves a project name that itself ends in _<8hex>", () => {
+    const project = makeProject({
+      DistrictName: "Foo",
+      ProjectName: "1a2b3c4d",
       DBPath: dbPath("Foo_1a2b3c4d_abcdef12"),
     });
     expect(photoStorageLabelForProject(project)).toBe("Foo_1a2b3c4d");
+  });
+
+  it("is idempotent for the same current metadata", () => {
+    const project = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "ABC",
+      DBPath: dbPath("Jaipur_Project A (Copy)_11111111"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("Jaipur_ABC");
+    expect(photoStorageLabelForProject(project)).toBe(photoStorageLabelForProject(project));
+  });
+
+  it("resolves purely from current district + name, so same-name projects share the label — the repo label-uniqueness guard prevents coexistence", () => {
+    const original = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "ABC",
+      DBPath: dbPath("Jaipur_ABC_11111111"),
+    });
+    const copy = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "ABC",
+      DBPath: dbPath("Jaipur_ABC_22222222"),
+    });
+
+    expect(original.DBPath).not.toBe(copy.DBPath);
+    expect(photoStorageLabelForProject(original)).toBe("Jaipur_ABC");
+    expect(photoStorageLabelForProject(copy)).toBe("Jaipur_ABC");
+    expect(photoStorageLabelForProject(copy)).toBe(photoStorageLabelForProject(original));
+  });
+
+  it("distinguishes projects by their current names — the copy owns its label while named (Copy), and follows a rename", () => {
+    const original = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "Project A",
+      DBPath: dbPath("Jaipur_Project A_11111111"),
+    });
+    const copyNamed = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "Project A (Copy)",
+      DBPath: dbPath("Jaipur_Project A (Copy)_22222222"),
+    });
+    const copyRenamed = makeProject({
+      DistrictName: "Jaipur",
+      ProjectName: "XYZ",
+      DBPath: dbPath("Jaipur_Project A (Copy)_22222222"),
+    });
+
+    expect(photoStorageLabelForProject(original)).toBe("Jaipur_Project A");
+    expect(photoStorageLabelForProject(copyNamed)).toBe("Jaipur_Project A (Copy)");
+    expect(photoStorageLabelForProject(copyNamed)).not.toBe(
+      photoStorageLabelForProject(original)
+    );
+    expect(photoStorageLabelForProject(copyRenamed)).toBe("Jaipur_XYZ");
+    expect(photoStorageLabelForProject(copyRenamed)).not.toBe(
+      photoStorageLabelForProject(original)
+    );
+    expect(photoStorageLabelForProject(copyRenamed)).not.toBe(
+      photoStorageLabelForProject(copyNamed)
+    );
+  });
+
+  it("never appends the internal 8-hex hash to the label", () => {
+    const labels = [
+      photoStorageLabelForProject(makeProject({ DBPath: dbPath("Jaipur_ABC_1234abcd") })),
+      photoStorageLabelForProject(
+        makeProject({ DBPath: dbPath("Foo_1a2b3c4d_abcdef12") })
+      ),
+      photoStorageLabelForProject(makeProject({ DBPath: dbPath("Jaipur_OL_X_00ffee77") })),
+    ];
+    for (const label of labels) {
+      expect(label).not.toMatch(/_([0-9a-f]{8})$/i);
+    }
+  });
+
+  it("distinct identities can still sanitize to an identical label — this is why the repository guards folder-label uniqueness", () => {
+    const colon = makeProject({ DistrictName: "SIKAR", ProjectName: "A:B" });
+    const underscore = makeProject({ DistrictName: "SIKAR", ProjectName: "A_B" });
+    expect(photoStorageLabelForProject(colon)).toBe("SIKAR_A_B");
+    expect(photoStorageLabelForProject(underscore)).toBe("SIKAR_A_B");
   });
 
   it("falls back to canonicalProjectLabel when DBPath is null", () => {
@@ -179,16 +332,13 @@ describe("photoStorageLabelForProject", () => {
     expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
   });
 
-  it("falls back to canonicalProjectLabel when DBPath is undefined", () => {
-    const project = makeProject({ DBPath: undefined });
-    expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
-  });
-
-  it("falls back safely when DBPath is empty or missing the hash", () => {
-    const project = makeProject({ DBPath: "" });
-    expect(photoStorageLabelForProject(project)).toBe("New Delhi_Project Alpha");
-    const noHash = makeProject({ DBPath: dbPath("Jaipur_Jaipur") });
-    expect(photoStorageLabelForProject(noHash)).toBe("New Delhi_Project Alpha");
+  it("is unaffected by an empty or unmatchable DBPath", () => {
+    expect(photoStorageLabelForProject(makeProject({ DBPath: "" }))).toBe(
+      "New Delhi_Project Alpha"
+    );
+    expect(photoStorageLabelForProject(makeProject({ DBPath: dbPath("Jaipur_Jaipur") }))).toBe(
+      "New Delhi_Project Alpha"
+    );
   });
 
   it.each([
@@ -199,7 +349,7 @@ describe("photoStorageLabelForProject", () => {
     `file:///data/user/0/com.accc.app/files/Other/Jaipur_Jaipur_1234abcd/inspection.db`,
     `file:///data/user/0/com.accc.app/files/Projects/_1234abcd/inspection.db`,
     `file:///data/user/0/com.accc.app/files/Projects/Jaipur_Jaipur_1234ab/inspection.db`,
-  ])("falls back safely on malformed DBPath %p", (badPath) => {
+  ])("ignores malformed DBPath %p (label never depends on it)", (badPath) => {
     const project = makeProject({
       DistrictName: "New Delhi",
       ProjectName: "Project Alpha",
@@ -216,10 +366,12 @@ describe("photoStorageLabelForProject", () => {
     }).not.toThrow();
   });
 
-  it("sanitized extraction matches the canonical label scheme", () => {
-    const project = makeProject({ DBPath: dbPath("N_ew__A_B_1a2b3c4d") });
-    expect(photoStorageLabelForProject(project)).toBe(
-      buildProjectFolderLabel("N<ew>", "A/B")
-    );
+  it("sanitizes the current label using the canonical scheme (no hash)", () => {
+    const project = makeProject({
+      DistrictName: "N<ew>",
+      ProjectName: "A/B",
+      DBPath: dbPath("N_ew__A_B_1a2b3c4d"),
+    });
+    expect(photoStorageLabelForProject(project)).toBe("N_ew__A_B");
   });
 });

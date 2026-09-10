@@ -428,8 +428,8 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
     expect(valueRepo.saveValue).not.toHaveBeenCalled();
   });
 
-  describe("existing inspection — defaults must NOT be injected (regression)", () => {
-    it("existing + no saved value + dropdown default: stays empty and no InspectionValue is created", async () => {
+  describe("existing inspection — current defaults are NEVER shown or staged (saved-only display)", () => {
+    it("existing + no saved value + dropdown default: renders EMPTY (no default shown) and writes nothing", async () => {
       fieldRepo.getFieldsBySection.mockResolvedValue([dropdownField]);
       fieldRepo.getFieldOptions.mockResolvedValue(createDropdownOptions());
       fieldRepo.getFieldOptionsBySection.mockResolvedValue(new Map([[10, createDropdownOptions()]]));
@@ -444,6 +444,38 @@ describe("SectionRenderer default selection persistence — Phase 7B regression"
 
       expect(valueRepo.saveValue).not.toHaveBeenCalled();
       const input = tree.root.findByProps({ testID: "field-power_cable_status" });
+      expect(input.props.value).toBe("");
+    });
+
+    it("existing + no saved value + field DefaultValue: renders EMPTY (no default shown) and writes nothing", async () => {
+      fieldRepo.getFieldsBySection.mockResolvedValue([fieldWithDefault]);
+      valueRepo.getValuesByInspection.mockResolvedValue([]);
+
+      let tree: any;
+      await act(async () => {
+        tree = TestRenderer.create(
+          <SectionRenderer inspectionId={42} sectionId={1} existing />
+        );
+      });
+
+      expect(valueRepo.saveValue).not.toHaveBeenCalled();
+      const input = tree.root.findByProps({ testID: "field-inspection_notes" });
+      expect(input.props.value).toBe("");
+    });
+
+    it("existing + no default and no saved value: stays empty", async () => {
+      fieldRepo.getFieldsBySection.mockResolvedValue([textField]);
+      valueRepo.getValuesByInspection.mockResolvedValue([]);
+
+      let tree: any;
+      await act(async () => {
+        tree = TestRenderer.create(
+          <SectionRenderer inspectionId={42} sectionId={1} existing />
+        );
+      });
+
+      expect(valueRepo.saveValue).not.toHaveBeenCalled();
+      const input = tree.root.findByProps({ testID: "field-pole_condition" });
       expect(input.props.value).toBe("");
     });
 

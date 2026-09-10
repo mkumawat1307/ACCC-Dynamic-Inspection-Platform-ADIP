@@ -22,11 +22,13 @@ import PoleRenameConfirmDialog from "./PoleRenameConfirmDialog";
 interface GeneralInformationProps {
   ensureDraft?: () => Promise<number | null>;
   releaseAbandonedDraft?: () => Promise<void>;
+  existing?: boolean;
 }
 
 const GeneralInformation = forwardRef(({
   ensureDraft,
   releaseAbandonedDraft,
+  existing = false,
 }: GeneralInformationProps, ref) => {
 const {
   project: contextProject,
@@ -126,22 +128,24 @@ async function init() {
       setValues((prev) => ({ ...prev, ...savedValues, pole_id: prev.pole_id }));
     }
 
-    for (const field of loadedFields) {
-      const key = field.FieldKey;
-      const val = savedValues[key];
+    if (!existing) {
+      for (const field of loadedFields) {
+        const key = field.FieldKey;
+        const val = savedValues[key];
 
-      if (!inspectionId) continue;
+        if (!inspectionId) continue;
 
-      if (key === "date" && val) {
-        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
-      } else if (key === "division" && val) {
-        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
-      } else if (key === "district" && val) {
-        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
-      } else if (key === "block" && val) {
-        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
-      } else if (key === "inspector_name" && val) {
-        await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+        if (key === "date" && val) {
+          await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+        } else if (key === "division" && val) {
+          await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+        } else if (key === "district" && val) {
+          await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+        } else if (key === "block" && val) {
+          await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+        } else if (key === "inspector_name" && val) {
+          await InspectionRepository.saveFieldValue(inspectionId, field.FieldID, val);
+        }
       }
     }
   } catch (error) {
@@ -163,6 +167,14 @@ async function loadInspectionValues(
   for (const field of loadedFields) {
     const key = field.FieldKey;
     const savedVal = data[key];
+
+    // Editing an existing inspection: only the persisted value is displayed.
+    // Missing or empty values stay empty — project context (division, district,
+    // block) and the inspection date are never auto-filled or written on open.
+    if (existing) {
+      result[key] = savedVal ?? "";
+      continue;
+    }
 
     if (savedVal) {
       result[key] = savedVal;

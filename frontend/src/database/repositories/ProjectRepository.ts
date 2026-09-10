@@ -2,6 +2,7 @@ import { getGlobalDatabase } from "../db";
 import { Project } from "@/src/models/Project";
 import { getProjectDbPath } from "../helpers/ProjectDBManager";
 import { buildProjectIdentity } from "../projectIdentity";
+import { buildProjectFolderLabel } from "@/src/utils/folderNaming";
 
 export class ProjectAlreadyExistsError extends Error {
   constructor(public readonly existingProjectId?: number) {
@@ -104,6 +105,8 @@ static async getProjectById(projectId: number): Promise<Project | null> {
     this.rejectDuplicate(existingId);
   }
 
+  await this.assertFolderLabelAvailable(districtName, data.projectName);
+
   try {
     const result = await db.runAsync(
       `
@@ -179,6 +182,8 @@ static async updateProject(
     this.rejectDuplicate(existingId);
   }
 
+  await this.assertFolderLabelAvailable(districtName, data.projectName, projectId);
+
   const fields: string[] = [
     `ProjectName = ?`,
     `DistrictID = ?`,
@@ -243,6 +248,8 @@ static async cloneProject(
   if (existingId !== null) {
     this.rejectDuplicate(existingId);
   }
+
+  await this.assertFolderLabelAvailable(districtName, newName);
 
   const dbPath = getProjectDbPath(districtName, newName);
 
@@ -324,5 +331,45 @@ private static async findExistingByKeys(
       : [districtKey, projectKey];
   const row = await db.getFirstAsync<{ ProjectID: number }>(where, params);
   return row?.ProjectID ?? null;
+}
+
+private static async assertFolderLabelAvailable(
+  districtName: string,
+  projectName: string,
+  excludeProjectId?: number
+): Promise<void> {
+  const folderLabel = buildProjectFolderLabel(districtName, projectName);
+  const existingId = await this.findExistingByFolderLabel(folderLabel, excludeProjectId);
+  if (existingId !== null) {
+    this.rejectDuplicate(existingId);
+  }
+}
+
+private static async findExistingByFolderLabel(
+  folderLabel: string,
+  excludeProjectId?: number
+): Promise<number | null> {
+  const db = await getGlobalDatabase();
+  const where =
+    excludeProjectId !== undefined
+      ? `SELECT p.ProjectID, p.ProjectName, d.DistrictName
+         FROM Projects p
+         INNER JOIN Districts d ON p.DistrictID = d.DistrictID
+         WHERE p.ProjectID != ?`
+      : `SELECT p.ProjectID, p.ProjectName, d.DistrictName
+         FROM Projects p
+         INNER JOIN Districts d ON p.DistrictID = d.DistrictID`;
+  const rows = await db.getAllAsync<{
+    ProjectID: number;
+    ProjectName: string;
+    DistrictName: string;
+  }>(where, excludeProjectId !== undefined ? [excludeProjectId] : []);
+  const match = rows
+    .filter((row) => row.ProjectID !== excludeProjectId)
+    .find(
+      (row) =>
+        buildProjectFolderLabel(row.DistrictName, row.ProjectName) === folderLabel
+    );
+  return match?.ProjectID ?? null;
 }
 }

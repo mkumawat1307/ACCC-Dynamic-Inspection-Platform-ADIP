@@ -43,8 +43,6 @@ import {
 } from "@/src/components/camera/cameraControls";
 import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
 import { logger } from "@/src/utils/logger";
-import { ensureRootFolder, ensureProjectFolder } from "@/src/utils/storageManager";
-import { photoStorageLabelForProject } from "@/src/utils/folderNaming";
 import { perfNow, perfLog, uiPerfReset, uiPerfStage, uiPerfProbeSummary, uiPerfStageIfProbe } from "@/src/utils/perf";
 
 export default function CaptureScreen() {
@@ -154,21 +152,6 @@ export default function CaptureScreen() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
-
-  // Folder checks happen when the camera screen opens — never during the
-  // shutter/save path (see useWatermarkProcessor.saveAndComplete).
-  useEffect(() => {
-    (async () => {
-      try {
-        await ensureRootFolder();
-        if (project) {
-          await ensureProjectFolder(photoStorageLabelForProject(project));
-        }
-      } catch (e) {
-        logger.error("[Storage] cameraFolderReady=false", e);
-      }
-    })();
-  }, [project]);
 
   // Seed the expected photo size once the camera is ready so the watermark
   // renders at final-photo size from the first frame (no oversized flash

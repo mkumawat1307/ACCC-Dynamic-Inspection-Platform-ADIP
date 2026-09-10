@@ -66,6 +66,7 @@ export async function writePhotoUnique(
   if (existing != null) {
     return { contentUri: existing, fileName };
   }
+  await ensureProjectFolder(projectLabel).catch(() => undefined);
   const contentUri = await writePhoto(projectLabel, fileName, base64data);
   return { contentUri, fileName };
 }

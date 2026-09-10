@@ -6,7 +6,7 @@ import {
   getProjectDbPath,
   ProjectFolderExistsError,
 } from "../helpers/ProjectDBManager";
-import { buildProjectFolderLabel } from "@/src/utils/folderNaming";
+import { buildProjectPhotoFolderLabel } from "@/src/utils/folderNaming";
 import { ensureProjectFolder } from "@/src/utils/storageManager";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
 
@@ -35,7 +35,10 @@ export async function createProjectFlow(input: CreateProjectInput): Promise<numb
 
     await createProjectDb(input.projectName, dbPath, newId);
 
-    const folderLabel = buildProjectFolderLabel(input.districtName, input.projectName);
+    const folderLabel = buildProjectPhotoFolderLabel(
+      input.districtName,
+      input.projectName
+    );
     ensureProjectFolder(folderLabel).catch((e) =>
       logger.error("[Storage] createProjectFlow ensureProjectFolder failed:", e)
     );
