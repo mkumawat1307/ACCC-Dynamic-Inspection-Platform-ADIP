@@ -44,51 +44,27 @@ export default class InspectionValueRepository {
       return;
     }
 
-    const existing =
-      await db.getFirstAsync<{ ValueID: number }>(
-        `
-        SELECT ValueID
-        FROM InspectionValues
-        WHERE InspectionID = ?
-          AND FieldID = ?;
-        `,
-        [inspectionId, fieldId]
-      );
-
-    if (existing) {
-
-      await db.runAsync(
-        `
-        UPDATE InspectionValues
-        SET
-          FieldValue = ?,
-          UpdatedAt = CURRENT_TIMESTAMP
-        WHERE ValueID = ?;
-        `,
-        [value, existing.ValueID]
-      );
-
-    } else {
-
-      await db.runAsync(
-        `
-        INSERT INTO InspectionValues
-        (
-          InspectionID,
-          FieldID,
-          FieldValue
-        )
-        VALUES
-        (?, ?, ?);
-        `,
-        [
-          inspectionId,
-          fieldId,
-          value,
-        ]
-      );
-
-    }
+    await db.runAsync(
+      `
+      INSERT INTO InspectionValues
+      (
+        InspectionID,
+        FieldID,
+        FieldValue
+      )
+      VALUES
+      (?, ?, ?)
+      ON CONFLICT(InspectionID, FieldID)
+      DO UPDATE SET
+        FieldValue = excluded.FieldValue,
+        UpdatedAt = CURRENT_TIMESTAMP;
+      `,
+      [
+        inspectionId,
+        fieldId,
+        value,
+      ]
+    );
 
   }
 

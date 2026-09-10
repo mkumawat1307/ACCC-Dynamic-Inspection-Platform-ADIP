@@ -3,6 +3,13 @@ jest.mock("@/src/utils/androidBackup", () => ({
   requestAndroidBackup: jest.fn(),
 }));
 jest.mock("@/src/utils/InspectionDataBus");
+jest.mock("expo-file-system/legacy", () => ({
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: true, isDirectory: false, size: 100 }),
+}));
+jest.mock("@/src/utils/storageManager", () => ({
+  deletePhoto: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { getDatabase } from "@/src/database/db";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
@@ -162,28 +169,30 @@ describe("InspectionRepository", () => {
   });
 
   describe("saveFieldValue", () => {
-    it("inserts when parent rows exist and no existing value", async () => {
+    it("persists via an atomic upsert when parent rows exist", async () => {
       mockDb.getFirstAsync
         .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-        .mockResolvedValueOnce(null);
+        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 });
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
       await InspectionRepository.saveFieldValue(1, 1, "11kV");
       expect(mockDb.runAsync).toHaveBeenCalledWith(
         expect.stringContaining("INSERT INTO InspectionValues"),
         [1, 1, "11kV"]
       );
+      const [upsertSql] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(upsertSql).toContain("ON CONFLICT(InspectionID, FieldID)");
     });
 
-    it("updates when existing value found", async () => {
+    it("persists through a single upsert statement (no separate UPDATE)", async () => {
       mockDb.getFirstAsync
         .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-        .mockResolvedValueOnce({ ValueID: 5 });
+        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 });
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
       await InspectionRepository.saveFieldValue(1, 1, "22kV");
-      expect(mockDb.runAsync).toHaveBeenCalledWith(
-        expect.stringContaining("UPDATE InspectionValues"),
-        ["22kV", 5]
-      );
+      expect(mockDb.runAsync).toHaveBeenCalledTimes(1);
+      const [upsertSql] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(upsertSql).toContain("ON CONFLICT");
+      expect(upsertSql).not.toContain("UPDATE InspectionValues");
     });
 
     it("skips the write when the inspection does not exist", async () => {
@@ -223,7 +232,7 @@ describe("InspectionRepository", () => {
       );
       mockDb.getFirstAsync
         .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-        .mockResolvedValueOnce({ ValueID: 5 })
+        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
         .mockResolvedValue({ ProjectID: 1 });
       const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository");
 
@@ -231,7 +240,7 @@ describe("InspectionRepository", () => {
 
       expect(mockDb.withTransactionAsync).toHaveBeenCalledTimes(1);
       expect(mockDb.runAsync).toHaveBeenCalledWith(
-        expect.stringContaining("UPDATE InspectionValues"),
+        expect.stringContaining("INSERT INTO InspectionValues"),
         expect.arrayContaining(["SIK101"])
       );
       expect(mockDb.runAsync).toHaveBeenCalledWith(
@@ -462,17 +471,17 @@ describe("InspectionRepository auto-refresh emits", () => {
   it("saveFieldValue emits with the resolved projectId", async () => {
     mockDb.getFirstAsync
       .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
       .mockResolvedValueOnce({ ProjectID: 5 });
     await InspectionRepository.saveFieldValue(3, 7, "Yes");
     expect(mockDb.runAsync).toHaveBeenCalled();
     expect(InspectionDataBus.emitInspectionsChanged).toHaveBeenCalledWith(5);
   });
 
-  it("saveFieldValue emits after an UPDATE path", async () => {
+  it("saveFieldValue emits after a persisted write", async () => {
     mockDb.getFirstAsync
       .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-      .mockResolvedValueOnce({ ValueID: 11 })
+      .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
       .mockResolvedValueOnce({ ProjectID: 5 });
     await InspectionRepository.saveFieldValue(3, 7, "No");
     expect(mockDb.runAsync).toHaveBeenCalled();
@@ -512,7 +521,7 @@ describe("InspectionRepository auto-refresh emits", () => {
   it("emits 0 when projectId cannot be resolved (save path)", async () => {
     mockDb.getFirstAsync
       .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
       .mockResolvedValueOnce(null);
     await InspectionRepository.saveFieldValue(3, 7, "Yes");
     expect(InspectionDataBus.emitInspectionsChanged).toHaveBeenCalledWith(0);

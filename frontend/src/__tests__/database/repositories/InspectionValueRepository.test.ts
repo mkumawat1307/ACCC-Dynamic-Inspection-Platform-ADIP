@@ -21,28 +21,28 @@ describe("InspectionValueRepository", () => {
   });
 
   describe("saveValue", () => {
-    it("inserts when parent rows exist and no existing value", async () => {
-      mockDb.getFirstAsync
-        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-        .mockResolvedValueOnce(null);
+    it("performs an atomic upsert when parent rows exist", async () => {
+      mockDb.getFirstAsync.mockResolvedValueOnce({ hasInspection: 1, hasField: 1 });
       const { default: InspectionValueRepository } = require("@/src/database/repositories/InspectionValueRepository");
       await InspectionValueRepository.saveValue(1, 1, "11kV");
       expect(mockDb.runAsync).toHaveBeenCalledWith(
         expect.stringContaining("INSERT INTO InspectionValues"),
         [1, 1, "11kV"]
       );
+      const [sql] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(sql).toContain("ON CONFLICT(InspectionID, FieldID)");
+      expect(sql).toContain("DO UPDATE SET");
+      expect(sql).toContain("FieldValue = excluded.FieldValue");
     });
 
-    it("updates when an existing value is found", async () => {
-      mockDb.getFirstAsync
-        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-        .mockResolvedValueOnce({ ValueID: 5 });
+    it("persists through a single upsert statement (no separate UPDATE)", async () => {
+      mockDb.getFirstAsync.mockResolvedValueOnce({ hasInspection: 1, hasField: 1 });
       const { default: InspectionValueRepository } = require("@/src/database/repositories/InspectionValueRepository");
       await InspectionValueRepository.saveValue(1, 1, "22kV");
-      expect(mockDb.runAsync).toHaveBeenCalledWith(
-        expect.stringContaining("UPDATE InspectionValues"),
-        ["22kV", 5]
-      );
+      expect(mockDb.runAsync).toHaveBeenCalledTimes(1);
+      const [sql] = (mockDb.runAsync as jest.Mock).mock.calls[0];
+      expect(sql).toContain("ON CONFLICT");
+      expect(sql).not.toContain("UPDATE InspectionValues");
     });
 
     it("skips the write when the inspection does not exist", async () => {
@@ -73,11 +73,7 @@ describe("InspectionValueRepository", () => {
 
   describe("saveValues", () => {
     it("saves each value through saveValue", async () => {
-      mockDb.getFirstAsync
-        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({ hasInspection: 1, hasField: 1 })
-        .mockResolvedValueOnce(null);
+      mockDb.getFirstAsync.mockResolvedValue({ hasInspection: 1, hasField: 1 });
       const { default: InspectionValueRepository } = require("@/src/database/repositories/InspectionValueRepository");
       await InspectionValueRepository.saveValues(1, [
         { fieldId: 1, value: "11kV" },

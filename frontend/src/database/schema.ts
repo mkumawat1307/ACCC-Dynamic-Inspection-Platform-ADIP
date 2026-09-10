@@ -2,6 +2,8 @@
 
 import { getDatabase, getGlobalDatabase } from "./db";
 
+import type { SQLiteDatabase } from "expo-sqlite";
+
 import { createDivisionsTable } from "./tables/divisions.table";
 import { createDistrictsTable } from "./tables/districts.table";
 import { createInspectionTemplatesTable } from "./tables/inspection-templates.table";
@@ -708,4 +710,61 @@ export async function migrateProjectSchema(projectId: number) {
     } catch (e) {
         logger.warn("[schema] migrateProjectSchema — device options migration failed (non-fatal):", e);
     }
+
+    try {
+        await migrateInspectionValueUniqueness(db);
+    } catch (e) {
+        logger.warn("[schema] migrateProjectSchema — InspectionValues unique index migration failed (non-fatal):", e);
+    }
+}
+
+export async function migrateInspectionValueUniqueness(db: SQLiteDatabase): Promise<void> {
+    const indexRow = await db.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type = 'index' AND name = 'uq_inspection_values_inspection_field'`
+    );
+    if ((indexRow?.cnt ?? 0) > 0) {
+        return;
+    }
+
+    const rows = await db.getAllAsync<{
+        ValueID: number;
+        InspectionID: number;
+        FieldID: number;
+        CreatedAt: string | null;
+        UpdatedAt: string | null;
+    }>(
+        `SELECT ValueID, InspectionID, FieldID, CreatedAt, UpdatedAt FROM InspectionValues`
+    );
+
+    const keepByGroup = new Map<string, { ValueID: number; UpdatedAt: string; count: number }>();
+    for (const row of rows) {
+        const key = `${row.InspectionID}|${row.FieldID}`;
+        const timestamp = row.UpdatedAt ?? row.CreatedAt ?? "";
+        const current = keepByGroup.get(key);
+        if (!current) {
+            keepByGroup.set(key, { ValueID: row.ValueID, UpdatedAt: timestamp, count: 1 });
+            continue;
+        }
+        current.count += 1;
+        if (
+            timestamp > current.UpdatedAt ||
+            (timestamp === current.UpdatedAt && row.ValueID > current.ValueID)
+        ) {
+            current.ValueID = row.ValueID;
+            current.UpdatedAt = timestamp;
+        }
+    }
+
+    for (const [key, keep] of keepByGroup) {
+        if (keep.count <= 1) continue;
+        const [inspectionId, fieldId] = key.split("|").map((part) => Number(part));
+        await db.runAsync(
+            `DELETE FROM InspectionValues WHERE InspectionID = ? AND FieldID = ? AND ValueID <> ?`,
+            [inspectionId, fieldId, keep.ValueID]
+        );
+    }
+
+    await db.execAsync(
+        `CREATE UNIQUE INDEX IF NOT EXISTS uq_inspection_values_inspection_field ON InspectionValues(InspectionID, FieldID)`
+    );
 }

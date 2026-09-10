@@ -24,6 +24,7 @@ jest.mock("expo-intent-launcher", () => ({
 
 jest.mock("@/src/utils/storageManager", () => ({
   ensureRootFolder: jest.fn().mockResolvedValue(undefined),
+  deletePhoto: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/src/utils/downloadStorage", () => ({

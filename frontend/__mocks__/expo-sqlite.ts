@@ -34,7 +34,7 @@ function resetState() {
 }
 
 const SQL_COMMANDS = {
-  INSERT: /^\s*INSERT(?:\s+OR\s+IGNORE)?\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)\s*;?\s*$/i,
+  INSERT: /^\s*INSERT(?:\s+OR\s+IGNORE)?\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)(?:\s+ON\s+CONFLICT\s*\(([^)]+)\)\s+DO\s+UPDATE\s+SET\s+([\s\S]+?))?\s*;?\s*$/i,
   SELECT: /^\s*SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)(?:\s+AS\s+\w+|\s+\w+)?(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+?))?(?:\s+LIMIT\s+(\d+))?(?:\s+OFFSET\s+(\d+))?;?\s*$/i,
   UPDATE: /^\s*UPDATE\s+(\w+)\s+SET\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+?))?;?\s*$/i,
   DELETE: /^\s*DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?;?\s*$/i,
@@ -185,6 +185,7 @@ function evalWhereConditions(
 
     switch (cond.op) {
       case "!=": return actual !== cond.value;
+      case "<>": return actual !== cond.value;
       case ">=": return (actual as number) >= (cond.value as number);
       case "<=": return (actual as number) <= (cond.value as number);
       case ">": return (actual as number) > (cond.value as number);
@@ -273,6 +274,49 @@ class MockDatabase {
       const tableName = insertMatch[1];
       const cols = insertMatch[2].split(",").map((c) => c.trim());
       const values = parseInsertValues(insertMatch[3], params);
+      const conflictCols = insertMatch[4]
+        ? insertMatch[4].split(",").map((c) => c.trim())
+        : [];
+      const setClause = insertMatch[5];
+      const table = this.tables.get(tableName) ?? [];
+
+      if (conflictCols.length > 0 && setClause) {
+        const incoming: Row = {};
+        cols.forEach((col, i) => {
+          incoming[col] = values[i] ?? null;
+        });
+        const existing = table.find((r) =>
+          conflictCols.every((cc) => r[cc] === incoming[cc])
+        );
+        if (existing) {
+          let setParamIdx = 0;
+          for (const part of setClause.split(",").map((s) => s.trim())) {
+            const setMatch = part.match(
+              /(\w+)\s*=\s*(?:excluded\.(\w+)|CURRENT_TIMESTAMP|'([^']*)'|([+-]?\d+(?:\.\d+)?)|NULL|\?)/
+            );
+            if (!setMatch) continue;
+            const col = setMatch[1];
+            const excludedCol = setMatch[2];
+            if (excludedCol !== undefined) {
+              existing[col] = incoming[excludedCol] ?? null;
+            } else if (part.includes("CURRENT_TIMESTAMP")) {
+              existing[col] = new Date().toISOString();
+            } else if (setMatch[3] !== undefined) {
+              existing[col] = setMatch[3];
+            } else if (setMatch[4] !== undefined) {
+              existing[col] = Number(setMatch[4]);
+            } else if (part.includes("NULL")) {
+              existing[col] = null;
+            } else {
+              existing[col] = params[setParamIdx++];
+            }
+          }
+          const pk = PRIMARY_KEYS[tableName];
+          const existingId = pk ? (existing[pk] as number | undefined) : undefined;
+          return { lastInsertRowId: existingId ?? 0, changes: 1 };
+        }
+      }
+
       const row: Row = {};
       cols.forEach((col, i) => {
         row[col] = values[i] ?? null;
@@ -288,7 +332,6 @@ class MockDatabase {
       if (tableName === "DeviceRecords" && !cols.includes("IsActive")) {
         row.IsActive = 1;
       }
-      const table = this.tables.get(tableName) ?? [];
       table.push(row);
       this.tables.set(tableName, table);
       return { lastInsertRowId: id, changes: 1 };

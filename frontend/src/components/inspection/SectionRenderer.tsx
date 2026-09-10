@@ -66,7 +66,7 @@ export default function SectionRenderer({
 
   useEffect(() => {
     loadSection();
-  }, [sectionId, inspectionId]);
+  }, [sectionId, inspectionId, templateId, existing]);
 
   const loadSection = useCallback(async () => {
     try {

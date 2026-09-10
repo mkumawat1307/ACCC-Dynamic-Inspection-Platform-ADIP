@@ -9,6 +9,7 @@ import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
 import { InspectionEditSessionState } from "./InspectionEditSessionState";
+import InspectionValueRepository from "./InspectionValueRepository";
 
 export function isFieldValueEmpty(type: string, value: string): boolean {
   switch (type) {
@@ -239,41 +240,7 @@ static async saveFieldValue(
     return;
   }
 
-  const existing = await db.getFirstAsync<{ ValueID: number }>(
-    `
-    SELECT ValueID
-    FROM InspectionValues
-    WHERE InspectionID = ?
-      AND FieldID = ?
-    `,
-    [inspectionId, fieldId]
-  );
-
-  if (existing) {
-    await db.runAsync(
-      `
-      UPDATE InspectionValues
-      SET
-        FieldValue = ?,
-        UpdatedAt = CURRENT_TIMESTAMP
-      WHERE ValueID = ?
-      `,
-      [value, existing.ValueID]
-    );
-  } else {
-    await db.runAsync(
-      `
-      INSERT INTO InspectionValues
-      (
-        InspectionID,
-        FieldID,
-        FieldValue
-      )
-      VALUES (?, ?, ?)
-      `,
-      [inspectionId, fieldId, value]
-    );
-  }
+  await InspectionValueRepository.saveValue(inspectionId, fieldId, value);
 
   const projectId = await this.getInspectionProjectId(inspectionId);
   InspectionDataBus.emitInspectionsChanged(projectId ?? 0);
