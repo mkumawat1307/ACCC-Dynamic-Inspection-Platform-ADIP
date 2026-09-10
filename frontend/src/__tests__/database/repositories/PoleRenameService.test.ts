@@ -5,6 +5,7 @@ jest.mock("@/src/utils/downloadStorage", () => ({
   },
 }));
 
+import * as SQLite from "expo-sqlite";
 import { downloadStorage } from "@/src/utils/downloadStorage";
 
 const PROJECT = "/mock/documents/Projects/PoleRename/inspection.db";
@@ -19,7 +20,7 @@ type MockDb = {
 describe("PoleRenameService", () => {
   let dbModule: typeof import("@/src/database/db");
   let db: MockDb;
-  let PoleRenameService: { renamePoleId: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }) => Promise<{ renamedFiles: number; updatedRecords: number; missingFiles: number }> };
+  let PoleRenameService: { renamePoleId: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }) => Promise<{ renamedFiles: number; updatedRecords: number; missingFiles: number; duplicate?: boolean; duplicatePoleId?: string }> };
   let logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock; debug: jest.Mock };
 
   async function seedInspection(poleId: string): Promise<number> {
@@ -38,6 +39,13 @@ describe("PoleRenameService", () => {
     return result.lastInsertRowId;
   }
 
+  async function resolvePoleFieldId(): Promise<number> {
+    const field = await db.getFirstAsync<{ FieldID: number }>(
+      "SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_id' LIMIT 1"
+    );
+    return field?.FieldID ?? 0;
+  }
+
   async function seedPhoto(inspectionId: number, fileName: string): Promise<number> {
     const result = await db.runAsync(
       `INSERT INTO Photos (InspectionID, PhotoType, FileName, FilePath, Latitude, Longitude, CapturedAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -46,7 +54,15 @@ describe("PoleRenameService", () => {
     return result.lastInsertRowId;
   }
 
+  async function seedPoleValue(inspectionId: number, fieldId: number, value: string): Promise<void> {
+    await db.runAsync(
+      `INSERT INTO InspectionValues (InspectionID, FieldID, FieldValue) VALUES (?, ?, ?)`,
+      [inspectionId, fieldId, value]
+    );
+  }
+
   beforeEach(async () => {
+    (SQLite as unknown as { __resetDbState?: () => void }).__resetDbState?.();
     dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
     await dbModule.setActiveProject(PROJECT);
     db = (await dbModule.getDatabase()) as MockDb;
@@ -266,5 +282,150 @@ describe("PoleRenameService", () => {
     expect(result).toEqual({ renamedFiles: 0, updatedRecords: 0, missingFiles: 0 });
     expect(downloadStorage.renameFile).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("[PoleRename] skipped no token"));
+  });
+
+  it("updates an existing pole_id value row in place and still renames photos", async () => {
+    const inspectionId = await seedInspection("SIK001");
+    await seedPoleIdField();
+    const fieldId = await resolvePoleFieldId();
+    await seedPoleValue(inspectionId, fieldId, "SIK001");
+    await seedPhoto(inspectionId, "Sikar_SIK001_14AUG2026_112948.jpg");
+
+    (downloadStorage.renameFile as jest.Mock).mockImplementation(
+      (uri: string, newFileName: string) => Promise.resolve(`content://media/renamed/${newFileName}`)
+    );
+
+    const result = await PoleRenameService.renamePoleId(inspectionId, "SIK001", "SIK101", {
+      renameFiles: true,
+      updateReports: true,
+    });
+
+    expect(result).toEqual({ renamedFiles: 1, updatedRecords: 1, missingFiles: 0 });
+
+    const poleValue = await db.getAllAsync<{ FieldValue: string }>(
+      "SELECT FieldValue FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?",
+      [inspectionId, fieldId]
+    );
+    expect(poleValue).toEqual([{ FieldValue: "SIK101" }]);
+
+    const photo = await db.getFirstAsync<{ FileName: string; FilePath: string }>(
+      "SELECT FileName, FilePath FROM Photos WHERE InspectionID = ?",
+      [inspectionId]
+    );
+    expect(photo?.FileName).toBe("Sikar_SIK101_14AUG2026_112948.jpg");
+    expect(photo?.FilePath).toBe("content://media/renamed/Sikar_SIK101_14AUG2026_112948.jpg");
+
+    const history = await db.getAllAsync<{ OldPoleId: string; NewPoleId: string }>(
+      "SELECT OldPoleId, NewPoleId FROM InspectionPoleIdHistory WHERE InspectionID = ?",
+      [inspectionId]
+    );
+    expect(history).toEqual([{ OldPoleId: "SIK001", NewPoleId: "SIK101" }]);
+  });
+
+  it("inserts exactly one pole_id value row when none exists yet", async () => {
+    const inspectionId = await seedInspection("SIK001");
+    await seedPoleIdField();
+    const fieldId = await resolvePoleFieldId();
+
+    const result = await PoleRenameService.renamePoleId(inspectionId, "SIK001", "SIK101", {
+      renameFiles: false,
+      updateReports: true,
+    });
+
+    expect(result).toEqual({ renamedFiles: 0, updatedRecords: 0, missingFiles: 0 });
+
+    const poleValue = await db.getAllAsync<{ FieldValue: string }>(
+      "SELECT FieldValue FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?",
+      [inspectionId, fieldId]
+    );
+    expect(poleValue).toEqual([{ FieldValue: "SIK101" }]);
+  });
+
+  it("cannot duplicate the pole_id value row even under concurrent renames", async () => {
+    const inspectionId = await seedInspection("SIK001");
+    await seedPoleIdField();
+    const fieldId = await resolvePoleFieldId();
+
+    await Promise.all([
+      PoleRenameService.renamePoleId(inspectionId, "SIK001", "SIK101", {
+        renameFiles: false,
+        updateReports: true,
+      }),
+      PoleRenameService.renamePoleId(inspectionId, "SIK001", "SIK101", {
+        renameFiles: false,
+        updateReports: true,
+      }),
+    ]);
+
+    const poleValue = await db.getAllAsync<{ FieldValue: string }>(
+      "SELECT FieldValue FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?",
+      [inspectionId, fieldId]
+    );
+    expect(poleValue).toEqual([{ FieldValue: "SIK101" }]);
+
+    const inspection = await db.getFirstAsync<{ PoleID: string }>(
+      "SELECT PoleID FROM Inspections WHERE InspectionID = ?",
+      [inspectionId]
+    );
+    expect(inspection?.PoleID).toBe("SIK101");
+  });
+
+  it("leaves another inspection's pole_id value untouched", async () => {
+    const inspectionA = await seedInspection("SIK001");
+    const inspectionB = await seedInspection("SIK201");
+    await seedPoleIdField();
+    const fieldId = await resolvePoleFieldId();
+    await seedPoleValue(inspectionB, fieldId, "SIK201");
+
+    await PoleRenameService.renamePoleId(inspectionA, "SIK001", "SIK101", {
+      renameFiles: false,
+      updateReports: true,
+    });
+
+    const aValue = await db.getAllAsync<{ FieldValue: string }>(
+      "SELECT FieldValue FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?",
+      [inspectionA, fieldId]
+    );
+    expect(aValue).toEqual([{ FieldValue: "SIK101" }]);
+
+    const bValue = await db.getAllAsync<{ FieldValue: string }>(
+      "SELECT FieldValue FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?",
+      [inspectionB, fieldId]
+    );
+    expect(bValue).toEqual([{ FieldValue: "SIK201" }]);
+  });
+
+  it("blocks renaming to a duplicate Site ID without writing anything", async () => {
+    const inspectionA = await seedInspection("SIK001");
+    await seedInspection("SIK101");
+    await seedPoleIdField();
+    const fieldId = await resolvePoleFieldId();
+
+    const result = await PoleRenameService.renamePoleId(inspectionA, "SIK001", "SIK101", {
+      renameFiles: false,
+      updateReports: true,
+    });
+
+    expect(result.duplicate).toBe(true);
+    expect(result.duplicatePoleId).toBe("SIK101");
+    expect(downloadStorage.renameFile).not.toHaveBeenCalled();
+
+    const inspection = await db.getFirstAsync<{ PoleID: string }>(
+      "SELECT PoleID FROM Inspections WHERE InspectionID = ?",
+      [inspectionA]
+    );
+    expect(inspection?.PoleID).toBe("SIK001");
+
+    const poleValues = await db.getAllAsync<{ FieldValue: string }>(
+      "SELECT FieldValue FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?",
+      [inspectionA, fieldId]
+    );
+    expect(poleValues).toEqual([]);
+
+    const history = await db.getAllAsync(
+      "SELECT * FROM InspectionPoleIdHistory WHERE InspectionID = ?",
+      [inspectionA]
+    );
+    expect(history).toHaveLength(0);
   });
 });

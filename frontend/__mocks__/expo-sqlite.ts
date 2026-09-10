@@ -84,6 +84,7 @@ type WhereCond = {
   like?: RegExp;
   rightCol?: string;
   rightQual?: string;
+  normalize?: boolean;
 };
 
 function compileWhereConditions(whereClause: string, params: unknown[]): WhereCond[] {
@@ -112,6 +113,17 @@ function compileWhereConditions(whereClause: string, params: unknown[]): WhereCo
           return params[paramIdx++];
         });
         return { col: col || "", qual, op: isNot ? "NOT_IN" : "IN", values };
+      }
+      const normalizedEqMatch = cond.match(
+        /^\s*LOWER\s*\(\s*TRIM\s*\(\s*(\w+)\s*\)\s*\)\s*(?:>=|<=|!=|<>|=|>|<)\s*LOWER\s*\(\s*TRIM\s*\(\s*\?\s*\)\s*\)\s*$/i
+      );
+      if (normalizedEqMatch) {
+        const param = params[paramIdx++];
+        return {
+          col: normalizedEqMatch[1],
+          value: typeof param === "string" ? param.trim().toLowerCase() : param,
+          normalize: true,
+        };
       }
       const likeMatch = cond.match(
         /(?:(?:(\w+)\.)?(\w+))\s+LIKE\s+(?:\?|'([^']*)')(?:\s+ESCAPE\s+'([^']*)')?/i
@@ -168,7 +180,9 @@ function evalWhereConditions(
       return cond.like.test(String(read(cond.col, cond.qual) ?? ""));
     }
 
-    const actual = read(cond.col, cond.qual);
+    const actual = cond.normalize
+      ? String(read(cond.col, cond.qual) ?? "").trim().toLowerCase()
+      : read(cond.col, cond.qual);
 
     if (cond.rightCol !== undefined) {
       if (lookup == null) return true;

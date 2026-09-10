@@ -102,21 +102,21 @@ export class PoleRenameService {
         `SELECT FieldID FROM InspectionFields WHERE FieldKey = 'pole_id' LIMIT 1`
       );
       if (poleIdField) {
-        const existing = await db.getFirstAsync<{ ValueID: number }>(
-          `SELECT ValueID FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?`,
-          [inspectionId, poleIdField.FieldID]
+        await db.runAsync(
+          `INSERT INTO InspectionValues
+           (
+             InspectionID,
+             FieldID,
+             FieldValue
+           )
+           VALUES
+           (?, ?, ?)
+           ON CONFLICT(InspectionID, FieldID)
+           DO UPDATE SET
+             FieldValue = excluded.FieldValue,
+             UpdatedAt = CURRENT_TIMESTAMP;`,
+          [inspectionId, poleIdField.FieldID, trimmedNewPoleId]
         );
-        if (existing) {
-          await db.runAsync(
-            `UPDATE InspectionValues SET FieldValue = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE ValueID = ?`,
-            [trimmedNewPoleId, existing.ValueID]
-          );
-        } else {
-          await db.runAsync(
-            `INSERT INTO InspectionValues (InspectionID, FieldID, FieldValue) VALUES (?, ?, ?)`,
-            [inspectionId, poleIdField.FieldID, trimmedNewPoleId]
-          );
-        }
       }
     }
 
