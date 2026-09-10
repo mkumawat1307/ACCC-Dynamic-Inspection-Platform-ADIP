@@ -72,6 +72,7 @@ jest.mock("react-native-paper", () => {
     Surface: El("Surface"),
     Switch: El("Switch"),
     Snackbar: El("Snackbar"),
+    ProgressBar: (props: any) => null,
     TextInput: (props: any) => R.createElement(RN.TextInput, props),
   };
 });
@@ -244,10 +245,10 @@ async function openSeededProject(): Promise<{ db: SQLiteDatabase }> {
   await deviceOptionsSeed.seedDeviceOptions();
   const deviceDefsSeed = require("@/src/database/seeds/device-field-definitions.seed");
   await deviceDefsSeed.seedDeviceFieldDefinitions();
-  await (await getDatabase()).runAsync(
-    `UPDATE DeviceFieldDefinitions SET TemplateID = 1 WHERE TemplateID IS NULL`
-  );
   const db: SQLiteDatabase = await getDatabase();
+  await db.runAsync(
+    `UPDATE DeviceFieldDefinitions SET TemplateID = 1, IsActive = 1, IsVisible = 1 WHERE TemplateID IS NULL`
+  );
   return { db };
 }
 
@@ -320,6 +321,27 @@ function testProject(): Project {
 function findFieldValue(tree: any, fieldKey: string): string {
   return tree.root.findByProps({ testID: `field-${fieldKey}` }).props.value;
 }
+
+function collectText(node: any, out: string[] = []): string[] {
+  if (typeof node === "string") {
+    out.push(node);
+    return out;
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) collectText(child, out);
+    return out;
+  }
+  if (node && typeof node === "object") {
+    const children = node.children;
+    if (Array.isArray(children)) {
+      for (const child of children) collectText(child, out);
+    }
+  }
+  return out;
+}
+
+const screenText = (tree: ReturnType<typeof TestRenderer.create>): string =>
+  collectText(tree.toJSON()).join("");
 
 async function settle() {
   await act(async () => {});
@@ -607,6 +629,74 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     expect(firstSaved).toBeNull();
     await act(async () => {
       secondTree!.unmount();
+    });
+  });
+
+  it("progress is inline per section header (accordion right slot) AND the overall card shows immediately on the fresh form", async () => {
+    await openSeededProject();
+    mockParamsState.current = {
+      projectId: "1",
+      projectData: JSON.stringify(testProject()),
+    };
+
+    let tree: ReturnType<typeof TestRenderer.create> | undefined;
+    await act(async () => {
+      tree = TestRenderer.create(<NewInspectionScreen />);
+    });
+    await settle();
+
+    // Every real section header is wired to the inline progress component
+    // (rendered in the arrow/right slot, which keeps the chevron) and long
+    // section names wrap via titleNumberOfLines.
+    const accordions = tree!.root.findAll(
+      (node) => node.props && typeof node.props.right === "function"
+    );
+    expect(accordions.length).toBeGreaterThanOrEqual(3);
+    for (const accordion of accordions) {
+      expect(accordion.props.titleNumberOfLines).toBe(2);
+    }
+
+    // Fresh (no inspectionId): the compact overall card is visible immediately
+    // with the configured totals (0 / 23 completed). Progress is never hidden,
+    // even before any value exists.
+    // Fresh (no inspectionId): the compact overall card is visible immediately
+    // with the configured totals (0 / 23 completed). Progress is never hidden,
+    // even before any value exists.
+    const text = screenText(tree!);
+    expect(text).toContain("Overall Inspection");
+    expect(text).toContain("0 / 23 completed");
+    expect(text).toContain("23 remaining");
+    await act(async () => {
+      tree!.unmount();
+    });
+  });
+
+  it("edit mode renders the compact top-level Overall Inspection card (no grouped dashboard blocks)", async () => {
+    await openSeededProject();
+    const inspectionId = await createInspection("2026-09-05");
+    mockParamsState.current = {
+      projectId: "1",
+      projectData: JSON.stringify(testProject()),
+      inspectionId: String(inspectionId),
+    };
+
+    let tree: ReturnType<typeof TestRenderer.create> | undefined;
+    await act(async () => {
+      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+    });
+    await settle();
+
+    const json = JSON.stringify(tree!.toJSON());
+    expect(json).toContain("Overall Inspection");
+    expect(json).toContain("completed");
+    expect(json).toContain("remaining");
+    // The removed grouped dashboard blocks must not come back.
+    expect(json).not.toContain("Default Sections");
+    expect(json).not.toContain("Default Device Type");
+    expect(json).not.toContain("Custom Device Types");
+    expect(json).not.toContain("Custom Sections");
+    await act(async () => {
+      tree!.unmount();
     });
   });
 });

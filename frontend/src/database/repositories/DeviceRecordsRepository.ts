@@ -1,5 +1,5 @@
 import { getActiveProjectPath, getDatabase } from "../db";
-import { InspectionEditSession } from "./InspectionEditSession";
+import { InspectionEditSessionState } from "./InspectionEditSessionState";
 import { logger } from "@/src/utils/logger";
 
 export interface DeviceRecord {
@@ -36,8 +36,8 @@ export class DeviceRecordsRepository {
   ): Promise<void> {
     // Editing an existing inspection: defer to the edit session so device
     // edits are only persisted on an explicit Save, never on Back/Cancel.
-    if (InspectionEditSession.isActive(record.InspectionID)) {
-      InspectionEditSession.stageDeviceRecord(record);
+    if (InspectionEditSessionState.isActive(record.InspectionID)) {
+      InspectionEditSessionState.stageDeviceRecord(record);
       return;
     }
 
@@ -47,8 +47,16 @@ export class DeviceRecordsRepository {
       clearTimeout(existing.timer);
     }
     const timer = setTimeout(async () => {
-      this.saveRegistry.delete(key);
+      // Keep the pending overlay authoritative during the in-flight write: if
+      // the registry entry is deleted before persist() resolves, the progress
+      // overlay and the database BOTH briefly miss the record. Delete only
+      // when this record is still the latest entry for the key — a newer
+      // schedule (or a flush) must never be wiped by a stale completion.
       await this.persist(record, onPersisted);
+      const current = this.saveRegistry.get(key);
+      if (current !== undefined && current.record === record) {
+        this.saveRegistry.delete(key);
+      }
     }, debounceMs);
     this.saveRegistry.set(key, { record, timer, onPersisted });
   }
@@ -135,6 +143,10 @@ export class DeviceRecordsRepository {
        ORDER BY DeviceType, DeviceNo`,
       [inspectionId]
     );
+  }
+
+  static getPendingDeviceRecords(): DeviceRecord[] {
+    return [...this.saveRegistry.values()].map((entry) => entry.record);
   }
 
   static async create(record: DeviceRecord): Promise<number> {

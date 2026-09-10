@@ -5,6 +5,7 @@ export interface InspectionSection {
   DisplayOrder: number;
   IsActive?: number;
   IsVisible?: number;
+  IsDefault?: number;
   CreatedAt?: string | null;
 }
 

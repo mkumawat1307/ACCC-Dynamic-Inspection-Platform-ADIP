@@ -2,7 +2,7 @@
 import { getDatabase } from "../db";
 import { logger } from "@/src/utils/logger";
 import { InspectionValue } from "@/src/models/InspectionValue";
-import { InspectionEditSession } from "./InspectionEditSession";
+import { InspectionEditSessionState } from "./InspectionEditSessionState";
 
 export default class InspectionValueRepository {
 
@@ -20,8 +20,8 @@ export default class InspectionValueRepository {
     value: string | null
   ): Promise<void> {
 
-    if (InspectionEditSession.isActive(inspectionId)) {
-      InspectionEditSession.stageFieldValue(fieldId, value);
+    if (InspectionEditSessionState.isActive(inspectionId)) {
+      InspectionEditSessionState.stageFieldValue(fieldId, value);
       return;
     }
 

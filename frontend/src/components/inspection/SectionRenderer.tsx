@@ -19,6 +19,7 @@ import FieldRenderer from "./FieldRenderer";
 
 import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import InspectionValueRepository from "@/src/database/repositories/InspectionValueRepository";
+import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import DeviceFieldDefinitionsRepository from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 
 import {
@@ -28,6 +29,9 @@ import {
 import { useInspection } from "@/src/context/InspectionContext";
 import PhotoSection from "./PhotoSection";
 import DeviceSection from "./DeviceSection";
+import type {
+  InspectionSectionProgress,
+} from "@/src/database/repositories/InspectionProgressService";
 
 import { logger } from "@/src/utils/logger";
 
@@ -37,6 +41,8 @@ interface Props {
   sectionKey?: string;
   templateId?: number;
   existing?: boolean;
+  onDataChanged?: () => void;
+  progress?: InspectionSectionProgress | null;
 }
 
 export default function SectionRenderer({
@@ -45,6 +51,8 @@ export default function SectionRenderer({
   sectionKey,
   templateId,
   existing = false,
+  onDataChanged,
+  progress,
 }: Props) {
   const { poleId: contextPoleId } = useInspection();
   const [loading, setLoading] = useState(true);
@@ -168,6 +176,11 @@ export default function SectionRenderer({
       ...prev,
       [field.FieldID]: value,
     }));
+    // Mirror the on-screen value synchronously and refresh progress
+    // immediately — the awaited database write below would otherwise leave
+    // the progress header one interaction behind.
+    InspectionLiveValues.setFieldValue(field.FieldID, value);
+    onDataChanged?.();
 
     await InspectionValueRepository.saveValue(
       inspectionId,
@@ -251,6 +264,8 @@ export default function SectionRenderer({
             templateId={templateId}
             locked={isFormLocked}
             existing={existing}
+            onDataChanged={onDataChanged}
+            deviceProgress={progress?.devices}
           />
         </View>
       )}

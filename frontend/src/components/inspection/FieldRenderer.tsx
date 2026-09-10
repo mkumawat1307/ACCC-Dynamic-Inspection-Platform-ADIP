@@ -47,7 +47,6 @@ export default function FieldRenderer({
   onCameraCountChange,
   onSwitchCountChange,
 }: FieldRendererProps) {
-  const label = required ? `${fieldName} *` : fieldName;
   const [dropdownFocus, setDropdownFocus] = useState(false);
 
   useEffect(() => {
@@ -62,7 +61,8 @@ export default function FieldRenderer({
     <>
       <FieldInput
         fieldType={fieldType}
-        label={label}
+        label={fieldName}
+        required={required}
         value={value}
         editable={editable}
         placeholder={placeholder}

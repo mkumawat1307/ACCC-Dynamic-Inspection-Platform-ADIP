@@ -4,7 +4,8 @@
 //
 // While a session is active (an existing inspection screen is open), every
 // inspection-related write that the UI triggers during editing is captured in
-// memory instead of being written to the database:
+// memory (see InspectionEditSessionState) instead of being written to the
+// database:
 //
 //   - section/renderer field values  (InspectionValues)
 //   - Pole ID changes                (Inspections.PoleID + pole_id field)
@@ -21,35 +22,19 @@
 import InspectionValueRepository from "./InspectionValueRepository";
 import { InspectionRepository } from "./InspectionRepository";
 import { DeviceRecordsRepository, DeviceRecord } from "./DeviceRecordsRepository";
+import { InspectionEditSessionState } from "./InspectionEditSessionState";
+import type { PendingRename } from "./InspectionEditSessionState";
 import type { PendingRename as PoleRenameItem } from "./PoleRenameService";
 import { getDatabase } from "../db";
 import { logger } from "@/src/utils/logger";
 
-interface PendingRename {
-  oldPoleId: string;
-  newPoleId: string;
-  renameFiles: boolean;
-  updateReports: boolean;
-}
-
 export class InspectionEditSession {
-  private static activeInspectionId: number | null = null;
-  private static fieldValues = new Map<number, string>();
-  private static stagedPoleId: string | null = null;
-  private static pendingRename: PendingRename | null = null;
-  private static deviceRecords = new Map<string, DeviceRecord>();
-  private static committing = false;
-
   static isActive(inspectionId: number | null): boolean {
-    return (
-      !this.committing &&
-      inspectionId != null &&
-      this.activeInspectionId === inspectionId
-    );
+    return InspectionEditSessionState.isActive(inspectionId);
   }
 
   static hasActiveSession(): boolean {
-    return this.activeInspectionId != null;
+    return InspectionEditSessionState.hasActiveSession();
   }
 
   /**
@@ -57,57 +42,39 @@ export class InspectionEditSession {
    * Any edits staged for a different inspection are discarded first.
    */
   static activate(inspectionId: number): void {
-    if (
-      this.activeInspectionId !== null &&
-      this.activeInspectionId !== inspectionId
-    ) {
-      this.clear();
-    }
-    this.activeInspectionId = inspectionId;
+    InspectionEditSessionState.activate(inspectionId);
   }
 
   static deactivate(): void {
-    this.clear();
-    this.activeInspectionId = null;
+    InspectionEditSessionState.deactivate();
   }
 
   static stageFieldValue(fieldId: number, value: string | null): void {
-    this.fieldValues.set(fieldId, value ?? "");
+    InspectionEditSessionState.stageFieldValue(fieldId, value);
   }
 
   static stagePoleId(value: string): void {
-    this.stagedPoleId = value;
+    InspectionEditSessionState.stagePoleId(value);
   }
 
   static stagePendingRename(pending: PendingRename | null): void {
-    this.pendingRename = pending;
+    InspectionEditSessionState.stagePendingRename(pending);
   }
 
   static stageDeviceRecord(record: DeviceRecord): void {
-    const key =
-      record.RecordID != null
-        ? `id:${record.RecordID}`
-        : `new:${record.DeviceType}:${record.DeviceNo}`;
-    this.deviceRecords.set(key, record);
+    InspectionEditSessionState.stageDeviceRecord(record);
   }
 
   static getStagedFieldValues(): Map<number, string> {
-    return new Map(this.fieldValues);
+    return InspectionEditSessionState.getStagedFieldValues();
   }
 
   static getStagedDeviceRecords(): DeviceRecord[] {
-    return [...this.deviceRecords.values()];
+    return InspectionEditSessionState.getStagedDeviceRecords();
   }
 
   static getStagedPoleId(): string | null {
-    return this.stagedPoleId;
-  }
-
-  private static clear(): void {
-    this.fieldValues.clear();
-    this.stagedPoleId = null;
-    this.pendingRename = null;
-    this.deviceRecords.clear();
+    return InspectionEditSessionState.getStagedPoleId();
   }
 
   /**
@@ -118,15 +85,15 @@ export class InspectionEditSession {
    * staged edits can be retried.
    */
   static async commit(): Promise<boolean> {
-    if (this.activeInspectionId == null) return true;
+    if (InspectionEditSessionState.getActiveInspectionId() == null) return true;
 
-    const inspectionId = this.activeInspectionId;
-    const fieldValues = new Map(this.fieldValues);
-    const stagedPoleId = this.stagedPoleId;
-    const pendingRename = this.pendingRename;
-    const devices = [...this.deviceRecords.values()];
+    const inspectionId = InspectionEditSessionState.getActiveInspectionId()!;
+    const fieldValues = InspectionEditSessionState.getStagedFieldValues();
+    const stagedPoleId = InspectionEditSessionState.getStagedPoleId();
+    const pendingRename = InspectionEditSessionState.getPendingRename();
+    const devices = InspectionEditSessionState.getStagedDeviceRecords();
 
-    this.committing = true;
+    InspectionEditSessionState.setCommitting(true);
 
     let pendingFileRenames: PoleRenameItem[] = [];
 
@@ -189,8 +156,7 @@ export class InspectionEditSession {
 
       if (duplicate) return false;
 
-      this.clear();
-      this.activeInspectionId = null;
+      InspectionEditSessionState.deactivate();
       return true;
     } catch (error) {
       logger.error("[InspectionEditSession] commit failed:", error);
@@ -200,7 +166,7 @@ export class InspectionEditSession {
       }
       return false;
     } finally {
-      this.committing = false;
+      InspectionEditSessionState.setCommitting(false);
     }
   }
 
@@ -226,10 +192,9 @@ export class InspectionEditSession {
    * Discard every staged edit without writing anything to the database.
    */
   static async discard(): Promise<void> {
-    if (this.activeInspectionId != null) {
+    if (InspectionEditSessionState.hasActiveSession()) {
       DeviceRecordsRepository.cancelPendingSaves();
     }
-    this.clear();
-    this.activeInspectionId = null;
+    InspectionEditSessionState.deactivate();
   }
 }

@@ -1,5 +1,6 @@
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import DeviceSection from "@/src/components/inspection/DeviceSection";
 import DeviceFieldDefinitionsRepository from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositories/DeviceRecordsRepository";
@@ -8,6 +9,16 @@ import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRe
 jest.mock("@/src/database/db", () => ({
   getActiveProjectPath: jest.fn(() => "/mock/projects/active/inspection.db"),
 }));
+
+jest.mock("@expo/vector-icons/MaterialCommunityIcons", () => {
+  const ReactNs = require("react");
+  const RN = require("react-native");
+  return {
+    __esModule: true,
+    default: (props: any) =>
+      ReactNs.createElement(RN.Text, { testID: `glyph-${props.name}` }, props.name),
+  };
+});
 
 const numberField = {
   FieldDefID: 1,
@@ -42,6 +53,18 @@ const dropdownField = {
   FieldType: "dropdown",
   IsRequired: 0,
   DisplayOrder: 3,
+  IsActive: 1,
+};
+
+const requiredDropdownField = {
+  FieldDefID: 4,
+  TemplateID: 1,
+  DeviceType: "Camera",
+  FieldName: "MountType",
+  Label: "Mount Type",
+  FieldType: "dropdown",
+  IsRequired: 1,
+  DisplayOrder: 4,
   IsActive: 1,
 };
 
@@ -518,5 +541,250 @@ describe("DeviceSection device count changes", () => {
     // a data-vanishing bug.
     expect(recordsRepo.flushPendingDeviceSaves).toHaveBeenCalled();
     expect(recordsRepo.deactivateBeyond).toHaveBeenCalledWith(42, "Camera", 1);
+  });
+});
+
+function textOf(tree: ReturnType<typeof TestRenderer.create>): string {
+  const strings: string[] = [];
+  const walk = (node: unknown) => {
+    if (typeof node === "string") {
+      strings.push(node);
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child);
+      return;
+    }
+    if (node && typeof node === "object") {
+      const children = (node as { children?: unknown }).children;
+      if (Array.isArray(children)) {
+        for (const child of children) walk(child);
+      }
+    }
+  };
+  walk(tree.toJSON());
+  return strings.join("");
+}
+
+function glyphs(tree: ReturnType<typeof TestRenderer.create>): string[] {
+  const out: string[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    const el = node as {
+      type?: string;
+      props?: { testID?: string };
+      children?: unknown[];
+    };
+    if (typeof el.type === "string") {
+      const testID = el.props?.testID;
+      if (testID && testID.startsWith("glyph-")) {
+        out.push(testID);
+      }
+    }
+    if (Array.isArray(el.children)) {
+      for (const child of el.children) walk(child);
+    }
+  };
+  walk(tree.toJSON());
+  return out;
+}
+
+describe("DeviceSection per-device progress + collapse", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const progressOf = (overrides?: Partial<{
+    deviceNo: number;
+    completed: number;
+    total: number;
+    remaining: number;
+    percentage: number;
+  }>) => ({
+    deviceNo: 1,
+    completed: 2,
+    total: 9,
+    remaining: 7,
+    percentage: 22,
+    ...overrides,
+  });
+
+  async function renderWithProgress(deviceProgress?: any[], recordList?: any[]) {
+    fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
+    optionsRepo.getDropdownData.mockResolvedValue([
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
+    ]);
+    recordsRepo.getByInspectionAll.mockResolvedValue(recordList ?? [mockRecord]);
+    recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
+    recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
+    recordsRepo.cancelPendingSaves.mockImplementation(() => undefined);
+
+    const count = recordList?.length ?? 1;
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection
+          inspectionId={42}
+          deviceType="Camera"
+          count={count}
+          deviceProgress={deviceProgress}
+        />
+      );
+    });
+    return tree;
+  }
+
+  function deviceToggle(
+    tree: ReturnType<typeof TestRenderer.create>,
+    deviceNo: number
+  ): { props: { onPress: () => void } } {
+    return tree.root.find(
+      (n) =>
+        (n.props as { testID?: string } | undefined)?.testID === `dev-toggle-${deviceNo}`
+    ) as unknown as { props: { onPress: () => void } };
+  }
+
+  it("does NOT render duplicate device-count progress on the Camera Details header", async () => {
+    const secondRecord = { ...mockRecord, DeviceNo: 2 };
+    const tree = await renderWithProgress(
+      [progressOf(), { deviceNo: 2, completed: 9, total: 9, remaining: 0, percentage: 100 }],
+      [mockRecord, secondRecord],
+    );
+    const text = textOf(tree);
+    expect(text).toContain("Camera Details (2)");
+    expect(text).not.toContain("1 / 2 completed");
+    expect(text).not.toContain("1 remaining");
+    expect(text).toContain("2 / 9 completed");
+    expect(text).toContain("9 / 9 completed");
+  });
+
+  it("shows the per-device field progress text (completed / total completed) in the header", async () => {
+    const tree = await renderWithProgress([progressOf()]);
+    const text = textOf(tree);
+    expect(text).toContain("2 / 9 completed");
+    expect(text).toContain("7 remaining");
+  });
+
+  it("renders both the green check and the chevron once a device is complete", async () => {
+    const tree = await renderWithProgress([progressOf({ remaining: 0, percentage: 100, completed: 9 })]);
+    const text = textOf(tree);
+    expect(text).toContain("check");
+    expect(text).toContain("chevron-up");
+    expect(text).not.toContain("check-circle");
+    expect(glyphs(tree)).toEqual(["glyph-check", "glyph-chevron-up"]);
+  });
+
+  it("reserves no empty checkmark space on an incomplete device header", async () => {
+    const tree = await renderWithProgress([progressOf()]);
+    const text = textOf(tree);
+    expect(text).toContain("2 / 9 completed");
+    expect(text).toContain("7 remaining");
+    expect(glyphs(tree)).toEqual(["glyph-chevron-up"]);
+  });
+
+  it("collapses one device independently while the others stay expanded", async () => {
+    const secondRecord = { ...mockRecord, DeviceNo: 2 };
+    const tree = await renderWithProgress(undefined, [mockRecord, secondRecord]);
+
+    // All devices start expanded → 2 Voltage inputs.
+    expect(findTextInput(tree, "Voltage") ?? false);
+    const voltageInputs = (() => {
+      const inputs = tree.root.findAll(
+        (n) => (n as { type?: unknown }).type === "TextInput" &&
+          (n.props as { label?: string }).label === "Voltage"
+      );
+      return inputs as unknown as Array<{ props: { label: string; value?: string } }>;
+    })();
+    expect(voltageInputs).toHaveLength(2);
+
+    // Collapse device 1 only.
+    act(() => {
+      deviceToggle(tree, 1).props.onPress();
+    });
+    const collapsedVoltage = tree.root.findAll(
+      (n) => (n as { type?: unknown }).type === "TextInput" &&
+        (n.props as { label?: string }).label === "Voltage"
+    );
+    expect(collapsedVoltage).toHaveLength(1);
+
+    // Expand it again and collapse device 2 instead.
+    act(() => {
+      deviceToggle(tree, 1).props.onPress();
+    });
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    const otherCollapsed = tree.root.findAll(
+      (n) => (n as { type?: unknown }).type === "TextInput" &&
+        (n.props as { label?: string }).label === "Voltage"
+    );
+    expect(otherCollapsed).toHaveLength(1);
+  });
+
+  it("shows no progress text without a deviceProgress entry (chevron-only header)", async () => {
+    const tree = await renderWithProgress(undefined);
+    expect(textOf(tree)).not.toContain("completed");
+  });
+
+  it("new devices added on grow default to expanded", async () => {
+    const tree = await renderWithProgress(undefined, [mockRecord]);
+    expect(findTextInput(tree, "Voltage")).toBeTruthy();
+
+    // Simulate growth by re-rendering with two records and count 2.
+    const secondRecord = { ...mockRecord, DeviceNo: 2 };
+    fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
+    optionsRepo.getDropdownData.mockResolvedValue([
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
+    ]);
+    recordsRepo.getByInspectionAll.mockResolvedValue([mockRecord, secondRecord]);
+    recordsRepo.getByInspection.mockResolvedValue([mockRecord]);
+    recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
+    recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
+    recordsRepo.deactivateBeyond.mockResolvedValue(undefined);
+    recordsRepo.restorePendingDeactivatedRecords.mockResolvedValue([secondRecord]);
+
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={2} deviceProgress={[]} />);
+    });
+    const voltageInputs = tree.root.findAll(
+      (n) => (n as { type?: unknown }).type === "TextInput" &&
+        (n.props as { label?: string }).label === "Voltage"
+    );
+    expect(voltageInputs).toHaveLength(2);
+  });
+
+  it("renders a red bold * after the label of a required field", async () => {
+    fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField, requiredDropdownField]);
+    optionsRepo.getDropdownData.mockResolvedValue([
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
+    ]);
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} />
+      );
+    });
+
+    const starNodes = tree.root.findAll((n) => {
+      if ((n as { type?: unknown }).type !== "Text") return false;
+      const { style, children } = n.props as { style?: { color?: string; fontWeight?: string; fontSize?: number }; children?: unknown };
+      return children === "*" && style?.color === "#B3261E" && style.fontWeight === "700";
+    });
+    expect(starNodes.length).toBe(1);
+
+    const fieldLabelNode = tree.root.findAll((n) => {
+      if ((n as { type?: unknown }).type !== "Text") return false;
+      const { style } = n.props as { style?: { color?: string; fontWeight?: string } };
+      return style?.color === "#444" && style.fontWeight === "500";
+    }).find((n) => {
+      const strings = n.children.filter((c) => typeof c === "string").join("");
+      return strings.includes("Mount Type");
+    });
+    expect(fieldLabelNode).toBeTruthy();
+    expect(textOf(tree)).toContain("Mount Type *");
   });
 });

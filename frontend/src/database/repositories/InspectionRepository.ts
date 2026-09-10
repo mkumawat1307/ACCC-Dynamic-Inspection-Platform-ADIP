@@ -8,7 +8,7 @@ import { deleteInspectionData } from "./inspectionDataHelper";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import { requestAndroidBackup } from "@/src/utils/androidBackup";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
-import { InspectionEditSession } from "./InspectionEditSession";
+import { InspectionEditSessionState } from "./InspectionEditSessionState";
 
 export function isFieldValueEmpty(type: string, value: string): boolean {
   switch (type) {
@@ -53,6 +53,7 @@ static async getSections(templateId?: number, inspectionId?: number): Promise<In
         DisplayOrder,
         IsActive,
         IsVisible,
+        IsDefault,
         CreatedAt
       FROM InspectionSections
       WHERE IsActive = 1 AND TemplateID = ?
@@ -93,7 +94,7 @@ static async getSections(templateId?: number, inspectionId?: number): Promise<In
       if (sectionIds.length > 0) {
         const sectionPlaceholders = sectionIds.map(() => "?").join(",");
         const sections = await db.getAllAsync<InspectionSection>(
-          `SELECT SectionID, SectionName, SectionKey, DisplayOrder, IsActive, IsVisible, CreatedAt
+          `SELECT SectionID, SectionName, SectionKey, DisplayOrder, IsActive, IsVisible, IsDefault, CreatedAt
            FROM InspectionSections WHERE SectionID IN (${sectionPlaceholders})`,
           sectionIds
         );
@@ -215,8 +216,8 @@ static async saveFieldValue(
 ) {
   // Editing an existing inspection: defer to the edit session so the value is
   // only persisted on an explicit Save, and never on Back/Cancel.
-  if (InspectionEditSession.isActive(inspectionId)) {
-    InspectionEditSession.stageFieldValue(fieldId, value);
+  if (InspectionEditSessionState.isActive(inspectionId)) {
+    InspectionEditSessionState.stageFieldValue(fieldId, value);
     return;
   }
 
@@ -299,8 +300,8 @@ static async updateInspectionPoleId(
   poleId: string
 ) {
   // Editing an existing inspection: defer to the edit session (committed on Save).
-  if (InspectionEditSession.isActive(inspectionId)) {
-    InspectionEditSession.stagePoleId(poleId);
+  if (InspectionEditSessionState.isActive(inspectionId)) {
+    InspectionEditSessionState.stagePoleId(poleId);
     return;
   }
 
@@ -327,8 +328,8 @@ static async updatePoleIdDirectSave(
   poleId: string
 ) {
   // Editing an existing inspection: defer to the edit session (committed on Save).
-  if (InspectionEditSession.isActive(inspectionId)) {
-    InspectionEditSession.stagePoleId(poleId);
+  if (InspectionEditSessionState.isActive(inspectionId)) {
+    InspectionEditSessionState.stagePoleId(poleId);
     return;
   }
 
@@ -408,8 +409,8 @@ static async validateInspection(
 
     const effectiveStagedValues =
       stagedValues ??
-      (InspectionEditSession.isActive(inspectionId)
-        ? InspectionEditSession.getStagedFieldValues()
+      (InspectionEditSessionState.isActive(inspectionId)
+        ? InspectionEditSessionState.getStagedFieldValues()
         : undefined);
 
     const missingFields: string[] = [];
@@ -504,9 +505,9 @@ static async validateDeviceMandatory(
     );
     const values = await this.getInspectionValues(inspectionId);
 
-    const sessionActive = InspectionEditSession.isActive(inspectionId);
+    const sessionActive = InspectionEditSessionState.isActive(inspectionId);
     const sessionFieldValues = sessionActive
-      ? InspectionEditSession.getStagedFieldValues()
+      ? InspectionEditSessionState.getStagedFieldValues()
       : undefined;
 
     const counts: Record<string, number> = {};
@@ -541,7 +542,7 @@ static async validateDeviceMandatory(
     // saves through the session they are not yet in the database, but they are
     // the authoritative state during validation.
     if (sessionActive) {
-      for (const record of InspectionEditSession.getStagedDeviceRecords()) {
+      for (const record of InspectionEditSessionState.getStagedDeviceRecords()) {
         recordsByTypeNo[record.DeviceType] = recordsByTypeNo[record.DeviceType] ?? {};
         recordsByTypeNo[record.DeviceType][record.DeviceNo] = record;
       }

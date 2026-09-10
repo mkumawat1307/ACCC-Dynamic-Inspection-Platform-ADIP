@@ -15,6 +15,7 @@ describe("ui design tokens", () => {
       textMuted: "#999",
       summaryTotal: "#0B5ED7",
       summaryToday: "#198754",
+      error: "#B3261E",
     });
   });
 

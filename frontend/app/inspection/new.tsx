@@ -1,5 +1,6 @@
 //frontend\app\inspection\new.tsx
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -51,9 +52,14 @@ import { InspectionRepository } from "@/src/database/repositories/InspectionRepo
 import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
+import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
 import { validatePhotosForSave } from "@/src/components/inspection/photoUtils";
 import { useProjectActivation } from "@/src/hooks/useProjectActivation";
+import useInspectionProgress from "@/src/hooks/useInspectionProgress";
+import InspectionSectionProgress from "@/src/components/inspection/InspectionSectionProgress";
+import OverallProgressCard from "@/src/components/inspection/OverallProgressCard";
+import type { InspectionSectionProgress as InspectionSectionProgressData } from "@/src/database/repositories/InspectionProgressService";
 
 export default function NewInspectionScreen({
   title = "New Inspection",
@@ -157,6 +163,24 @@ export default function NewInspectionScreen({
   const [defaultTemplateId, setDefaultTemplateId] = useState<number>(1);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
+  const [progressRefreshKey, setProgressRefreshKey] = useState(0);
+  const bumpProgress = useCallback(() => {
+    setProgressRefreshKey((key) => key + 1);
+  }, []);
+  const inspectionProgress = useInspectionProgress(
+    inspectionId,
+    defaultTemplateId,
+    progressRefreshKey
+  );
+
+  const progressByKey = useMemo(() => {
+    const map = new Map<string, InspectionSectionProgressData>();
+    for (const entry of inspectionProgress?.sections ?? []) {
+      map.set(entry.key, entry);
+    }
+    return map;
+  }, [inspectionProgress?.sections]);
+
   useEffect(() => {
     expandedSectionsRef.current = expandedSections;
   }, [expandedSections]);
@@ -194,6 +218,7 @@ export default function NewInspectionScreen({
     return () => {
       cancelPendingOpen();
       sectionScrollCoordinatorRef.current?.cancel();
+      InspectionLiveValues.reset();
     };
   }, []);
 
@@ -329,6 +354,9 @@ useEffect(() => {
 }, [inspectionId, router]);
 
 async function initialize() {
+  // The live overlay is a module-level singleton; start this screen with a
+  // clean slate so progress can never be computed from a previous inspection.
+  InspectionLiveValues.reset();
   await loadProject();
 
   const db = await getDatabase();
@@ -640,6 +668,10 @@ return (
         {title}
       </Text>
 
+{inspectionProgress != null && (
+  <OverallProgressCard progress={inspectionProgress} />
+)}
+
 {sections.map((section) => (
   <Card
     key={section.SectionID}
@@ -654,10 +686,17 @@ return (
     >
       <List.Accordion
         title={section.IsActive === 0 ? `Deleted ${section.SectionName}` : section.SectionName}
+        titleNumberOfLines={2}
         expanded={expandedSections.includes(section.SectionID)}
         onPress={() => handleSectionPress(section.SectionID)}
         titleStyle={styles.sectionTitle}
         style={styles.accordionHeader}
+        right={({ isExpanded }) => (
+          <InspectionSectionProgress
+            progress={progressByKey.get(section.SectionKey ?? "")}
+            expanded={isExpanded}
+          />
+        )}
       >
         <Card.Content>
     {section.SectionKey === "general_information" ? (
@@ -665,6 +704,7 @@ return (
         ensureDraft={createDraftInspection}
         releaseAbandonedDraft={releaseAbandonedDraft}
         existing={Boolean(routeInspectionId)}
+        onDataChanged={bumpProgress}
       />
     ) : inspectionId ? (
       <SectionRenderer
@@ -673,6 +713,8 @@ return (
         sectionKey={section.SectionKey}
         templateId={defaultTemplateId}
         existing={Boolean(routeInspectionId)}
+        onDataChanged={bumpProgress}
+        progress={progressByKey.get(section.SectionKey ?? "") ?? null}
       />
     ) : (
       <Text variant="bodyMedium" style={styles.lockedNotice}>

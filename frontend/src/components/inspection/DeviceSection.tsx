@@ -1,17 +1,21 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Alert, Keyboard, Pressable, StyleSheet, View } from "react-native";
 import { Card, Checkbox, Text, TextInput } from "react-native-paper";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import DeviceFieldDefinitionsRepository, {
   DeviceFieldDefinition,
 } from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
 import { DeviceRecordsRepository, DeviceRecord } from "@/src/database/repositories/DeviceRecordsRepository";
 import DeviceOptionsRepository from "@/src/database/repositories/DeviceOptionsRepository";
+import type { DeviceProgress } from "@/src/database/repositories/InspectionProgressService";
 import { sanitizeNumberInput } from "@/src/utils/fieldInput";
 import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
 import { getActiveProjectPath } from "@/src/database/db";
 import { logger } from "@/src/utils/logger";
 import { TOUCH_TARGETS } from "@/src/utils/touchTargets";
+import { COLORS } from "@/src/constants/ui";
 import DropdownField from "./DropdownField";
+import { fieldLabelWithRequired } from "./renderFieldInput";
 
 interface Props {
   inspectionId: number;
@@ -20,6 +24,8 @@ interface Props {
   templateId?: number;
   locked?: boolean;
   existing?: boolean;
+  onDataChanged?: () => void;
+  deviceProgress?: DeviceProgress[];
 }
 
 function deviceDbStillValid(expectedDbPath?: string | null): boolean {
@@ -41,12 +47,13 @@ interface DropdownItem {
   IsActive?: number;
 }
 
-export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false, existing = false }: Props) {
+export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false, existing = false, onDataChanged, deviceProgress }: Props) {
   const [fields, setFields] = useState<DeviceFieldDefinition[]>([]);
   const [deletedDefs, setDeletedDefs] = useState<DeviceFieldDefinition[]>([]);
   const [records, setRecords] = useState<DeviceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [opts, setOpts] = useState<Record<string, DropdownItem[]>>({});
+  const [collapsedNos, setCollapsedNos] = useState<number[]>([]);
   const persistedIds = useRef<Map<number, number>>(new Map());
   const countRef = useRef(count);
   countRef.current = count;
@@ -146,6 +153,14 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     })();
   }, [inspectionId, deviceType, templateId, existing]);
 
+  function toggleDevice(deviceNo: number): void {
+    setCollapsedNos((prev) =>
+      prev.includes(deviceNo)
+        ? prev.filter((no) => no !== deviceNo)
+        : [...prev, deviceNo]
+    );
+  }
+
   useEffect(() => {
     if (loading) return;
 
@@ -175,6 +190,8 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         await DeviceRecordsRepository.flushPendingDeviceSaves();
         if (!deviceDbStillValid(expectedDbPath)) return;
         await DeviceRecordsRepository.deactivateBeyond(inspectionId, deviceType, count);
+      }).then(() => {
+        onDataChanged?.();
       });
 
       return;
@@ -253,11 +270,13 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           }
           return next;
         });
+      }).then(() => {
+        onDataChanged?.();
       });
       return;
     }
 
-  }, [count, loading, records.length, fields, inspectionId, deviceType, existing]);
+  }, [count, loading, records.length, fields, inspectionId, deviceType, existing, onDataChanged]);
 
   useEffect(() => {
     return () => {
@@ -296,6 +315,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           return next;
         });
       });
+      onDataChanged?.();
       return updated;
     });
   }
@@ -334,7 +354,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           dropdownRefs.current[dropdownKey] = node;
         }}
       >
-        <Text style={styles.fieldLabel}>{fieldLabel}{field.IsRequired ? " *" : ""}</Text>
+        <Text style={styles.fieldLabel}>{fieldLabelWithRequired(fieldLabel, field.IsRequired === 1)}</Text>
         <DropdownField
           value={value}
           options={opts[field.FieldName] ?? []}
@@ -363,7 +383,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         >
           <View style={styles.checkboxRow}>
             <Checkbox status={value === "1" ? "checked" : "unchecked"} disabled={locked} />
-            <Text style={styles.fieldLabel}>{fieldLabel}{field.IsRequired ? " *" : ""}</Text>
+            <Text style={styles.fieldLabel}>{fieldLabelWithRequired(fieldLabel, field.IsRequired === 1)}</Text>
           </View>
         </Pressable>
       </View>
@@ -371,7 +391,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
       <View key={field.FieldDefID} style={styles.fieldHalf}>
         <TextInput
           mode="outlined"
-          label={fieldLabel + (field.IsRequired ? " *" : "")}
+          label={fieldLabelWithRequired(fieldLabel, field.IsRequired === 1) as string}
           value={value ?? ""}
           placeholder={field.Placeholder ?? undefined}
           keyboardType={isNumber ? "decimal-pad" : undefined}
@@ -428,18 +448,63 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         </Text>
       </View>
 
-      {records.map((record, index) => (
-        <Card key={`dev-${record.DeviceNo}`} style={styles.card}>
-          <Card.Title title={getDeviceLabel(record)} titleStyle={styles.cardTitle} />
-          <Card.Content>
-            {halfFieldsFor(record).map((pair, pairIdx) => (
-              <View key={pairIdx} style={styles.row}>
-                {pair.map((field) => renderField(field, index, record))}
+      {records.map((record, index) => {
+        const expanded = !collapsedNos.includes(record.DeviceNo);
+        const devProgress = deviceProgress?.find((d) => d.deviceNo === record.DeviceNo);
+        const showProgress = !!devProgress && devProgress.total > 0;
+        const complete = showProgress && devProgress.remaining === 0;
+        return (
+          <Card key={`dev-${record.DeviceNo}`} style={styles.card}>
+            <Pressable
+              testID={`dev-toggle-${record.DeviceNo}`}
+              accessibilityRole="button"
+              accessibilityLabel={`${deviceType} ${record.DeviceNo}`}
+              onPress={() => toggleDevice(record.DeviceNo)}
+              hitSlop={TOUCH_TARGETS.compactHitSlop}
+              style={styles.deviceHeader}
+            >
+              <Text style={styles.cardTitle}>{getDeviceLabel(record)}</Text>
+              <View style={styles.deviceHeaderRight}>
+                {showProgress && (
+                  <View style={styles.progressBlock}>
+                    <Text style={styles.deviceProgressText} numberOfLines={1}>
+                      {devProgress.completed} / {devProgress.total} completed
+                    </Text>
+                    <Text style={styles.deviceRemainingText} numberOfLines={1}>
+                      {devProgress.remaining} remaining
+                    </Text>
+                  </View>
+                )}
+                {complete && (
+                  <View style={styles.iconSlot}>
+                    <MaterialCommunityIcons
+                      name="check"
+                      size={20}
+                      color={COLORS.summaryToday}
+                    />
+                  </View>
+                )}
+                <View style={styles.iconSlot}>
+                  <MaterialCommunityIcons
+                    name={expanded ? "chevron-up" : "chevron-down"}
+                    size={20}
+                    color={COLORS.textMuted}
+                  />
+                </View>
               </View>
-            ))}
-          </Card.Content>
-        </Card>
-      ))}
+            </Pressable>
+            {expanded && (
+              <Card.Content>
+                {halfFieldsFor(record).map((pair, pairIdx) => (
+                  <View key={pairIdx} style={styles.row}>
+                    {pair.map((field) => renderField(field, index, record))}
+                  </View>
+                ))}
+              </Card.Content>
+            )}
+          </Card>
+        );
+      })}
     </View>
   );
 }
@@ -451,6 +516,38 @@ const styles = StyleSheet.create({
   loading: { paddingVertical: 20, alignItems: "center" },
   card: { marginBottom: 12, borderRadius: 10, backgroundColor: "#F8F9FA" },
   cardTitle: { fontWeight: "700" },
+  deviceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 48,
+  },
+  deviceHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  progressBlock: {
+    alignItems: "flex-start",
+  },
+  deviceProgressText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
+  },
+  deviceRemainingText: {
+    fontSize: 11,
+    color: "#999",
+    marginTop: 1,
+  },
+  iconSlot: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   fieldLabel: { fontSize: 13, fontWeight: "500", color: "#444", marginBottom: 4 },
   row: { flexDirection: "row", gap: 8, marginBottom: 8 },
   fieldHalf: { flex: 1 },

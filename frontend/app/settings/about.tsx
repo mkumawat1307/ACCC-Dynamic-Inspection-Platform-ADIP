@@ -7,7 +7,7 @@ import Constants from "expo-constants";
 
 export default function AboutScreen() {
   const router = useRouter();
-  const version = Constants.expoConfig?.version ?? "1.1.0";
+  const version = Constants.expoConfig?.version ?? "1.4.0";
 
   return (
     <SafeAreaView style={styles.container} edges={["left", "right", "bottom"]}>

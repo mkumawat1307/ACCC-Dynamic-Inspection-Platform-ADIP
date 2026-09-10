@@ -10,6 +10,7 @@ import { useRouter } from "expo-router";
 import FieldRenderer from "./FieldRenderer";
 import { useInspection } from "@/src/context/InspectionContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import { InspectionField } from "@/src/database/repositories/InspectionTypes";
 import { getCurrentLocation } from "@/src/utils/location";
 import { reverseGeocode } from "@/src/utils/geo";
@@ -23,12 +24,14 @@ interface GeneralInformationProps {
   ensureDraft?: () => Promise<number | null>;
   releaseAbandonedDraft?: () => Promise<void>;
   existing?: boolean;
+  onDataChanged?: () => void;
 }
 
 const GeneralInformation = forwardRef(({
   ensureDraft,
   releaseAbandonedDraft,
   existing = false,
+  onDataChanged,
 }: GeneralInformationProps, ref) => {
 const {
   project: contextProject,
@@ -128,6 +131,14 @@ async function init() {
       setValues((prev) => ({ ...prev, ...savedValues, pole_id: prev.pole_id }));
     }
 
+    // Editing an existing inspection: the live overlay is a module-level
+    // singleton, so a stale snapshot from a previously-opened inspection can
+    // leak into this one. Clear it after the form is populated — the staged
+    // edit-session values (and the DB) are authoritative from here on.
+    if (existing) {
+      InspectionLiveValues.reset();
+    }
+
     if (!existing) {
       for (const field of loadedFields) {
         const key = field.FieldKey;
@@ -148,6 +159,8 @@ async function init() {
         }
       }
     }
+
+    onDataChanged?.();
   } catch (error) {
     logger.error("Init Error:", error);
     setInitError("Failed to load inspection form. Please try again.");
@@ -239,8 +252,19 @@ async function fetchCurrentLocation() {
     ...(address ? { location: address } : {}),
   }));
 
+  const gpsField = fields.find(f => f.FieldKey === "gps");
+  if (gpsField) {
+    InspectionLiveValues.setFieldValue(gpsField.FieldID, gpsValue);
+  }
+  if (address) {
+    const locationField = fields.find(f => f.FieldKey === "location");
+    if (locationField) {
+      InspectionLiveValues.setFieldValue(locationField.FieldID, address);
+    }
+  }
+  onDataChanged?.();
+
   try {
-    const gpsField = fields.find(f => f.FieldKey === "gps");
     if (gpsField) {
       await InspectionRepository.saveFieldValue(
         inspectionId,
@@ -365,10 +389,19 @@ async function handlePoleIdSave(
   await chained;
 }
 
+function syncLiveField(fieldKey: string, value: string) {
+  const field = fields.find((f) => f.FieldKey === fieldKey);
+  if (field) {
+    InspectionLiveValues.setFieldValue(field.FieldID, value);
+  }
+}
+
 function revertPoleId(value: string) {
   setValues((prev) => ({ ...prev, pole_id: value }));
   setPoleId(value);
   setFormUnlocked(value.trim().length > 0);
+  syncLiveField("pole_id", value);
+  onDataChanged?.();
 }
 
 // Clear ONLY the Site ID (Pole ID) from form state. Used when the user
@@ -388,6 +421,8 @@ function clearSiteId() {
   setValues((prev) => ({ ...prev, pole_id: "" }));
   setPoleId("");
   setFormUnlocked(false);
+  syncLiveField("pole_id", "");
+  onDataChanged?.();
 }
 
 // Abandon the current duplicate inspection and reset the whole form to a blank
@@ -409,7 +444,9 @@ async function handleCreateNew() {
   setValues({});
   setPoleId("");
   setFormUnlocked(false);
+  InspectionLiveValues.reset();
   setInspectionId(null);
+  onDataChanged?.();
   if (releaseAbandonedDraft) {
     try {
       await releaseAbandonedDraft();
@@ -469,6 +506,12 @@ return (
               ...prev,
               [field.FieldKey]: text,
             }));
+            // Mirror the on-screen value synchronously and refresh progress
+            // immediately — the debounced database write must never gate the
+            // progress header, and even a Site ID still in duplicate-check
+            // (inspectionId null) counts toward progress right away.
+            InspectionLiveValues.setFieldValue(field.FieldID, text);
+            onDataChanged?.();
 
             if (field.FieldKey === "pole_id") {
               setFormUnlocked(text.trim().length > 0);
@@ -665,6 +708,7 @@ return (
           );
           revertPoleId(oldPoleId);
         }
+        onDataChanged?.();
       }}
     />
   </View>

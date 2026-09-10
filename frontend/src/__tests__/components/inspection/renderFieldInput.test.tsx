@@ -208,3 +208,43 @@ describe("FieldInput DROPDOWN clear selection wiring", () => {
     expect(dd.props.data).toHaveLength(2);
   });
 });
+
+describe("required field indicator", () => {
+  it("renders a red * in the label when required is true", () => {
+    const { tree } = renderNumber({ label: "Camera Type", required: true });
+    const textInput = tree.root.findAll(
+      (n) => (n as { type?: unknown }).type === "TextInput"
+    )[0] as unknown as { props: { label: unknown } };
+    const labelEl = textInput.props.label as React.ReactElement;
+    expect(typeof labelEl).not.toBe("string");
+    const { children } = labelEl.props as { children: React.ReactNode };
+    expect((children as unknown[])[0]).toBe("Camera Type");
+    expect((children as unknown[])[1]).toBe(" ");
+    const starEl = (children as unknown[])[2] as { props: { children?: unknown; style?: Record<string, unknown> } };
+    expect(starEl.props.children).toBe("*");
+    expect(starEl.props.style?.color).toBe("#B3261E");
+    expect(starEl.props.style?.fontWeight).toBe("700");
+    expect(starEl.props.style?.fontSize).toBeGreaterThan(14);
+  });
+
+  it("renders a plain string label with no * when required is false", () => {
+    const { tree } = renderNumber({ label: "Voltage", required: false });
+    const textInput = tree.root.findAll(
+      (n) => (n as { type?: unknown }).type === "TextInput"
+    )[0] as unknown as { props: { label: unknown } };
+    expect(textInput.props.label).toBe("Voltage");
+    expect(String(textInput.props.label).includes("*")).toBe(false);
+  });
+
+  it("does not apply a color override to the non-star label text", () => {
+    const { tree } = renderNumber({ label: "Model", required: true });
+    const textInput = tree.root.findAll(
+      (n) => (n as { type?: unknown }).type === "TextInput"
+    )[0] as unknown as { props: { label: unknown } };
+    const labelEl = textInput.props.label as React.ReactElement;
+    const { children } = labelEl.props as { children: React.ReactNode };
+    const plainText = (children as unknown[])[0];
+    expect(typeof plainText).toBe("string");
+    expect(plainText).toBe("Model");
+  });
+});

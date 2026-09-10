@@ -3,7 +3,21 @@ import { Keyboard, StyleSheet, View } from "react-native";
 import { Checkbox, Switch, Text, TextInput } from "react-native-paper";
 import { sanitizeNumberInput } from "../../utils/fieldInput";
 import { useInspectionScroll } from "@/src/context/InspectionScrollContext";
+import { COLORS } from "@/src/constants/ui";
 import DropdownField from "./DropdownField";
+
+export function fieldLabelWithRequired(
+  label: string,
+  required: boolean
+): string | React.ReactElement {
+  if (!required) return label;
+  return (
+    <>
+      {label}{" "}
+      <Text style={styles.requiredStar}>*</Text>
+    </>
+  );
+}
 
 export interface DropdownOption {
   label: string;
@@ -13,6 +27,7 @@ export interface DropdownOption {
 export interface FieldInputProps {
   fieldType: string;
   label: string;
+  required?: boolean;
   value: string;
   editable: boolean;
   placeholder: string;
@@ -27,10 +42,11 @@ export interface FieldInputProps {
 }
 
 export const FieldInput: React.FC<FieldInputProps> = ({
-  fieldType, label, value, editable, placeholder, error, options, fieldKey,
+  fieldType, label, required = false, value, editable, placeholder, error, options, fieldKey,
   onCameraCountChange, onSwitchCountChange, onChange,
   dropdownFocus, setDropdownFocus,
 }) => {
+  const displayLabel = fieldLabelWithRequired(label, required);
   const isCameraCount = fieldKey === "camera_count";
   const isSwitchCount = fieldKey === "switch_count";
   const dropdownViewRef = useRef<View>(null);
@@ -57,7 +73,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <TextInput
           mode="outlined"
-          label={label}
+          label={displayLabel}
           value={value}
           editable={editable}
           placeholder={placeholder}
@@ -74,7 +90,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <TextInput
           mode="outlined"
-          label={label}
+          label={displayLabel}
           value={value}
           editable={editable}
           placeholder={placeholder}
@@ -92,7 +108,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <TextInput
           mode="outlined"
-          label={label}
+          label={displayLabel}
           value={value}
           editable={editable}
           placeholder={placeholder}
@@ -109,7 +125,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <TextInput
           mode="outlined"
-          label={label}
+          label={displayLabel}
           value={value}
           editable={editable}
           placeholder="DD-MM-YYYY"
@@ -131,7 +147,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <TextInput
           mode="outlined"
-          label={label}
+          label={displayLabel}
           value={value}
           editable={editable}
           placeholder="DD-MM-YYYY"
@@ -153,7 +169,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <TextInput
           mode="outlined"
-          label={label}
+          label={displayLabel}
           value={value}
           editable={editable}
           placeholder="HH:MM"
@@ -175,7 +191,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
     case "PROJECT_DROPDOWN": {
       return (
         <View ref={dropdownViewRef}>
-          <Text style={styles.fieldLabel}>{label}</Text>
+          <Text style={styles.fieldLabel}>{displayLabel}</Text>
           <DropdownField
             value={value}
             options={options}
@@ -225,7 +241,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
     case "CHECKBOX":
       return (
         <Checkbox.Item
-          label={label}
+          label={displayLabel as string}
           disabled={!editable}
           status={
             value === "1"
@@ -247,7 +263,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
         <View>
           <TextInput
             mode="outlined"
-            label={label}
+            label={displayLabel}
             value={value}
             editable={false}
             left={
@@ -268,7 +284,7 @@ export const FieldInput: React.FC<FieldInputProps> = ({
       return (
         <TextInput
           mode="outlined"
-          label={label}
+          label={displayLabel}
           value={value}
           editable={editable}
           placeholder={placeholder}
@@ -336,5 +352,10 @@ const styles = StyleSheet.create({
   iconStyle: {
     width: 22,
     height: 22,
+  },
+  requiredStar: {
+    color: COLORS.error,
+    fontWeight: "700",
+    fontSize: 18,
   },
 });

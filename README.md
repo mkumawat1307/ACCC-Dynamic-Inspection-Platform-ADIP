@@ -2,7 +2,7 @@
 
 > Offline-First | Configuration-Driven | Android Inspection Platform
 
-![Version](https://img.shields.io/badge/version-1.3.4-blue)
+![Version](https://img.shields.io/badge/version-1.4.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Android-success)
 ![Offline](https://img.shields.io/badge/offline-yes-green)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)
@@ -198,7 +198,7 @@ yarn bundle:measure     # Node scripts/measure-bundle.js
 
 - **Framework**: Jest (`jest-expo` preset) — `yarn test`.
 - **Coverage**: per-glob coverage thresholds (80% lines/statements/functions, 70% branches) enforced for the core database, repository, and watermark files via `jest.config.js` (`collectCoverageFrom` excludes table/seed definitions).
-- **Current status**: 116 suites, 1,429 passed, 1 skipped — verified pass on the development branch.
+- **Current status**: 154 suites, 1,836 passed, 0 failed, 1 skipped — verified via a local `yarn test` run (no GitHub CI run/status for the release commit).
 - **Key patterns**:
   - In-memory SQLite mock (`__mocks__/expo-sqlite.ts`), path-aware: tests use distinct DB paths/names and assert isolation.
   - **Isolation tests** — data created in Project A must not appear when Project B is opened (`src/__tests__/database/isolation.test.ts`).
@@ -211,7 +211,7 @@ yarn test -- --watch    # Watch mode
 
 ## Android Build
 
-- **Config source of truth**: `app.json` — version `1.3.4`, Android `versionCode` 8, package `com.accc.dynamicinspection`. `android/app/build.gradle` reads versionCode/versionName from the Expo config.
+- **Config source of truth**: `app.json` — version `1.4.0`, Android `versionCode` 9, package `com.accc.dynamicinspection`. `android/app/build.gradle` reads versionCode/versionName from the Expo config.
 - **APK artifact**: `ACCC-Dynamic-Inspection-Platform-v<version>.apk`.
 - **EAS profiles** (`eas.json`):
 
@@ -290,10 +290,10 @@ frontend/
 
 | Where | Value |
 |-------|-------|
-| App version (`app.json`) | 1.3.4 |
-| Android versionCode | 8 |
+| App version (`app.json`) | 1.4.0 |
+| Android versionCode | 9 |
 | Package | com.accc.dynamicinspection |
-| `package.json` (dev) | 1.3.0 |
+| `package.json` (dev) | 1.4.0 |
 
 ## License
 
