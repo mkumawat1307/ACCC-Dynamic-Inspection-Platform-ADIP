@@ -41,6 +41,7 @@ export interface ReportSection {
   name: string;
   sectionKey: string;
   isRepeatable: boolean;
+  displayOrder?: number;
   deviceType?: string;
   deleted?: boolean;
   columns: ReportColumn[];
@@ -61,6 +62,13 @@ export interface ReportTable {
 
 function normalizeDeviceType(deviceType: string): string {
   return deviceType.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_information";
+}
+
+// Matches the inspection form's section ordering (InspectionRepository.getSections):
+// photos last, remarks second-to-last, everything else in DisplayOrder.
+// The report never emits photos (filtered out), so remarks ends up last.
+function formSectionRank(sectionKey: string): number {
+  return sectionKey === "photos" ? 2 : sectionKey === "remarks" ? 1 : 0;
 }
 
 const REPEATED_SECTION_KEYS = new Set(["general_information", "categorization"]);
@@ -195,18 +203,19 @@ async function buildReportTableInternal(
     SectionKey: string;
     SectionName: string;
     IsRepeatable: number;
+    DisplayOrder: number;
     FieldID: number;
     FieldKey: string;
     FieldName: string;
   }>(
-    `SELECT s.SectionID, s.SectionKey, s.SectionName, s.IsRepeatable,
+    `SELECT s.SectionID, s.SectionKey, s.SectionName, s.IsRepeatable, s.DisplayOrder,
             f.FieldID, f.FieldKey, f.FieldName
      FROM InspectionFields f
      JOIN InspectionSections s ON f.SectionID = s.SectionID
      WHERE f.IsActive = 1 AND f.IsVisible = 1
        AND s.IsActive = 1 AND s.IsVisible = 1
        AND s.SectionKey != 'photos'
-     ORDER BY s.DisplayOrder, f.DisplayOrder`
+     ORDER BY CASE WHEN s.SectionKey = 'remarks' THEN 1 ELSE 0 END, s.DisplayOrder, f.DisplayOrder`
   );
 
   const deviceDefs = await getDeviceRows<{
@@ -241,7 +250,7 @@ async function buildReportTableInternal(
   for (const r of rows) {
     let section = sectionsById.get(r.SectionID);
     if (!section) {
-      section = { index: sections.length, name: r.SectionName, sectionKey: r.SectionKey, isRepeatable: r.IsRepeatable === 1, columns: [] };
+      section = { index: sections.length, name: r.SectionName, sectionKey: r.SectionKey, isRepeatable: r.IsRepeatable === 1, displayOrder: r.DisplayOrder ?? 0, columns: [] };
       sectionsById.set(r.SectionID, section);
       sections.push(section);
     }
@@ -260,6 +269,17 @@ async function buildReportTableInternal(
       });
     }
   }
+
+  // Mirror the inspection form's section ordering regardless of query row order.
+  sections.sort(
+    (a, b) =>
+      formSectionRank(a.sectionKey) - formSectionRank(b.sectionKey) ||
+      (a.displayOrder ?? 0) - (b.displayOrder ?? 0)
+  );
+  sections.forEach((section, index) => {
+    section.index = index;
+    for (const column of section.columns) column.sectionIndex = index;
+  });
 
   for (const section of sections) {
     if (section.sectionKey === "general_information" || !section.sectionKey.endsWith("_information")) continue;

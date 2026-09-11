@@ -227,6 +227,7 @@ export async function createProjectSchema() {
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
             DeviceType TEXT NOT NULL,
             IsActive INTEGER DEFAULT 1,
+            IsRequired INTEGER DEFAULT 0,
             CreatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(DeviceType)
         );
@@ -715,6 +716,12 @@ export async function migrateProjectSchema(projectId: number) {
         await migrateInspectionValueUniqueness(db);
     } catch (e) {
         logger.warn("[schema] migrateProjectSchema — InspectionValues unique index migration failed (non-fatal):", e);
+    }
+
+    try {
+        await db.execAsync(`ALTER TABLE ProjectDeviceTypes ADD COLUMN IsRequired INTEGER NOT NULL DEFAULT 0;`);
+    } catch {
+        // column already exists
     }
 }
 

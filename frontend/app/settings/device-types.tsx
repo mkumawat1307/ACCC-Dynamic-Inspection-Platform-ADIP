@@ -5,6 +5,7 @@ import { Appbar, Portal } from "react-native-paper";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import DeviceFieldDefinitionsRepository, { DeviceFieldDefinition } from "../../src/database/repositories/DeviceFieldDefinitionsRepository";
+import ProjectDeviceTypesRepository from "@/src/database/repositories/ProjectDeviceTypesRepository";
 import { getDatabase } from "../../src/database/db";
 import { FieldDialog, AddTypeDialog, DeleteFieldDialog, DeleteTypeDialog } from "@/src/components/app/settings/components/DeviceTypeDialogs";
 import { styles } from "@/src/components/app/settings/device-types.styles";
@@ -18,6 +19,7 @@ export default function DeviceTypesScreen() {
   const [selectedType, setSelectedType] = useState<string>("");
   const [fields, setFields] = useState<DeviceFieldDefinition[]>([]);
   const [enabledTypes, setEnabledTypes] = useState<Set<string>>(new Set());
+  const [requiredTypes, setRequiredTypes] = useState<Set<string>>(new Set());
 
   const [fieldDialogVisible, setFieldDialogVisible] = useState(false);
   const [editingField, setEditingField] = useState<DeviceFieldDefinition | null>(null);
@@ -80,6 +82,17 @@ export default function DeviceTypesScreen() {
     setEnabledTypes(enabled);
   };
 
+  const loadRequiredTypes = useCallback(async () => {
+    const required = await ProjectDeviceTypesRepository.getRequired();
+    setRequiredTypes(new Set(required));
+  }, []);
+
+  const handleToggleRequired = async (type: string) => {
+    const isRequired = requiredTypes.has(type);
+    await ProjectDeviceTypesRepository.setRequired(type, !isRequired);
+    await loadRequiredTypes();
+  };
+
   const loadFields = useCallback(async () => {
     if (!selectedType) {
       setFields([]);
@@ -93,7 +106,8 @@ export default function DeviceTypesScreen() {
     useCallback(() => {
       loadDeviceTypes();
       loadFields();
-    }, [loadDeviceTypes, loadFields])
+      loadRequiredTypes();
+    }, [loadDeviceTypes, loadFields, loadRequiredTypes])
   );
 
   const handleToggleInspection = async (type: string) => {
@@ -103,6 +117,8 @@ export default function DeviceTypesScreen() {
     const countKey = type.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_count";
 
     if (isEnabled) {
+      await ProjectDeviceTypesRepository.setRequired(type, false);
+      await loadRequiredTypes();
       await db.runAsync(
         `UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP
          WHERE FieldKey = ? AND SectionID IN (SELECT SectionID FROM InspectionSections WHERE TemplateID = ?)`,
@@ -356,6 +372,8 @@ export default function DeviceTypesScreen() {
           onSelectType={setSelectedType}
           enabledTypes={enabledTypes}
           onToggleInspection={handleToggleInspection}
+          requiredTypes={requiredTypes}
+          onToggleRequired={handleToggleRequired}
           onAddTypePress={() => setTypeDialogVisible(true)}
           onDeleteTypePress={() => setDeleteTypeDialogVisible(true)}
           fields={fields}

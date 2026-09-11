@@ -13,6 +13,8 @@ interface DeviceTypeBodyProps {
   onSelectType: (type: string) => void;
   enabledTypes: Set<string>;
   onToggleInspection: (type: string) => Promise<void>;
+  requiredTypes: Set<string>;
+  onToggleRequired: (type: string) => Promise<void>;
   onAddTypePress: () => void;
   onDeleteTypePress: () => void;
   fields: DeviceFieldDefinition[];
@@ -30,6 +32,8 @@ export default function DeviceTypeBody({
   onSelectType,
   enabledTypes,
   onToggleInspection,
+  requiredTypes,
+  onToggleRequired,
   onAddTypePress,
   onDeleteTypePress,
   fields,
@@ -85,6 +89,26 @@ export default function DeviceTypeBody({
               size={22}
               iconColor="#D32F2F"
               onPress={onDeleteTypePress}
+            />
+          </View>
+
+          <View style={styles.enableRow}>
+            <View style={{ flex: 1 }}>
+              <Text variant="titleMedium" style={{ fontWeight: "600" }}>
+                Required
+              </Text>
+              <Text variant="bodySmall" style={{ color: "#666" }}>
+                {enabledTypes.has(selectedType)
+                  ? requiredTypes.has(selectedType)
+                    ? "At least one " + selectedType + " required"
+                    : "Optional — zero devices allowed"
+                  : "Enable in inspection form first"}
+              </Text>
+            </View>
+            <PaperSwitch
+              value={enabledTypes.has(selectedType) && requiredTypes.has(selectedType)}
+              disabled={!enabledTypes.has(selectedType)}
+              onValueChange={() => onToggleRequired(selectedType)}
             />
           </View>
 

@@ -270,10 +270,12 @@ const validateSectionsAndDevices = async (): Promise<{
     await InspectionRepository.validateInspection(inspectionId);
   const deviceResult =
     await InspectionRepository.validateDeviceMandatory(inspectionId);
+  const deviceTypeResult =
+    await InspectionRepository.validateDeviceTypeMandatory(inspectionId);
 
   return {
-    valid: sectionResult.valid && deviceResult.valid,
-    missingFields: [...sectionResult.missingFields, ...deviceResult.missingFields],
+    valid: sectionResult.valid && deviceResult.valid && deviceTypeResult.valid,
+    missingFields: [...sectionResult.missingFields, ...deviceResult.missingFields, ...deviceTypeResult.missingFields],
   };
 };
 

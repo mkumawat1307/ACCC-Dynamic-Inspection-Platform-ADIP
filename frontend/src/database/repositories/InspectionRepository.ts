@@ -10,6 +10,7 @@ import { requestAndroidBackup } from "@/src/utils/androidBackup";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
 import { InspectionEditSessionState } from "./InspectionEditSessionState";
 import InspectionValueRepository from "./InspectionValueRepository";
+import ProjectDeviceTypesRepository from "./ProjectDeviceTypesRepository";
 
 export function isFieldValueEmpty(type: string, value: string): boolean {
   switch (type) {
@@ -545,6 +546,67 @@ static async validateDeviceMandatory(
             missingFields.push(`${deviceType} — ${field.Label} (Device ${no})`);
           }
         }
+      }
+    }
+
+    return {
+      valid: missingFields.length === 0,
+      missingFields,
+    };
+  }
+
+  static async validateDeviceTypeMandatory(
+    inspectionId: number
+  ): Promise<{
+    valid: boolean;
+    missingFields: string[];
+  }> {
+    await DeviceRecordsRepository.flushPendingDeviceSaves();
+    const requiredTypes = await ProjectDeviceTypesRepository.getRequired();
+    if (requiredTypes.length === 0) {
+      return { valid: true, missingFields: [] };
+    }
+
+    const db = await getDatabase();
+    const countFields = await db.getAllAsync<{
+      FieldID: number;
+      FieldKey: string;
+      FieldName: string;
+    }>(
+      `SELECT DISTINCT f.FieldID, f.FieldKey, f.FieldName
+       FROM InspectionFields f
+       INNER JOIN InspectionSections s ON f.SectionID = s.SectionID
+       INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
+       WHERE f.IsActive = 1 AND t.IsDefault = 1 AND f.FieldKey LIKE '%_count'`
+    );
+    const values = await this.getInspectionValues(inspectionId);
+
+    const sessionActive = InspectionEditSessionState.isActive(inspectionId);
+    const sessionFieldValues = sessionActive
+      ? InspectionEditSessionState.getStagedFieldValues()
+      : undefined;
+
+    const countFieldByKey: Record<string, { FieldName: string; value: number }> = {};
+    for (const row of countFields) {
+      const stagedCount = sessionFieldValues?.get(row.FieldID);
+      const countValue =
+        stagedCount !== undefined
+          ? stagedCount
+          : (values[row.FieldKey] || "0");
+      countFieldByKey[row.FieldKey] = {
+        FieldName: row.FieldName || "Count",
+        value: Number(countValue || "0"),
+      };
+    }
+
+    const missingFields: string[] = [];
+    for (const deviceType of requiredTypes) {
+      const fieldKey =
+        deviceType.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_count";
+      const countField = countFieldByKey[fieldKey];
+      const count = countField?.value ?? 0;
+      if (count < 1) {
+        missingFields.push(`${deviceType} — ${countField?.FieldName ?? deviceType + " Count"} (minimum 1)`);
       }
     }
 
