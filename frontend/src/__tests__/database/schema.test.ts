@@ -386,7 +386,7 @@ describe("schema.ts schema functions", () => {
 
     await migrateProjectSchema(1);
 
-    expect(mockRunAsync).toHaveBeenCalledTimes(10);
+    expect(mockRunAsync).toHaveBeenCalledTimes(11);
     expect(mockRunAsync).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO InspectionSections"),
       [1, "Remarks", "remarks", "Remarks", "note-text", 9]

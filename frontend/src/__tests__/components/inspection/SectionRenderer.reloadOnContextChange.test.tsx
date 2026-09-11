@@ -40,6 +40,11 @@ jest.mock("@/src/database/repositories/DeviceFieldDefinitionsRepository", () => 
   default: { getDeviceTypes: jest.fn().mockResolvedValue([]) },
 }));
 
+jest.mock("@/src/database/repositories/ProjectDeviceTypesRepository", () => ({
+  __esModule: true,
+  default: { getRequired: jest.fn().mockResolvedValue([]) },
+}));
+
 jest.mock("@/src/context/InspectionContext", () => ({
   useInspection: () => ({ poleId: "P123" }),
 }));

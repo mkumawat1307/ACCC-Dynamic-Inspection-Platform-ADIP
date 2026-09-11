@@ -47,6 +47,7 @@ export const FACTORY_SECTIONS: FactorySection[] = [
 ];
 
 export const FACTORY_DEVICE_TYPES: string[] = ["Camera", "Switch"];
+export const FACTORY_REQUIRED_DEVICE_TYPES: string[] = ["Camera"];
 
 export const FACTORY_DEVICE_FIELDS: FactoryDeviceField[] = [
   { DeviceType: "Camera", FieldName: "CameraType", Label: "Camera Type", FieldType: "dropdown", IsRequired: 1, DisplayOrder: 1 },

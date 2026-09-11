@@ -376,13 +376,13 @@ describe("Mandatory validation stays correct across delete-default-section + res
   it("10. multiple missing required fields -> each reported exactly ONCE, no duplicates", async () => {
     const { db } = await openSeededProject();
     const inspectionId = await createInspection("2026-09-12");
-    await seedAllRequired(db, inspectionId, ["foundation_cond", "camera_count"]);
+    await seedAllRequired(db, inspectionId, ["foundation_cond", "jb_status"]);
 
     const v = await validate(db, inspectionId);
     expect(v.valid).toBe(false);
 
     const f1 = await fieldName(db, "foundation_cond");
-    const f2 = await fieldName(db, "camera_count");
+    const f2 = await fieldName(db, "jb_status");
     expect(v.missingFields).toContain(f1);
     expect(v.missingFields).toContain(f2);
     expect(v.missingFields.length).toBe(2);

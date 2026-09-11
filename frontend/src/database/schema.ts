@@ -28,6 +28,7 @@ import { DashboardCardRepository } from "./repositories/DashboardCardRepository"
 import { buildProjectIdentity, detectProjectDuplicates } from "./projectIdentity";
 import type { ProjectDuplicateGroup } from "./projectIdentity";
 
+import { FACTORY_REQUIRED_DEVICE_TYPES } from "./seeds/factory-config";
 import { logger } from "@/src/utils/logger";
 
 export async function createGlobalSchema() {
@@ -720,6 +721,14 @@ export async function migrateProjectSchema(projectId: number) {
 
     try {
         await db.execAsync(`ALTER TABLE ProjectDeviceTypes ADD COLUMN IsRequired INTEGER NOT NULL DEFAULT 0;`);
+
+        if (FACTORY_REQUIRED_DEVICE_TYPES.length > 0) {
+            const placeholders = FACTORY_REQUIRED_DEVICE_TYPES.map(() => "?").join(",");
+            await db.runAsync(
+                `UPDATE ProjectDeviceTypes SET IsRequired = 1 WHERE IsActive = 1 AND DeviceType IN (${placeholders})`,
+                FACTORY_REQUIRED_DEVICE_TYPES
+            );
+        }
     } catch {
         // column already exists
     }

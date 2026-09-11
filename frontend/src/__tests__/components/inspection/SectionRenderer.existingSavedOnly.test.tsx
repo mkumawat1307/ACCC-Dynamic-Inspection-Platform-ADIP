@@ -53,6 +53,11 @@ jest.mock("@/src/components/inspection/PhotoSection", () => {
   return { __esModule: true, default: () => R.createElement("PhotoSection") };
 });
 
+jest.mock("@/src/database/repositories/ProjectDeviceTypesRepository", () => ({
+  __esModule: true,
+  default: { getRequired: jest.fn().mockResolvedValue([]) },
+}));
+
 jest.mock("@/src/components/inspection/FieldRenderer", () => {
   const R = require("react");
   const RN = require("react-native");

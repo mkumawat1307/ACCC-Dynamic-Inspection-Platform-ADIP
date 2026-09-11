@@ -19,6 +19,7 @@ import { seedRepeatableGroups } from "../seeds/repeatable-groups.seed";
 import { seedRepeatableGroupFields } from "../seeds/repeatable-group-fields.seed";
 import { seedDeviceOptions } from "../seeds/device-options.seed";
 import { seedDeviceFieldDefinitions } from "../seeds/device-field-definitions.seed";
+import { seedProjectDeviceTypes } from "../seeds/project-device-types.seed";
 import { seedDashboardCards } from "../seeds/dashboard-cards.seed";
 import { InspectionRepository } from "../repositories/InspectionRepository";
 
@@ -114,6 +115,7 @@ export async function createProjectDb(
     await seedRepeatableGroupFields();
     await seedDeviceOptions();
     await seedDeviceFieldDefinitions();
+    await seedProjectDeviceTypes();
     await seedDashboardCards(projectId);
   } finally {
     if (getActiveProjectPath() === projectDbPath) {

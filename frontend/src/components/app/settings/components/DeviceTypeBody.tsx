@@ -100,8 +100,8 @@ export default function DeviceTypeBody({
               <Text variant="bodySmall" style={{ color: "#666" }}>
                 {enabledTypes.has(selectedType)
                   ? requiredTypes.has(selectedType)
-                    ? "At least one " + selectedType + " required"
-                    : "Optional — zero devices allowed"
+                    ? selectedType + " Count must be filled"
+                    : "Optional — count may be 0 or empty"
                   : "Enable in inspection form first"}
               </Text>
             </View>

@@ -64,6 +64,8 @@ describe("device type mandatory validation", () => {
     await dopt.seedDeviceOptions();
     const ddf = require("@/src/database/seeds/device-field-definitions.seed");
     await ddf.seedDeviceFieldDefinitions();
+    const dpt = require("@/src/database/seeds/project-device-types.seed");
+    await dpt.seedProjectDeviceTypes();
     const db: SQLiteDatabase = await dbModule.getDatabase();
     await db.runAsync("UPDATE FieldOptions SET IsActive = 1");
     await db.runAsync("UPDATE DeviceOptions SET IsActive = 1");
@@ -114,26 +116,68 @@ describe("device type mandatory validation", () => {
     return row?.FieldID ?? null;
   }
 
+  async function addCountField(db: SQLiteDatabase, key: string, name: string): Promise<void> {
+    const section = await db.getFirstAsync<{ SectionID: number }>(
+      "SELECT SectionID FROM InspectionSections WHERE SectionKey = 'camera_information' LIMIT 1"
+    );
+    await db.runAsync(
+      `INSERT INTO InspectionFields (SectionID, FieldName, FieldKey, FieldType, DisplayOrder, IsRequired, IsVisible, IsActive, Width)
+       VALUES (?, ?, ?, 'number', 50, 0, 1, 1, 12)`,
+      [section!.SectionID, name, key]
+    );
+  }
+
   async function validateTypeRequired(inspectionId: number) {
     const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository") as typeof import("@/src/database/repositories/InspectionRepository");
     return InspectionRepository.validateDeviceTypeMandatory(inspectionId);
   }
 
-  it("A. settings persistence: setRequired round-trips and defaults to not required", async () => {
+  it("A. factory defaults: fresh project seeds Camera Required ON, Switch OFF; setRequired round-trips", async () => {
     const { db } = await openSeededProject();
     const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
 
-    expect(await repo.getRequired()).toEqual([]);
-
-    await repo.setRequired("Camera", true);
+    const rows = await db.getAllAsync<{ DeviceType: string; IsActive: number; IsRequired: number }>(
+      "SELECT DeviceType, IsActive, IsRequired FROM ProjectDeviceTypes"
+    );
+    const camera = rows.find((r) => r.DeviceType === "Camera");
+    const switchType = rows.find((r) => r.DeviceType === "Switch");
+    expect(camera?.IsActive).toBe(1);
+    expect(camera?.IsRequired).toBe(1);
+    expect(switchType?.IsActive).toBe(1);
+    expect(switchType?.IsRequired).toBe(0);
     expect(await repo.getRequired()).toEqual(["Camera"]);
 
     await repo.setRequired("Camera", false);
     expect(await repo.getRequired()).toEqual([]);
+
+    await repo.setRequired("Camera", true);
+    expect(await repo.getRequired()).toEqual(["Camera"]);
+  });
+
+  it("1. factory defaults are restored by ResetRepository.performReset after deletion", async () => {
+    const { db } = await openSeededProject();
+    const { ResetRepository } = require("@/src/database/repositories/ResetRepository") as typeof import("@/src/database/repositories/ResetRepository");
+    const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
+
+    await db.runAsync("DELETE FROM ProjectDeviceTypes");
+    expect(await repo.getRequired()).toEqual([]);
+
+    await ResetRepository.performReset();
+
+    expect(await repo.getRequired()).toEqual(["Camera"]);
+    const rows = await db.getAllAsync<{ DeviceType: string; IsActive: number; IsRequired: number }>(
+      "SELECT DeviceType, IsActive, IsRequired FROM ProjectDeviceTypes"
+    );
+    const camera = rows.find((r) => r.DeviceType === "Camera");
+    const switchType = rows.find((r) => r.DeviceType === "Switch");
+    expect(camera?.IsActive).toBe(1);
+    expect(camera?.IsRequired).toBe(1);
+    expect(switchType?.IsActive).toBe(1);
+    expect(switchType?.IsRequired).toBe(0);
     expect(db).toBeTruthy();
   });
 
-  it("B. optional device type with count 0 passes", async () => {
+  it("B. optional device type (user disabled) with count 0 passes", async () => {
     const { db } = await openSeededProject();
     const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
     const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
@@ -149,25 +193,28 @@ describe("device type mandatory validation", () => {
     expect(result.missingFields).toEqual([]);
   });
 
-  it("C. required device type with count 0 fails with type-scoped message", async () => {
+  it("9. optional device type (Switch, default OFF) with empty count passes", async () => {
     const { db } = await openSeededProject();
-    const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
-    const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
-
-    const cameraCountId = await getFieldId(db, "camera_count");
-    const inspectionId = await createInspection("2026-09-11");
+    const inspectionId = await createInspection("2026-09-20");
     await seedAllRequiredExcept(db, inspectionId, []);
-    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "0");
 
-    await repo.setRequired("Camera", true);
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("C. required device type (Camera, default ON) with EMPTY count fails with 'Fill Camera Count'", async () => {
+    const { db } = await openSeededProject();
+    const inspectionId = await createInspection("2026-09-21");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count"]);
+
     const result = await validateTypeRequired(inspectionId);
     expect(result.valid).toBe(false);
-    expect(result.missingFields).toEqual(["Camera — Camera Count (minimum 1)"]);
+    expect(result.missingFields).toEqual(["Fill Camera Count"]);
   });
 
   it("D. required device type with count 1 passes", async () => {
     const { db } = await openSeededProject();
-    const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
     const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
 
     const cameraCountId = await getFieldId(db, "camera_count");
@@ -175,7 +222,72 @@ describe("device type mandatory validation", () => {
     await seedAllRequiredExcept(db, inspectionId, []);
     await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
 
-    await repo.setRequired("Camera", true);
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("4. required device type with count 0 passes (explicit zero is a valid answer)", async () => {
+    const { db } = await openSeededProject();
+    const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
+
+    const cameraCountId = await getFieldId(db, "camera_count");
+    const inspectionId = await createInspection("2026-09-15");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count"]);
+    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "0");
+
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("6. required Switch with EMPTY count fails with 'Fill Switch Count'", async () => {
+    const { db } = await openSeededProject();
+    const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
+    const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
+
+    const cameraCountId = await getFieldId(db, "camera_count");
+    const inspectionId = await createInspection("2026-09-16");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count", "switch_count"]);
+    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
+
+    await repo.setRequired("Switch", true);
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toEqual(["Fill Switch Count"]);
+  });
+
+  it("7. required Switch with count 0 passes", async () => {
+    const { db } = await openSeededProject();
+    const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
+    const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
+
+    const cameraCountId = await getFieldId(db, "camera_count");
+    const switchCountId = await getFieldId(db, "switch_count");
+    const inspectionId = await createInspection("2026-09-17");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count", "switch_count"]);
+    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
+    await InspectionValueRepository.saveValue(inspectionId, switchCountId!, "0");
+
+    await repo.setRequired("Switch", true);
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("8. required Switch with count 1 passes", async () => {
+    const { db } = await openSeededProject();
+    const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
+    const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
+
+    const cameraCountId = await getFieldId(db, "camera_count");
+    const switchCountId = await getFieldId(db, "switch_count");
+    const inspectionId = await createInspection("2026-09-18");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count", "switch_count"]);
+    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
+    await InspectionValueRepository.saveValue(inspectionId, switchCountId!, "1");
+
+    await repo.setRequired("Switch", true);
     const result = await validateTypeRequired(inspectionId);
     expect(result.valid).toBe(true);
     expect(result.missingFields).toEqual([]);
@@ -191,7 +303,6 @@ describe("device type mandatory validation", () => {
     const inspectionId = await createInspection("2026-09-13");
     await seedAllRequiredExcept(db, inspectionId, []);
 
-    // Camera count set but device fields left empty -> validateDeviceMandatory still fails
     await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
     await repo.setRequired("Camera", false);
 
@@ -202,53 +313,104 @@ describe("device type mandatory validation", () => {
     expect(typeResult.valid).toBe(true);
   });
 
-  it("F. both types required and count 0 fails for both", async () => {
+  it("11. device-level required AND field-level required work independently", async () => {
     const { db } = await openSeededProject();
     const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
     const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
+    const { InspectionRepository } = require("@/src/database/repositories/InspectionRepository") as typeof import("@/src/database/repositories/InspectionRepository");
 
     const cameraCountId = await getFieldId(db, "camera_count");
-    const switchCountId = await getFieldId(db, "switch_count");
-    const inspectionId = await createInspection("2026-09-14");
-    await seedAllRequiredExcept(db, inspectionId, []);
-    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "0");
-    await InspectionValueRepository.saveValue(inspectionId, switchCountId!, "0");
+    const inspectionId = await createInspection("2026-09-19");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count"]);
+    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
 
     await repo.setRequired("Camera", true);
-    await repo.setRequired("Switch", true);
+    const typeResult = await validateTypeRequired(inspectionId);
+    expect(typeResult.valid).toBe(true);
+    expect(typeResult.missingFields).toEqual([]);
 
-    const result = await validateTypeRequired(inspectionId);
-    expect(result.valid).toBe(false);
-    expect(result.missingFields).toContain("Camera — Camera Count (minimum 1)");
-    expect(result.missingFields).toContain("Switch — Switch Count (minimum 1)");
+    const fieldResult = await InspectionRepository.validateDeviceMandatory(inspectionId);
+    expect(fieldResult.valid).toBe(false);
+    expect(fieldResult.missingFields.some((f) => f.startsWith("Camera —"))).toBe(true);
   });
 
-  it("G. generic custom device type enforced without Camera hardcode", async () => {
+  it("G. generic custom device type NVR enforced without hardcode - empty fails, camera_count does not satisfy NVR", async () => {
     const { db } = await openSeededProject();
     const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
 
     await db.runAsync(
       `INSERT INTO ProjectDeviceTypes (DeviceType, IsActive, IsRequired) VALUES ('NVR', 1, 1)`
     );
+    await addCountField(db, "nvr_count", "NVR Count");
 
     const cameraCountId = await getFieldId(db, "camera_count");
-    const inspectionId = await createInspection("2026-09-15");
+    const inspectionId = await createInspection("2026-09-22");
     await seedAllRequiredExcept(db, inspectionId, ["camera_count"]);
 
     const missing = await validateTypeRequired(inspectionId);
     expect(missing.valid).toBe(false);
-    expect(missing.missingFields).toEqual(["NVR — NVR Count (minimum 1)"]);
+    expect(missing.missingFields).toContain("Fill Camera Count");
+    expect(missing.missingFields).toContain("Fill NVR Count");
 
     await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
     const withCamera = await validateTypeRequired(inspectionId);
     expect(withCamera.valid).toBe(false);
-    expect(withCamera.missingFields).toEqual(["NVR — NVR Count (minimum 1)"]);
+    expect(withCamera.missingFields).toEqual(["Fill NVR Count"]);
+
+    const nvrCountId = await getFieldId(db, "nvr_count");
+    await InspectionValueRepository.saveValue(inspectionId, nvrCountId!, "1");
+    const withNvr = await validateTypeRequired(inspectionId);
+    expect(withNvr.valid).toBe(true);
+    expect(withNvr.missingFields).toEqual([]);
+  });
+
+  it("13. required custom NVR with count 0 passes", async () => {
+    const { db } = await openSeededProject();
+    const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
+
+    await db.runAsync(
+      `INSERT INTO ProjectDeviceTypes (DeviceType, IsActive, IsRequired) VALUES ('NVR', 1, 1)`
+    );
+    await addCountField(db, "nvr_count", "NVR Count");
+
+    const cameraCountId = await getFieldId(db, "camera_count");
+    const nvrCountId = await getFieldId(db, "nvr_count");
+    const inspectionId = await createInspection("2026-09-23");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count", "nvr_count"]);
+    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
+    await InspectionValueRepository.saveValue(inspectionId, nvrCountId!, "0");
+
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
+  });
+
+  it("14. required custom NVR with count 1 passes", async () => {
+    const { db } = await openSeededProject();
+    const InspectionValueRepository = require("@/src/database/repositories/InspectionValueRepository").default as typeof import("@/src/database/repositories/InspectionValueRepository").default;
+
+    await db.runAsync(
+      `INSERT INTO ProjectDeviceTypes (DeviceType, IsActive, IsRequired) VALUES ('NVR', 1, 1)`
+    );
+    await addCountField(db, "nvr_count", "NVR Count");
+
+    const cameraCountId = await getFieldId(db, "camera_count");
+    const nvrCountId = await getFieldId(db, "nvr_count");
+    const inspectionId = await createInspection("2026-09-24");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count", "nvr_count"]);
+    await InspectionValueRepository.saveValue(inspectionId, cameraCountId!, "1");
+    await InspectionValueRepository.saveValue(inspectionId, nvrCountId!, "1");
+
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(true);
+    expect(result.missingFields).toEqual([]);
   });
 
   it("H. migration preserves existing Camera/Switch config and IsRequired data", async () => {
     const { db } = await openSeededProject();
     const { migrateProjectSchema } = require("@/src/database/schema");
 
+    await db.runAsync("DELETE FROM ProjectDeviceTypes");
     await db.runAsync(
       `INSERT INTO ProjectDeviceTypes (DeviceType, IsActive, IsRequired) VALUES ('Camera', 1, 1)`
     );
@@ -268,18 +430,101 @@ describe("device type mandatory validation", () => {
     expect(switchType?.IsRequired).toBe(0);
   });
 
+  it("migration sets Camera as factory-required for legacy rows and is idempotent", async () => {
+    const { db } = await openSeededProject();
+    const { migrateProjectSchema } = require("@/src/database/schema");
+
+    await db.runAsync("DELETE FROM ProjectDeviceTypes");
+    await db.runAsync(
+      `INSERT INTO ProjectDeviceTypes (DeviceType, IsActive) VALUES ('Camera', 1)`
+    );
+    await db.runAsync(
+      `INSERT INTO ProjectDeviceTypes (DeviceType, IsActive) VALUES ('Switch', 1)`
+    );
+
+    await migrateProjectSchema(1);
+
+    const rows = await db.getAllAsync<{ DeviceType: string; IsActive: number; IsRequired: number }>(
+      "SELECT DeviceType, IsActive, IsRequired FROM ProjectDeviceTypes"
+    );
+    const camera = rows.find((r) => r.DeviceType === "Camera");
+    const switchType = rows.find((r) => r.DeviceType === "Switch");
+    expect(camera?.IsActive).toBe(1);
+    expect(camera?.IsRequired).toBe(1);
+    expect(switchType?.IsActive).toBe(1);
+    expect(switchType?.IsRequired).not.toBe(1);
+
+    await migrateProjectSchema(1);
+    const afterSecond = await db.getAllAsync<{ DeviceType: string; IsRequired: number }>(
+      "SELECT DeviceType, IsRequired FROM ProjectDeviceTypes"
+    );
+    expect(afterSecond.find((r) => r.DeviceType === "Camera")?.IsRequired).toBe(1);
+  });
+
+  it("2. whitespace-only count is treated as empty for a required device type", async () => {
+    const { db } = await openSeededProject();
+    const cameraCountId = await getFieldId(db, "camera_count");
+    const inspectionId = await createInspection("2026-09-25");
+    await seedAllRequiredExcept(db, inspectionId, ["camera_count"]);
+    await seedValue(db, inspectionId, cameraCountId!, " ");
+
+    const result = await validateTypeRequired(inspectionId);
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toEqual(["Fill Camera Count"]);
+  });
+
   it("I. isolation: IsRequired set in Project A does not leak into Project B", async () => {
     const PROJECT_B = "/mock/documents/Projects/DeviceTypeMandatoryB/inspection.db";
     const { db } = await openSeededProject();
     const repo = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
 
-    await repo.setRequired("Camera", true);
     await repo.setRequired("Switch", true);
     expect(await repo.getRequired()).toEqual(["Camera", "Switch"]);
 
     const { db: dbB } = await openSeededProject(PROJECT_B);
     const repoB = require("@/src/database/repositories/ProjectDeviceTypesRepository").default as typeof import("@/src/database/repositories/ProjectDeviceTypesRepository").default;
-    expect(await repoB.getRequired()).toEqual([]);
+    expect(await repoB.getRequired()).toEqual(["Camera"]);
     expect(db).not.toBe(dbB);
+  });
+
+  describe("deviceFieldKey util (count-field indicator semantics)", () => {
+    it("resolveFieldRequired only marks the {deviceType}_count field when that type is required", () => {
+      const { resolveFieldRequired } = require("@/src/utils/deviceFieldKey");
+
+      expect(resolveFieldRequired("camera_count", "Camera", new Set(["Camera"]), false)).toBe(true);
+      expect(resolveFieldRequired("camera_count", "Camera", new Set([]), false)).toBe(false);
+      expect(resolveFieldRequired("camera_status", "Camera", new Set(["Camera"]), false)).toBe(false);
+      expect(resolveFieldRequired("nvr_count", "NVR", new Set(["NVR"]), false)).toBe(true);
+      expect(resolveFieldRequired("switch_count", "Switch", new Set(["Switch"]), false)).toBe(true);
+      expect(resolveFieldRequired("switch_count", "Switch", new Set(["Camera"]), false)).toBe(false);
+      expect(resolveFieldRequired("jb_status", undefined, new Set(["Camera"]), false)).toBe(false);
+      expect(resolveFieldRequired("jb_status", "JunctionBox", new Set([]), true)).toBe(true);
+    });
+
+    it("deviceCountFieldKey / isCountField helpers produce expected keys", () => {
+      const { deviceCountFieldKey, isCountField } = require("@/src/utils/deviceFieldKey");
+
+      expect(deviceCountFieldKey("Camera")).toBe("camera_count");
+      expect(deviceCountFieldKey("Switch")).toBe("switch_count");
+      expect(deviceCountFieldKey("NVR")).toBe("nvr_count");
+      expect(deviceCountFieldKey("Junction Box")).toBe("junction_box_count");
+      expect(isCountField("camera_count")).toBe(true);
+      expect(isCountField("switch_count")).toBe(true);
+      expect(isCountField("camera_type")).toBe(false);
+      expect(isCountField("jb_status")).toBe(false);
+    });
+
+    it("isCountEmpty treats null/undefined/blank/whitespace as empty but keeps 0 and numeric strings", () => {
+      const { isCountEmpty } = require("@/src/utils/deviceFieldKey");
+
+      expect(isCountEmpty(null)).toBe(true);
+      expect(isCountEmpty(undefined)).toBe(true);
+      expect(isCountEmpty("")).toBe(true);
+      expect(isCountEmpty("   ")).toBe(true);
+      expect(isCountEmpty("0")).toBe(false);
+      expect(isCountEmpty(0)).toBe(false);
+      expect(isCountEmpty("1")).toBe(false);
+      expect(isCountEmpty(1)).toBe(false);
+    });
   });
 });

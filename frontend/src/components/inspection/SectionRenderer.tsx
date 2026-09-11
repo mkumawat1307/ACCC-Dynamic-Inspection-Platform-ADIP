@@ -21,6 +21,8 @@ import InspectionFieldRepository from "@/src/database/repositories/InspectionFie
 import InspectionValueRepository from "@/src/database/repositories/InspectionValueRepository";
 import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import DeviceFieldDefinitionsRepository from "@/src/database/repositories/DeviceFieldDefinitionsRepository";
+import ProjectDeviceTypesRepository from "@/src/database/repositories/ProjectDeviceTypesRepository";
+import { resolveFieldRequired } from "@/src/utils/deviceFieldKey";
 
 import {
   InspectionField,
@@ -62,6 +64,7 @@ export default function SectionRenderer({
   const [options, setOptions] = useState<Record<number, any[]>>({});
   const [deviceCounts, setDeviceCounts] = useState<Record<string, number>>({});
   const [deviceTypes, setDeviceTypes] = useState<string[]>([]);
+  const [requiredDeviceTypes, setRequiredDeviceTypes] = useState<Set<string>>(new Set());
   const [poleIdLoaded, setPoleIdLoaded] = useState(false);
 
   useEffect(() => {
@@ -140,6 +143,9 @@ export default function SectionRenderer({
       // Load all device types from DeviceFieldDefinitions
       const types = await DeviceFieldDefinitionsRepository.getDeviceTypes(templateId, existing);
       setDeviceTypes(types);
+
+      const requiredTypes = await ProjectDeviceTypesRepository.getRequired();
+      setRequiredDeviceTypes(new Set(requiredTypes));
 
       // Detect device count fields dynamically
       const counts: Record<string, number> = {};
@@ -238,7 +244,12 @@ export default function SectionRenderer({
             fieldKey={field.FieldKey}
             fieldName={field.IsActive === 0 ? `Deleted ${field.FieldName}` : field.FieldName}
             fieldType={field.FieldType}
-            required={field.IsRequired === 1}
+            required={resolveFieldRequired(
+              field.FieldKey,
+              currentDeviceType,
+              requiredDeviceTypes,
+              field.IsRequired === 1
+            )}
             editable={
               !isFormLocked || field.FieldKey === "pole_id"
             }

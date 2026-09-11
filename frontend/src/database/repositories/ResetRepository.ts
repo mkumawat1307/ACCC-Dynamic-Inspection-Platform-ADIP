@@ -2,6 +2,7 @@ import { getDatabase } from "../db";
 import {
   FACTORY_SECTIONS,
   FACTORY_DEVICE_TYPES,
+  FACTORY_REQUIRED_DEVICE_TYPES,
   FACTORY_DEVICE_FIELDS,
   FACTORY_DEVICE_OPTIONS,
   LOCKED_SECTION_KEYS,
@@ -305,9 +306,10 @@ export class ResetRepository {
       }
 
       for (const dt of FACTORY_DEVICE_TYPES) {
+        const isRequired = FACTORY_REQUIRED_DEVICE_TYPES.includes(dt) ? 1 : 0;
         await db.runAsync(
-          `INSERT OR IGNORE INTO ProjectDeviceTypes (DeviceType, IsActive) VALUES (?, 1)`,
-          [dt]
+          `INSERT OR IGNORE INTO ProjectDeviceTypes (DeviceType, IsActive, IsRequired) VALUES (?, 1, ?)`,
+          [dt, isRequired]
         );
       }
     });

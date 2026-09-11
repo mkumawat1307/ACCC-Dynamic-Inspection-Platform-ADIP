@@ -11,6 +11,7 @@ import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecor
 import { InspectionEditSessionState } from "./InspectionEditSessionState";
 import InspectionValueRepository from "./InspectionValueRepository";
 import ProjectDeviceTypesRepository from "./ProjectDeviceTypesRepository";
+import { deviceCountFieldKey, isCountEmpty, isCountField } from "@/src/utils/deviceFieldKey";
 
 export function isFieldValueEmpty(type: string, value: string): boolean {
   switch (type) {
@@ -396,6 +397,11 @@ static async validateInspection(
         continue;
       }
 
+      // Count fields are governed by validateDeviceTypeMandatory (device-level required)
+      if (isCountField(field.FieldKey)) {
+        continue;
+      }
+
       const stagedValue = effectiveStagedValues?.get(field.FieldID);
       const value =
         stagedValue !== undefined
@@ -586,27 +592,29 @@ static async validateDeviceMandatory(
       ? InspectionEditSessionState.getStagedFieldValues()
       : undefined;
 
-    const countFieldByKey: Record<string, { FieldName: string; value: number }> = {};
+    const countFieldByKey: Record<string, { FieldName: string; rawValue: unknown }> = {};
     for (const row of countFields) {
       const stagedCount = sessionFieldValues?.get(row.FieldID);
-      const countValue =
-        stagedCount !== undefined
-          ? stagedCount
-          : (values[row.FieldKey] || "0");
+      const rawValue =
+        stagedCount !== undefined ? stagedCount : (values[row.FieldKey] ?? null);
       countFieldByKey[row.FieldKey] = {
-        FieldName: row.FieldName || "Count",
-        value: Number(countValue || "0"),
+        FieldName: row.FieldName || `${row.FieldKey} Count`,
+        rawValue,
       };
     }
 
     const missingFields: string[] = [];
     for (const deviceType of requiredTypes) {
-      const fieldKey =
-        deviceType.toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_count";
+      const fieldKey = deviceCountFieldKey(deviceType);
       const countField = countFieldByKey[fieldKey];
-      const count = countField?.value ?? 0;
-      if (count < 1) {
-        missingFields.push(`${deviceType} — ${countField?.FieldName ?? deviceType + " Count"} (minimum 1)`);
+
+      if (countField === undefined) {
+        missingFields.push(`Fill ${deviceType} Count`);
+        continue;
+      }
+
+      if (isCountEmpty(countField.rawValue)) {
+        missingFields.push(`Fill ${countField.FieldName}`);
       }
     }
 
