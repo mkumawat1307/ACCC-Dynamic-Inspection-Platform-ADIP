@@ -1,3 +1,5 @@
+import type { PreparedPoleRename, PendingRename, RenameIdentity } from "@/src/database/repositories/PoleRenameService";
+
 jest.mock("expo-sqlite");
 jest.mock("@/src/utils/downloadStorage", () => ({
   downloadStorage: {
@@ -20,7 +22,11 @@ type MockDb = {
 describe("PoleRenameService", () => {
   let dbModule: typeof import("@/src/database/db");
   let db: MockDb;
-  let PoleRenameService: { renamePoleId: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }) => Promise<{ renamedFiles: number; updatedRecords: number; missingFiles: number; duplicate?: boolean; duplicatePoleId?: string }> };
+  let PoleRenameService: {
+    renamePoleId: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }) => Promise<{ renamedFiles: number; updatedRecords: number; missingFiles: number; duplicate?: boolean; duplicatePoleId?: string }>;
+    prepareRename: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }, identity?: RenameIdentity) => Promise<PreparedPoleRename>;
+    writeRenameInTransaction: (db: MockDb, i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }, renames: PendingRename[], identity?: RenameIdentity) => Promise<void>;
+  };
   let logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock; debug: jest.Mock };
 
   async function seedInspection(poleId: string): Promise<number> {
@@ -35,6 +41,14 @@ describe("PoleRenameService", () => {
     const result = await db.runAsync(
       `INSERT INTO InspectionFields (SectionID, FieldName, FieldKey, FieldType, DisplayOrder, IsRequired, IsVisible, IsActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [1, "Site ID", "pole_id", "text", 1, 1, 1, 1]
+    );
+    return result.lastInsertRowId;
+  }
+
+  async function seedField(fieldKey: string, fieldName: string): Promise<number> {
+    const result = await db.runAsync(
+      `INSERT INTO InspectionFields (SectionID, FieldName, FieldKey, FieldType, DisplayOrder, IsRequired, IsVisible, IsActive) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [1, fieldName, fieldKey, "text", 1, 1, 1, 1]
     );
     return result.lastInsertRowId;
   }
@@ -427,5 +441,142 @@ describe("PoleRenameService", () => {
       [inspectionA]
     );
     expect(history).toHaveLength(0);
+  });
+
+  describe("identity rename (district/block/pole)", () => {
+    const IDENTITY = {
+      oldDistrict: "Sikar",
+      oldBlock: "BlockA",
+      newDistrict: "Jaipur",
+      newBlock: "Malarna",
+    };
+
+    async function fieldId(fieldKey: string): Promise<number> {
+      const field = await db.getFirstAsync<{ FieldID: number }>(
+        `SELECT FieldID FROM InspectionFields WHERE FieldKey = '${fieldKey}' LIMIT 1`
+      );
+      return field?.FieldID ?? -1;
+    }
+
+    async function valueOf(inspectionId: number, fieldKey: string): Promise<string | null> {
+      const row = await db.getFirstAsync<{ FieldValue: string }>(
+        `SELECT FieldValue FROM InspectionValues WHERE InspectionID = ? AND FieldID = ?`,
+        [inspectionId, await fieldId(fieldKey)]
+      );
+      return row?.FieldValue ?? null;
+    }
+
+    it("renames the identity tokens and writes district/block/pole values", async () => {
+      const inspectionId = await seedInspection("SIK001");
+      await seedField("pole_id", "Site ID");
+      await seedField("district", "District");
+      await seedField("block", "Block Name");
+      await seedPhoto(inspectionId, "Sikar_BlockA_SIK001_14AUG2026_112948.jpg");
+
+      (downloadStorage.renameFile as jest.Mock).mockImplementation(
+        (uri: string, newFileName: string) => Promise.resolve(`content://media/renamed/${newFileName}`)
+      );
+
+      const prepared = await PoleRenameService.prepareRename(
+        inspectionId,
+        "SIK001",
+        "SIK101",
+        { renameFiles: true, updateReports: true },
+        IDENTITY
+      );
+      expect(prepared.renames).toHaveLength(1);
+      expect(prepared.missingFiles).toBe(0);
+      expect(prepared.renames[0].newFileName).toBe("Jaipur_Malarna_SIK101_14AUG2026_112948.jpg");
+
+      await PoleRenameService.writeRenameInTransaction(
+        db,
+        inspectionId,
+        "SIK001",
+        "SIK101",
+        { renameFiles: true, updateReports: true },
+        prepared.renames,
+        IDENTITY
+      );
+
+      const photo = await db.getFirstAsync<{ FileName: string }>(
+        "SELECT FileName FROM Photos WHERE InspectionID = ?",
+        [inspectionId]
+      );
+      expect(photo?.FileName).toBe("Jaipur_Malarna_SIK101_14AUG2026_112948.jpg");
+
+      const inspection = await db.getFirstAsync<{ PoleID: string }>(
+        "SELECT PoleID FROM Inspections WHERE InspectionID = ?",
+        [inspectionId]
+      );
+      expect(inspection?.PoleID).toBe("SIK101");
+
+      expect(await valueOf(inspectionId, "district")).toBe("Jaipur");
+      expect(await valueOf(inspectionId, "block")).toBe("Malarna");
+      expect(await valueOf(inspectionId, "pole_id")).toBe("SIK101");
+
+      const history = await db.getFirstAsync<{ OldPoleId: string; NewPoleId: string }>(
+        "SELECT OldPoleId, NewPoleId FROM InspectionPoleIdHistory WHERE InspectionID = ?",
+        [inspectionId]
+      );
+      expect(history).toEqual({ OldPoleId: "SIK001", NewPoleId: "SIK101" });
+    });
+
+    it("skips photos whose identity tokens do not match", async () => {
+      const inspectionId = await seedInspection("SIK001");
+      await seedField("pole_id", "Site ID");
+      await seedPhoto(inspectionId, "Other_BlockA_SIK001_14AUG2026_112948.jpg");
+
+      const prepared = await PoleRenameService.prepareRename(
+        inspectionId,
+        "SIK001",
+        "SIK101",
+        { renameFiles: true, updateReports: true },
+        IDENTITY
+      );
+
+      expect(prepared.renames).toHaveLength(0);
+      expect(prepared.missingFiles).toBe(0);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("[PoleRename] skipped no token"));
+    });
+
+    it("does not write district/block values when updateReports is off", async () => {
+      const inspectionId = await seedInspection("SIK001");
+      await seedField("pole_id", "Site ID");
+      await seedField("district", "District");
+      await seedField("block", "Block Name");
+
+      await PoleRenameService.writeRenameInTransaction(
+        db,
+        inspectionId,
+        "SIK001",
+        "SIK101",
+        { renameFiles: false, updateReports: false },
+        [],
+        IDENTITY
+      );
+
+      expect(await valueOf(inspectionId, "district")).toBeNull();
+      expect(await valueOf(inspectionId, "block")).toBeNull();
+      expect(await valueOf(inspectionId, "pole_id")).toBeNull();
+    });
+
+    it("skips district/block upserts when those fields do not exist", async () => {
+      const inspectionId = await seedInspection("SIK001");
+      await seedField("pole_id", "Site ID");
+
+      await expect(
+        PoleRenameService.writeRenameInTransaction(
+          db,
+          inspectionId,
+          "SIK001",
+          "SIK101",
+          { renameFiles: false, updateReports: true },
+          [],
+          IDENTITY
+        )
+      ).resolves.toBeUndefined();
+
+      expect(await valueOf(inspectionId, "pole_id")).toBe("SIK101");
+    });
   });
 });

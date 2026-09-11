@@ -5,13 +5,20 @@ import PhotoRepository from "./PhotoRepository";
 import { InspectionRepository } from "./InspectionRepository";
 import { Photo } from "@/src/models/Photo";
 import { downloadStorage } from "@/src/utils/downloadStorage";
-import { renamePoleTokenInFileName } from "@/src/components/inspection/photoUtils";
+import { renamePoleTokenInFileName, renameIdentityInFileName } from "@/src/components/inspection/photoUtils";
 import { InspectionDataBus } from "@/src/utils/InspectionDataBus";
 import { logger } from "@/src/utils/logger";
 
 export interface PoleRenameOptions {
   renameFiles: boolean;
   updateReports: boolean;
+}
+
+export interface RenameIdentity {
+  oldDistrict: string;
+  oldBlock: string;
+  newDistrict: string;
+  newBlock: string;
 }
 
 export interface PoleRenameResult {
@@ -40,7 +47,8 @@ export class PoleRenameService {
     inspectionId: number,
     oldPoleId: string,
     newPoleId: string,
-    options: PoleRenameOptions
+    options: PoleRenameOptions,
+    identity?: RenameIdentity
   ): Promise<PreparedPoleRename> {
 
     const trimmedNewPoleId = newPoleId.trim();
@@ -59,7 +67,17 @@ export class PoleRenameService {
 
     if (options.renameFiles) {
       for (const photo of photos) {
-        const newFileName = renamePoleTokenInFileName(photo.FileName, oldPoleId, trimmedNewPoleId);
+        const newFileName = identity
+          ? renameIdentityInFileName(
+              photo.FileName,
+              identity.oldDistrict,
+              identity.oldBlock,
+              oldPoleId,
+              identity.newDistrict,
+              identity.newBlock,
+              trimmedNewPoleId
+            )
+          : renamePoleTokenInFileName(photo.FileName, oldPoleId, trimmedNewPoleId);
         if (!newFileName) {
           logger.warn(`[PoleRename] skipped no token photo=${photo.PhotoID} old=${photo.FileName}`);
           continue;
@@ -87,7 +105,8 @@ export class PoleRenameService {
     oldPoleId: string,
     newPoleId: string,
     options: PoleRenameOptions,
-    renames: PendingRename[]
+    renames: PendingRename[],
+    identity?: RenameIdentity
   ): Promise<void> {
 
     const trimmedNewPoleId = newPoleId.trim();
@@ -117,6 +136,34 @@ export class PoleRenameService {
              UpdatedAt = CURRENT_TIMESTAMP;`,
           [inspectionId, poleIdField.FieldID, trimmedNewPoleId]
         );
+      }
+
+      if (identity) {
+        const identityFields: { fieldKey: string; value: string }[] = [
+          { fieldKey: "district", value: identity.newDistrict },
+          { fieldKey: "block", value: identity.newBlock },
+        ];
+        for (const entry of identityFields) {
+          const field = await db.getFirstAsync<{ FieldID: number }>(
+            `SELECT FieldID FROM InspectionFields WHERE FieldKey = '${entry.fieldKey}' LIMIT 1`
+          );
+          if (!field) continue;
+          await db.runAsync(
+            `INSERT INTO InspectionValues
+             (
+               InspectionID,
+               FieldID,
+               FieldValue
+             )
+             VALUES
+             (?, ?, ?)
+             ON CONFLICT(InspectionID, FieldID)
+             DO UPDATE SET
+               FieldValue = excluded.FieldValue,
+               UpdatedAt = CURRENT_TIMESTAMP;`,
+            [inspectionId, field.FieldID, entry.value]
+          );
+        }
       }
     }
 

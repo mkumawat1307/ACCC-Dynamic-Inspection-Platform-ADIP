@@ -8,6 +8,7 @@ import {
   validatePhotosForSave,
   cleanPoleToken,
   renamePoleTokenInFileName,
+  renameIdentityInFileName,
   decidePoleIdChange,
 } from "@/src/components/inspection/photoUtils";
 import { Photo } from "@/src/models/Photo";
@@ -247,6 +248,150 @@ describe("renamePoleTokenInFileName", () => {
     expect(
       renamePoleTokenInFileName("Sikar_SIK001_14AUG2026_112948_a1b2c3.jpg", "SIK001", "SIK101")
     ).toBe("Sikar_SIK101_14AUG2026_112948_a1b2c3.jpg");
+  });
+});
+
+describe("renameIdentityInFileName", () => {
+  const fileName = "Sikar_BlockA_SIK001_14AUG2026_112948.jpg";
+
+  it("replaces district, block and pole tokens when all three match", () => {
+    expect(
+      renameIdentityInFileName(
+        fileName,
+        "Sikar",
+        "BlockA",
+        "SIK001",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBe("Jaipur_Malarna_SIK101_14AUG2026_112948.jpg");
+  });
+
+  it("cleans special characters in the old pole id token", () => {
+    expect(
+      renameIdentityInFileName(
+        fileName,
+        "Sikar",
+        "BlockA",
+        "SIK-001",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBe("Jaipur_Malarna_SIK101_14AUG2026_112948.jpg");
+  });
+
+  it("cleans the new identity tokens before inserting them", () => {
+    expect(
+      renameIdentityInFileName(
+        fileName,
+        "Sikar",
+        "BlockA",
+        "SIK001",
+        "Jaipur/B",
+        "Malarna 2",
+        "SIK-101/A"
+      )
+    ).toBe("JaipurB_Malarna2_SIK101A_14AUG2026_112948.jpg");
+  });
+
+  it("returns null when the district token does not match", () => {
+    expect(
+      renameIdentityInFileName(
+        fileName,
+        "Other",
+        "BlockA",
+        "SIK001",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBeNull();
+  });
+
+  it("returns null when the block token does not match", () => {
+    expect(
+      renameIdentityInFileName(
+        fileName,
+        "Sikar",
+        "OtherBlock",
+        "SIK001",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBeNull();
+  });
+
+  it("returns null when the pole token does not match", () => {
+    expect(
+      renameIdentityInFileName(
+        fileName,
+        "Sikar",
+        "BlockA",
+        "ZZZ999",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBeNull();
+  });
+
+  it("returns null for a filename with fewer than three tokens", () => {
+    expect(
+      renameIdentityInFileName(
+        "Sikar_SIK001.jpg",
+        "Sikar",
+        "BlockA",
+        "SIK001",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBeNull();
+  });
+
+  it("preserves the date, time and unique-suffix segments", () => {
+    expect(
+      renameIdentityInFileName(
+        "Sikar_BlockA_SIK001_14AUG2026_112948_a1b2c3.jpg",
+        "Sikar",
+        "BlockA",
+        "SIK001",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBe("Jaipur_Malarna_SIK101_14AUG2026_112948_a1b2c3.jpg");
+  });
+
+  it("uses NA for blank new identity components", () => {
+    expect(
+      renameIdentityInFileName(
+        fileName,
+        "Sikar",
+        "BlockA",
+        "SIK001",
+        "",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBe("NA_Malarna_SIK101_14AUG2026_112948.jpg");
+  });
+
+  it("matches NA tokens for a pole id that was never set", () => {
+    expect(
+      renameIdentityInFileName(
+        "Sikar_BlockA_NA_14AUG2026_112948.jpg",
+        "Sikar",
+        "BlockA",
+        "",
+        "Jaipur",
+        "Malarna",
+        "SIK101"
+      )
+    ).toBe("Jaipur_Malarna_SIK101_14AUG2026_112948.jpg");
   });
 });
 

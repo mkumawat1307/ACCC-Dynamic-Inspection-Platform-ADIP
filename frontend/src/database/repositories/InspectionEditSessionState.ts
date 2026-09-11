@@ -30,6 +30,10 @@ export interface PendingRename {
   newPoleId: string;
   renameFiles: boolean;
   updateReports: boolean;
+  oldDistrict?: string;
+  oldBlock?: string;
+  newDistrict?: string;
+  newBlock?: string;
 }
 
 export class InspectionEditSessionState {

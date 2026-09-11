@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Button, Checkbox, Dialog, Portal, Text } from "react-native-paper";
+import type { InspectionIdentity } from "./photoUtils";
 
 interface PoleRenameConfirmDialogProps {
   visible: boolean;
-  oldPoleId: string;
-  newPoleId: string;
+  oldIdentity: InspectionIdentity;
+  newIdentity: InspectionIdentity;
   photoCount: number;
   onCancel: () => void;
   onConfirm: (renameFiles: boolean, updateReports: boolean) => void;
@@ -13,8 +14,8 @@ interface PoleRenameConfirmDialogProps {
 
 export default function PoleRenameConfirmDialog({
   visible,
-  oldPoleId,
-  newPoleId,
+  oldIdentity,
+  newIdentity,
   photoCount,
   onCancel,
   onConfirm,
@@ -22,14 +23,39 @@ export default function PoleRenameConfirmDialog({
   const [renameFiles, setRenameFiles] = useState(true);
   const [updateReports, setUpdateReports] = useState(true);
 
+  const changed = [
+    oldIdentity.district !== newIdentity.district,
+    oldIdentity.block !== newIdentity.block,
+    oldIdentity.poleId !== newIdentity.poleId,
+  ];
+
   return (
     <Portal>
       <Dialog visible={visible} onDismiss={onCancel}>
         <Dialog.Title>Rename Site ID</Dialog.Title>
         <Dialog.Content>
           <Text variant="bodyMedium">
-            Update Site ID from {oldPoleId} to {newPoleId}? Related records and photo files will be updated.
+            District, Block Name, or Site ID has changed. Update the inspection
+            identity from{" "}
+            {`${oldIdentity.district}_${oldIdentity.block}_${oldIdentity.poleId}`} to{" "}
+            {`${newIdentity.district}_${newIdentity.block}_${newIdentity.poleId}`}?
+            Related records and photo files will be updated.
           </Text>
+          {changed[0] && (
+            <Text variant="bodySmall" style={styles.note}>
+              District: {oldIdentity.district} → {newIdentity.district}
+            </Text>
+          )}
+          {changed[1] && (
+            <Text variant="bodySmall" style={styles.note}>
+              Block Name: {oldIdentity.block} → {newIdentity.block}
+            </Text>
+          )}
+          {changed[2] && (
+            <Text variant="bodySmall" style={styles.note}>
+              Site ID: {oldIdentity.poleId} → {newIdentity.poleId}
+            </Text>
+          )}
           <Text variant="bodySmall" style={styles.note}>
             Watermarks already burned into existing photos will keep showing the old Site ID.
           </Text>

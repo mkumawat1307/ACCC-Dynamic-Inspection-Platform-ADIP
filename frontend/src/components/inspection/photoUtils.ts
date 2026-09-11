@@ -182,3 +182,37 @@ export function renamePoleTokenInFileName(
   parts[index] = newToken;
   return parts.join("_");
 }
+
+export interface InspectionIdentity {
+  district: string;
+  block: string;
+  poleId: string;
+}
+
+export function renameIdentityInFileName(
+  fileName: string,
+  oldDistrict: string,
+  oldBlock: string,
+  oldPoleId: string,
+  newDistrict: string,
+  newBlock: string,
+  newPoleId: string
+): string | null {
+  const parts = fileName.split("_");
+  if (parts.length < 3) return null;
+
+  const oldTokens = [
+    cleanPoleToken(oldDistrict),
+    cleanPoleToken(oldBlock),
+    cleanPoleToken(oldPoleId),
+  ];
+
+  for (let i = 0; i < 3; i++) {
+    if (parts[i] !== oldTokens[i]) return null;
+  }
+
+  parts[0] = cleanPoleToken(newDistrict) || "NA";
+  parts[1] = cleanPoleToken(newBlock) || "NA";
+  parts[2] = cleanPoleToken(newPoleId) || "NA";
+  return parts.join("_");
+}

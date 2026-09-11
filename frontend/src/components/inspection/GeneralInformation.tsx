@@ -16,9 +16,21 @@ import { getCurrentLocation } from "@/src/utils/location";
 import { reverseGeocode } from "@/src/utils/geo";
 import { getTodayDateString } from "@/src/utils/date";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
-import { PoleRenameService } from "@/src/database/repositories/PoleRenameService";
-import { cleanPoleToken, decidePoleIdChange } from "./photoUtils";
+import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
+import { cleanPoleToken, InspectionIdentity } from "./photoUtils";
 import PoleRenameConfirmDialog from "./PoleRenameConfirmDialog";
+
+export type IdentityRenameDecision =
+  | { type: "no-change" }
+  | { type: "no-rename" }
+  | { type: "proceed"; renameFiles: boolean; updateReports: boolean }
+  | { type: "cancelled" }
+  | { type: "duplicate"; duplicatePoleId: string };
+
+export interface GeneralInformationHandle {
+  getPoleId(): string;
+  confirmIdentityRename(): Promise<IdentityRenameDecision>;
+}
 
 interface GeneralInformationProps {
   ensureDraft?: () => Promise<number | null>;
@@ -27,19 +39,18 @@ interface GeneralInformationProps {
   onDataChanged?: () => void;
 }
 
-const GeneralInformation = forwardRef(({
+const GeneralInformation = forwardRef<GeneralInformationHandle, GeneralInformationProps>(({
   ensureDraft,
   releaseAbandonedDraft,
   existing = false,
   onDataChanged,
-}: GeneralInformationProps, ref) => {
+}, ref) => {
 const {
   project: contextProject,
   inspectionDate,
   inspectionId,
   setInspectionId,
   setPoleId,
-  getPhotoStates,
 } = useInspection();
 
 const [fields, setFields] = useState<InspectionField[]>([]);
@@ -49,14 +60,23 @@ const [formUnlocked, setFormUnlocked] = useState(false);
 const [initError, setInitError] = useState<string | null>(null);
 const [checkingPoleId, setCheckingPoleId] = useState(false);
 const [locationResolving, setLocationResolving] = useState(false);
-const [pendingRename, setPendingRename] = useState<{
-  oldPoleId: string;
-  newPoleId: string;
+const [renamePrompt, setRenamePrompt] = useState<{
+  oldIdentity: InspectionIdentity;
+  newIdentity: InspectionIdentity;
   photoCount: number;
 } | null>(null);
 const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleIdSaveChain = useRef<Promise<unknown>>(Promise.resolve());
+const poleCheckVersion = useRef(0);
+const renamePromptResolverRef = useRef<((decision: IdentityRenameDecision) => void) | null>(null);
+// The district/block/pole identity persisted for this inspection. Filenames and
+// report values are keyed to these tokens; save-time renames diff against them.
+const persistedIdentityRef = useRef<InspectionIdentity>({
+  district: "",
+  block: "",
+  poleId: "",
+});
 // The inspectionId the current render targets. Used by init() to detect when a
 // stale async load (started for an older inspectionId) resolves after the
 // inspection was switched or reset, so old values can never be repopulated.
@@ -131,11 +151,22 @@ async function init() {
       setValues((prev) => ({ ...prev, ...savedValues, pole_id: prev.pole_id }));
     }
 
-    // Editing an existing inspection: the live overlay is a module-level
-    // singleton, so a stale snapshot from a previously-opened inspection can
-    // leak into this one. Clear it after the form is populated — the staged
-    // edit-session values (and the DB) are authoritative from here on.
     if (existing) {
+      // Capture the identity persisted for this inspection so save-time renames
+      // diff against it. The raw DB values (not the display-merged ones) are
+      // authoritative — filenames carry the originally captured identity.
+      const persistedData = inspectionId
+        ? await InspectionRepository.getInspectionValues(inspectionId)
+        : {};
+      persistedIdentityRef.current = {
+        district: persistedData.district ?? "",
+        block: persistedData.block ?? "",
+        poleId: savedPoleId,
+      };
+      // The live overlay is a module-level singleton, so a stale snapshot from
+      // a previously-opened inspection can leak into this one. Clear it after
+      // the form is populated — the staged edit-session values (and the DB) are
+      // authoritative from here on.
       InspectionLiveValues.reset();
     }
 
@@ -181,11 +212,21 @@ async function loadInspectionValues(
     const key = field.FieldKey;
     const savedVal = data[key];
 
-    // Editing an existing inspection: only the persisted value is displayed.
-    // Missing or empty values stay empty — project context (division, district,
-    // block) and the inspection date are never auto-filled or written on open.
+    // Editing an existing inspection: Division and District always display the
+    // CURRENT project values (an inspection follows the project it belongs to),
+    // falling back to the persisted value only when the project lacks one.
+    // Everything else stays on its persisted value — never auto-filled.
     if (existing) {
-      result[key] = savedVal ?? "";
+      switch (key) {
+        case "division":
+          result[key] = project?.DivisionName || savedVal || "";
+          break;
+        case "district":
+          result[key] = project?.DistrictName || savedVal || "";
+          break;
+        default:
+          result[key] = savedVal ?? "";
+      }
       continue;
     }
 
@@ -302,64 +343,112 @@ function isReadOnly(fieldKey: string) {
 async function handlePoleIdSave(
   inspectionId: number | null,
   fieldId: number,
-  text: string
+  text: string,
+  version: number
 ) {
   const run = async () => {
-    const trimmed = text.trim();
-
-    // Resolve the inspection row. For a brand-new inspection this is null
-    // until the draft is created lazily — AFTER the duplicate check passes.
     let effectiveId = inspectionId;
-    const current = effectiveId != null
-      ? await InspectionRepository.getInspectionPoleId(effectiveId)
-      : "";
+    let current = "";
+    try {
+      if (version !== poleCheckVersion.current) return;
+      setCheckingPoleId(true);
 
-    // Fresh duplicate check immediately before any persistence. When no
-    // draft exists yet, any existing match is a genuine duplicate, so no
-    // draft is created for it.
-    if (trimmed.length > 0) {
-      const existing = await InspectionRepository.getInspectionByPoleId(trimmed);
-      if (existing && existing.InspectionID !== effectiveId) {
-        Alert.alert(
-          "Duplicate Site ID",
-          `Site ID ${trimmed} already exists in another inspection. Please enter a unique Site ID.`
-        );
-        revertPoleId(current);
+      const trimmed = text.trim();
+
+      // Resolve the inspection row. For a brand-new inspection this is null
+      // until the draft is created lazily — AFTER the duplicate check passes.
+      if (effectiveId != null) {
+        current = (await InspectionRepository.getInspectionPoleId(effectiveId)) ?? "";
+      }
+
+      if (version !== poleCheckVersion.current) return;
+
+      // Fresh duplicate check immediately before any persistence. When no
+      // draft exists yet, any existing match is a genuine duplicate, so no
+      // draft is created for it.
+      const duplicate = trimmed.length > 0
+        ? await InspectionRepository.getInspectionByPoleId(trimmed)
+        : null;
+
+      // A stale check (user edited again while this ran) must never alert,
+      // revert, or persist anything.
+      if (version !== poleCheckVersion.current) return;
+
+      if (duplicate && duplicate.InspectionID !== effectiveId) {
+        if (existing) {
+          Alert.alert(
+            "Duplicate Site ID",
+            `Site ID ${trimmed} already exists in another inspection. Please enter a unique Site ID.`
+          );
+          revertPoleId(current);
+        } else {
+          Alert.alert(
+            "Inspection Already Exists",
+            `SITE ID ${trimmed} already exists.`,
+            [
+              {
+                text: "Edit Existing",
+                onPress: async () => {
+                  // Delete the session draft (if any) so it does not linger as
+                  // an orphan, then open the existing inspection.
+                  if (releaseAbandonedDraft) {
+                    await releaseAbandonedDraft();
+                  }
+                  setValues({});
+                  setInspectionId(duplicate.InspectionID);
+
+                  router.replace({
+                    pathname: "/inspection/new",
+                    params: {
+                      projectId: contextProject!.ProjectID.toString(),
+                      inspectionId: duplicate.InspectionID.toString(),
+                    },
+                  });
+                },
+              },
+              {
+                text: "Create New",
+                onPress: () => {
+                  handleCreateNew();
+                },
+              },
+              {
+                text: "Cancel",
+                style: "cancel",
+                onPress: () => {
+                  // Dismiss the duplicate alert and clear ONLY the Site ID.
+                  // Cancel any pending/debounced save for the duplicate so it
+                  // cannot be written back, and keep the user on this form with
+                  // all other data intact. No draft is created by cancelling.
+                  clearSiteId();
+                },
+              },
+            ]
+          );
+        }
         return;
       }
-    }
 
-    // Lazy draft creation — only after the duplicate check passes, so a
-    // duplicate Site ID never leaves an orphan draft behind.
-    if (effectiveId == null) {
-      effectiveId = ensureDraft ? await ensureDraft() : null;
+      // Lazy draft creation — only after the duplicate check passes, so a
+      // duplicate Site ID never leaves an orphan draft behind.
       if (effectiveId == null) {
-        revertPoleId(current);
+        effectiveId = ensureDraft ? await ensureDraft() : null;
+        if (effectiveId == null) {
+          revertPoleId(current);
+          return;
+        }
+      }
+
+      if (version !== poleCheckVersion.current) return;
+
+      if (cleanPoleToken(trimmed) === cleanPoleToken(current)) {
+        await InspectionRepository.saveFieldValue(effectiveId, fieldId, trimmed);
+        if (trimmed !== current) {
+          await InspectionRepository.updateInspectionPoleId(effectiveId, trimmed);
+        }
         return;
       }
-    }
 
-    if (cleanPoleToken(trimmed) === cleanPoleToken(current)) {
-      await InspectionRepository.saveFieldValue(effectiveId, fieldId, trimmed);
-      if (trimmed !== current) {
-        await InspectionRepository.updateInspectionPoleId(effectiveId, trimmed);
-      }
-      return;
-    }
-
-    const photos = await PhotoRepository.getByInspection(effectiveId);
-    const decision = decidePoleIdChange(photos, getPhotoStates());
-
-    if (decision.type === "blocked") {
-      Alert.alert(
-        "Rename Blocked",
-        "Wait for all photos to finish processing before changing the Site ID."
-      );
-      revertPoleId(current);
-      return;
-    }
-
-    if (decision.type === "direct-save") {
       try {
         await InspectionRepository.updatePoleIdDirectSave(
           effectiveId,
@@ -374,14 +463,11 @@ async function handlePoleIdSave(
         );
         revertPoleId(current);
       }
-      return;
+    } finally {
+      if (version === poleCheckVersion.current) {
+        setCheckingPoleId(false);
+      }
     }
-
-    setPendingRename({
-      oldPoleId: current,
-      newPoleId: trimmed,
-      photoCount: decision.photoCount,
-    });
   };
 
   const chained = poleIdSaveChain.current.then(run, run);
@@ -410,6 +496,7 @@ function revertPoleId(value: string) {
 // empties the field while preserving every other form value. The inspection
 // row and all other section data are left untouched.
 function clearSiteId() {
+  poleCheckVersion.current += 1;
   if (saveTimeout.current) {
     clearTimeout(saveTimeout.current);
     saveTimeout.current = null;
@@ -433,6 +520,7 @@ function clearSiteId() {
 // section renderers. The result is an unpersisted new inspection (inspectionId
 // = null) with a clean in-memory form.
 async function handleCreateNew() {
+  poleCheckVersion.current += 1;
   if (saveTimeout.current) {
     clearTimeout(saveTimeout.current);
     saveTimeout.current = null;
@@ -456,9 +544,117 @@ async function handleCreateNew() {
   }
 }
 
-useImperativeHandle(ref, () => ({
+function getEffectiveIdentity(): InspectionIdentity | null {
+  const identity = {
+    district: contextProject?.DistrictName ?? "",
+    block: values.block?.trim() ?? "",
+    poleId: values.pole_id?.trim() ?? "",
+  };
+  if (identity.district === "" && identity.block === "" && identity.poleId === "") {
+    return null;
+  }
+  return identity;
+}
+
+// Capture the current identity (district/block/pole) into the edit session so a
+// commit persists the updated values even when no file rename is needed.
+function stageIdentityValues(identity: InspectionIdentity) {
+  if (!InspectionEditSession.isActive(inspectionId)) return;
+  for (const key of ["district", "block", "pole_id"] as const) {
+    const field = fields.find((f) => f.FieldKey === key);
+    if (!field) continue;
+    const value =
+      key === "district" ? identity.district
+      : key === "block" ? identity.block
+      : identity.poleId;
+    InspectionEditSession.stageFieldValue(field.FieldID, value);
+  }
+}
+
+// Revert the on-screen identity (and the staged copy) back to what is persisted
+// for the inspection. Used when the user dismisses the save-time rename dialog.
+function revertIdentityToPersisted(
+  persisted: InspectionIdentity = persistedIdentityRef.current
+) {
+  setValues((prev) => ({
+    ...prev,
+    block: persisted.block,
+    pole_id: persisted.poleId,
+  }));
+  setPoleId(persisted.poleId);
+  setFormUnlocked(persisted.poleId.trim().length > 0);
+  syncLiveField("pole_id", persisted.poleId);
+  syncLiveField("block", persisted.block);
+  if (InspectionEditSession.isActive(inspectionId)) {
+    for (const key of ["district", "block", "pole_id"] as const) {
+      const field = fields.find((f) => f.FieldKey === key);
+      if (!field) continue;
+      InspectionEditSession.stageFieldValue(
+        field.FieldID,
+        key === "district"
+          ? (contextProject?.DistrictName ?? "")
+          : key === "block"
+            ? persisted.block
+            : persisted.poleId
+      );
+    }
+    InspectionEditSession.stagePoleId(persisted.poleId);
+    InspectionEditSession.stagePendingRename(null);
+  }
+  onDataChanged?.();
+}
+
+// Save-time identity check. new.tsx calls this before committing an existing
+// inspection. Returns the decision the caller must act on; the rename dialog is
+// only shown for a true identity change WITH photos — never while typing.
+async function checkIdentityBeforeSave(): Promise<IdentityRenameDecision> {
+  if (!existing) return { type: "no-change" };
+
+  const effectiveId = inspectionId;
+  if (effectiveId == null) return { type: "no-change" };
+  const identity = getEffectiveIdentity();
+  if (identity == null) return { type: "cancelled" };
+
+  const newPoleId = identity.poleId;
+  if (newPoleId.length > 0) {
+    const duplicate = await InspectionRepository.getInspectionByPoleId(newPoleId);
+    if (duplicate && duplicate.InspectionID !== effectiveId) {
+      return { type: "duplicate", duplicatePoleId: newPoleId };
+    }
+  }
+
+  const persisted = persistedIdentityRef.current;
+  const identityChanged =
+    cleanPoleToken(identity.district) !== cleanPoleToken(persisted.district) ||
+    cleanPoleToken(identity.block) !== cleanPoleToken(persisted.block) ||
+    cleanPoleToken(identity.poleId) !== cleanPoleToken(persisted.poleId);
+
+  if (!identityChanged) return { type: "no-change" };
+
+  stageIdentityValues(identity);
+  if (InspectionEditSession.isActive(effectiveId)) {
+    InspectionEditSession.stagePoleId(identity.poleId);
+  }
+
+  const photos = await PhotoRepository.getByInspection(effectiveId);
+  if (photos.length === 0) return { type: "no-rename" };
+
+  return new Promise((resolve) => {
+    renamePromptResolverRef.current = resolve;
+    setRenamePrompt({
+      oldIdentity: persisted,
+      newIdentity: identity,
+      photoCount: photos.length,
+    });
+  });
+}
+
+useImperativeHandle<GeneralInformationHandle, GeneralInformationHandle>(ref, () => ({
   getPoleId() {
     return values.pole_id?.trim() ?? "";
+  },
+  confirmIdentityRename() {
+    return checkIdentityBeforeSave();
   },
 }));
 
@@ -513,112 +709,41 @@ return (
             InspectionLiveValues.setFieldValue(field.FieldID, text);
             onDataChanged?.();
 
+            const currentInspectionId = inspectionId;
+
             if (field.FieldKey === "pole_id") {
               setFormUnlocked(text.trim().length > 0);
               setPoleId(text);
 
+              // A single settled check: every keystroke bumps the version and
+              // restarts the timer, so only the FINAL value reaches the
+              // duplicate check + save. Stale async results are discarded by
+              // the version guard.
+              poleCheckVersion.current += 1;
+              const version = poleCheckVersion.current;
               if (poleCheckTimeout.current) {
                 clearTimeout(poleCheckTimeout.current);
               }
-
-              if (text.trim().length > 0) {
-                poleCheckTimeout.current = setTimeout(async () => {
-                  try {
-                    setCheckingPoleId(true);
-
-                    const existing =
-                      await InspectionRepository.getInspectionByPoleId(
-                        text.trim()
-                      );
-
-                    setCheckingPoleId(false);
-
-                    if (
-                      existing &&
-                      existing.InspectionID !== inspectionId
-                    ) {
-                      // Cancel pending save to prevent race condition
-                      if (saveTimeout.current) {
-                        clearTimeout(saveTimeout.current);
-                        saveTimeout.current = null;
-                      }
-                      Alert.alert(
-                        "Inspection Already Exists",
-                        `SITE ID ${text} already exists.`,
-                        [
-                          {
-                            text: "Edit Existing",
-                            onPress: async () => {
-                              // Delete the session draft (if any) so it does
-                              // not linger as an orphan, then open the
-                              // existing inspection.
-                              if (releaseAbandonedDraft) {
-                                await releaseAbandonedDraft();
-                              }
-                              setValues({});
-                              setInspectionId(existing.InspectionID);
-
-                              router.replace({
-                                pathname: "/inspection/new",
-                                params: {
-                                  projectId: contextProject!.ProjectID.toString(),
-                                  inspectionId:
-                                    existing.InspectionID.toString(),
-                                },
-                              });
-                            },
-                          },
-                          {
-                            text: "Create New",
-                            onPress: () => {
-                              handleCreateNew();
-                            },
-                          },
-                          { text: "Cancel", style: "cancel",
-                            onPress: () => {
-                              // Dismiss the duplicate alert and clear ONLY the
-                              // Site ID. Cancel any pending/debounced save for
-                              // the duplicate so it cannot be written back, and
-                              // keep the user on this form with all other data
-                              // intact. No draft is created by cancelling.
-                              clearSiteId();
-                            },
-                          },
-                        ]
-                      );
-                    }
-                  } catch (error) {
-                    setCheckingPoleId(false);
-                    logger.error(error);
-                  }
-                }, 300);
-              }
+              poleCheckTimeout.current = setTimeout(async () => {
+                await handlePoleIdSave(
+                  currentInspectionId,
+                  field.FieldID,
+                  text,
+                  version
+                );
+              }, 500);
+              return;
             }
 
-            if (!inspectionId && field.FieldKey !== "pole_id") return;
+            if (currentInspectionId == null) return;
 
             if (saveTimeout.current) {
               clearTimeout(saveTimeout.current);
             }
 
-            const currentInspectionId = inspectionId;
-
             saveTimeout.current = setTimeout(async () => {
-              if (!currentInspectionId && field.FieldKey !== "pole_id") return;
-
-              if (field.FieldKey === "pole_id") {
-                await handlePoleIdSave(
-                  currentInspectionId,
-                  field.FieldID,
-                  text
-                );
-                return;
-              }
-
-              if (currentInspectionId == null) return;
-
               await InspectionRepository.saveFieldValue(
-                currentInspectionId,
+                currentInspectionId!,
                 field.FieldID,
                 text
               );
@@ -671,43 +796,36 @@ return (
       </React.Fragment>
     ))}
     <PoleRenameConfirmDialog
-      visible={pendingRename !== null}
-      oldPoleId={pendingRename?.oldPoleId ?? ""}
-      newPoleId={pendingRename?.newPoleId ?? ""}
-      photoCount={pendingRename?.photoCount ?? 0}
+      visible={renamePrompt !== null}
+      oldIdentity={renamePrompt?.oldIdentity ?? { district: "", block: "", poleId: "" }}
+      newIdentity={renamePrompt?.newIdentity ?? { district: "", block: "", poleId: "" }}
+      photoCount={renamePrompt?.photoCount ?? 0}
       onCancel={() => {
-        if (pendingRename) {
-          revertPoleId(pendingRename.oldPoleId);
-        }
-        setPendingRename(null);
+        setRenamePrompt(null);
+        const resolve = renamePromptResolverRef.current;
+        renamePromptResolverRef.current = null;
+        if (resolve) resolve({ type: "cancelled" });
+        revertIdentityToPersisted();
       }}
       onConfirm={async (renameFiles, updateReports) => {
-        if (!pendingRename || !inspectionId) return;
-        const { oldPoleId, newPoleId } = pendingRename;
-        setPendingRename(null);
-        try {
-          const result = await PoleRenameService.renamePoleId(
-            inspectionId,
-            oldPoleId,
-            newPoleId,
-            { renameFiles, updateReports }
-          );
-          if (result.duplicate) {
-            Alert.alert(
-              "Duplicate Site ID",
-              `Site ID ${result.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`
-            );
-            revertPoleId(oldPoleId);
-            return;
-          }
-        } catch (error) {
-          logger.error("[PoleRename] rename error:", error);
-          Alert.alert(
-            "Rename Failed",
-            "Could not rename the Site ID. Original files and records were kept."
-          );
-          revertPoleId(oldPoleId);
+        if (!renamePrompt) return;
+        const { oldIdentity, newIdentity } = renamePrompt;
+        setRenamePrompt(null);
+        const resolve = renamePromptResolverRef.current;
+        renamePromptResolverRef.current = null;
+        if (InspectionEditSession.isActive(inspectionId)) {
+          InspectionEditSession.stagePendingRename({
+            oldPoleId: oldIdentity.poleId,
+            newPoleId: newIdentity.poleId,
+            renameFiles,
+            updateReports,
+            oldDistrict: oldIdentity.district,
+            oldBlock: oldIdentity.block,
+            newDistrict: newIdentity.district,
+            newBlock: newIdentity.block,
+          });
         }
+        if (resolve) resolve({ type: "proceed", renameFiles, updateReports });
         onDataChanged?.();
       }}
     />
@@ -718,4 +836,3 @@ return (
 GeneralInformation.displayName = "GeneralInformation";
 
 export default GeneralInformation;
-

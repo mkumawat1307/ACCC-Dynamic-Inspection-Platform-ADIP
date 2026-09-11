@@ -29,7 +29,7 @@ import { usePhotosProcessing } from "@/src/context/PhotoStatesContext";
 import { InspectionScrollProvider } from "@/src/context/InspectionScrollContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
 import SectionRenderer from "@/src/components/inspection/SectionRenderer";
-import GeneralInformation from "@/src/components/inspection/GeneralInformation";
+import GeneralInformation, { type GeneralInformationHandle } from "@/src/components/inspection/GeneralInformation";
 import {
   measureSectionInWindow,
 } from "@/src/components/inspection/sectionAutoScroll";
@@ -104,6 +104,7 @@ export default function NewInspectionScreen({
     });
   }
   const scrollOrchestrationRef = useRef<ScrollOrchestrationHandlers | null>(null);
+  const generalInfoRef = useRef<GeneralInformationHandle>(null);
   if (!scrollOrchestrationRef.current) {
     scrollOrchestrationRef.current = {
       coordinator: sectionScrollCoordinatorRef.current,
@@ -525,6 +526,18 @@ const handleSave = async () => {
   // written to the database until this point, and only a fully valid Save
   // deactivates the edit session.
   if (isExisting) {
+    const decision = await generalInfoRef.current?.confirmIdentityRename();
+    if (decision?.type === "duplicate") {
+      Alert.alert(
+        "Duplicate Site ID",
+        `Site ID ${decision.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`
+      );
+      return;
+    }
+    if (decision?.type === "cancelled") {
+      return;
+    }
+
     const committed = await InspectionEditSession.commit();
     if (!committed) {
       Alert.alert(
@@ -703,6 +716,7 @@ return (
         <Card.Content>
     {section.SectionKey === "general_information" ? (
       <GeneralInformation
+        ref={generalInfoRef}
         ensureDraft={createDraftInspection}
         releaseAbandonedDraft={releaseAbandonedDraft}
         existing={Boolean(routeInspectionId)}

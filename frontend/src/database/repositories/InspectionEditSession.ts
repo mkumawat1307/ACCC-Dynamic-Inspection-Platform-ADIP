@@ -23,6 +23,7 @@ import InspectionValueRepository from "./InspectionValueRepository";
 import { InspectionRepository } from "./InspectionRepository";
 import { DeviceRecordsRepository, DeviceRecord } from "./DeviceRecordsRepository";
 import { InspectionEditSessionState } from "./InspectionEditSessionState";
+import { PoleRenameService } from "./PoleRenameService";
 import type { PendingRename } from "./InspectionEditSessionState";
 import type { PendingRename as PoleRenameItem } from "./PoleRenameService";
 import { getDatabase } from "../db";
@@ -103,7 +104,18 @@ export class InspectionEditSession {
       let duplicate = false;
       await db.withTransactionAsync(async () => {
         if (pendingRename) {
-          const { PoleRenameService } = await import("./PoleRenameService");
+          const identity =
+            pendingRename.oldDistrict !== undefined ||
+            pendingRename.oldBlock !== undefined ||
+            pendingRename.newDistrict !== undefined ||
+            pendingRename.newBlock !== undefined
+              ? {
+                  oldDistrict: pendingRename.oldDistrict ?? "",
+                  oldBlock: pendingRename.oldBlock ?? "",
+                  newDistrict: pendingRename.newDistrict ?? "",
+                  newBlock: pendingRename.newBlock ?? "",
+                }
+              : undefined;
           const prepared = await PoleRenameService.prepareRename(
             inspectionId,
             pendingRename.oldPoleId,
@@ -111,7 +123,8 @@ export class InspectionEditSession {
             {
               renameFiles: pendingRename.renameFiles,
               updateReports: pendingRename.updateReports,
-            }
+            },
+            identity
           );
           if (prepared.duplicatePoleId) {
             duplicate = true;
@@ -127,7 +140,8 @@ export class InspectionEditSession {
               renameFiles: pendingRename.renameFiles,
               updateReports: pendingRename.updateReports,
             },
-            prepared.renames
+            prepared.renames,
+            identity
           );
         } else if (stagedPoleId != null) {
           await InspectionRepository.saveFieldValue(
@@ -161,7 +175,6 @@ export class InspectionEditSession {
     } catch (error) {
       logger.error("[InspectionEditSession] commit failed:", error);
       if (pendingFileRenames.length > 0) {
-        const { PoleRenameService } = await import("./PoleRenameService");
         await PoleRenameService.reverseFileRenames(pendingFileRenames);
       }
       return false;

@@ -210,6 +210,102 @@ describe("InspectionEditSession — existing inspection save boundary", () => {
     });
   });
 
+  describe("commit with a staged identity rename (district/block/pole)", () => {
+    it("13. pole-only pending rename commits the Pole ID change", async () => {
+      InspectionEditSession.activate(42);
+      InspectionEditSession.stagePendingRename({
+        oldPoleId: "P001",
+        newPoleId: "P002",
+        renameFiles: false,
+        updateReports: true,
+      });
+
+      const ok = await InspectionEditSession.commit();
+
+      expect(ok).toBe(true);
+      expect(
+        writeCalls(mockDb).some((q) => /UPDATE Inspections/i.test(q) && /PoleID/i.test(q))
+      ).toBe(true);
+      expect(
+        writeCalls(mockDb).some((q) => /InspectionPoleIdHistory/i.test(q))
+      ).toBe(true);
+      expect(InspectionEditSession.isActive(42)).toBe(false);
+    });
+
+    it("14. staged district/block identity passes identity to the rename services", async () => {
+      InspectionEditSession.activate(42);
+      const identity = {
+        oldDistrict: "Sikar",
+        oldBlock: "BlockA",
+        newDistrict: "Jaipur",
+        newBlock: "Malarna",
+      };
+      InspectionEditSession.stagePendingRename({
+        oldPoleId: "P001",
+        newPoleId: "SIK101",
+        renameFiles: false,
+        updateReports: true,
+        ...identity,
+      });
+
+      const prepareSpy = jest.spyOn(
+        require("@/src/database/repositories/PoleRenameService").PoleRenameService,
+        "prepareRename"
+      );
+      const writeSpy = jest.spyOn(
+        require("@/src/database/repositories/PoleRenameService").PoleRenameService,
+        "writeRenameInTransaction"
+      );
+
+      const ok = await InspectionEditSession.commit();
+
+      expect(ok).toBe(true);
+      expect(prepareSpy).toHaveBeenCalledWith(
+        42,
+        "P001",
+        "SIK101",
+        { renameFiles: false, updateReports: true },
+        identity
+      );
+      expect(writeSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        42,
+        "P001",
+        "SIK101",
+        { renameFiles: false, updateReports: true },
+        expect.anything(),
+        identity
+      );
+    });
+
+    it("15. staged identity field values persist alongside a pending rename", async () => {
+      InspectionEditSession.activate(42);
+      InspectionEditSession.stageFieldValue(20, "Jaipur");
+      InspectionEditSession.stageFieldValue(21, "Malarna");
+      InspectionEditSession.stagePoleId("SIK101");
+      InspectionEditSession.stagePendingRename({
+        oldPoleId: "P001",
+        newPoleId: "SIK101",
+        renameFiles: false,
+        updateReports: true,
+        oldDistrict: "Sikar",
+        oldBlock: "BlockA",
+        newDistrict: "Jaipur",
+        newBlock: "Malarna",
+      });
+
+      const ok = await InspectionEditSession.commit();
+
+      expect(ok).toBe(true);
+      expect(wroteValue(mockDb, "Jaipur")).toBe(true);
+      expect(wroteValue(mockDb, "Malarna")).toBe(true);
+      expect(
+        writeCalls(mockDb).some((q) => /UPDATE Inspections/i.test(q) && /PoleID/i.test(q))
+      ).toBe(true);
+      expect(InspectionEditSession.isActive(42)).toBe(false);
+    });
+  });
+
   describe("reports / Excel / CSV read the persisted database after Save", () => {
     it("11/12/13. committed values are readable by the report/export source", async () => {
       InspectionEditSession.activate(42);
