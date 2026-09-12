@@ -48,11 +48,11 @@ export class FieldOptionRepository {
     if (
       existing.some(
         (o) =>
-          o.OptionLabel.trim() === data.OptionLabel.trim() ||
-          o.OptionValue.trim() === data.OptionValue.trim()
+          o.OptionLabel.trim().toLowerCase() === data.OptionLabel.trim().toLowerCase() ||
+          o.OptionValue.trim().toLowerCase() === data.OptionValue.trim().toLowerCase()
       )
     ) {
-      throw new Error(`An option with label or value "${data.OptionLabel.trim()}" already exists for this field`);
+      throw new Error(`"${data.OptionLabel.trim()}" Already Exists`);
     }
 
     const maxOrder = await db.getFirstAsync<{ Max: number }>(
@@ -113,10 +113,12 @@ export class FieldOptionRepository {
 
         if (
           siblings.some(
-            (o) => o.OptionLabel.trim() === targetLabel || o.OptionValue.trim() === targetValue
+            (o) =>
+              o.OptionLabel.trim().toLowerCase() === targetLabel.toLowerCase() ||
+              o.OptionValue.trim().toLowerCase() === targetValue.toLowerCase()
           )
         ) {
-          throw new Error(`An option with label or value "${targetLabel}" already exists for this field`);
+          throw new Error(`"${targetLabel}" Already Exists`);
         }
       }
     }

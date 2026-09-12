@@ -79,36 +79,47 @@ export default function SectionsScreen() {
       return;
     }
     const key = sectionKey.trim() || generateKey(sectionName.trim());
-    const db = await getDatabase();
 
-    if (editing) {
-      await db.runAsync(
-        `UPDATE InspectionSections SET SectionName = ?, SectionKey = ?, Description = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionID = ?`,
-        [sectionName.trim(), key, description.trim() || null, editing.SectionID]
-      );
-    } else {
-      const template = await db.getFirstAsync<{ TemplateID: number }>(
-        `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
-      );
-      const templateId = template?.TemplateID ?? 1;
-      const remarks = await db.getFirstAsync<{ DisplayOrder: number }>(
-        `SELECT DisplayOrder FROM InspectionSections WHERE SectionKey = 'remarks' AND TemplateID = ? AND IsActive = 1 LIMIT 1`,
-        [templateId]
-      );
-      const insertOrder = remarks
-        ? remarks.DisplayOrder
-        : (sections.length > 0
-            ? Math.max(...sections.map((s) => s.DisplayOrder))
-            : 0) + 1;
-      await db.runAsync(
-        `UPDATE InspectionSections SET DisplayOrder = DisplayOrder + 1 WHERE DisplayOrder >= ? AND TemplateID = ?`,
-        [insertOrder, templateId]
-      );
-      await db.runAsync(
-        `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, Description, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
-         VALUES (?, ?, ?, ?, ?, 0, 1, 0, 1)`,
-        [templateId, sectionName.trim(), key, description.trim() || null, insertOrder]
-      );
+    try {
+      if (await SectionRepository.nameExists(sectionName.trim(), editing?.SectionID)) {
+        Alert.alert("Duplicate", `A section named "${sectionName.trim()}" already exists.`);
+        return;
+      }
+
+      const db = await getDatabase();
+
+      if (editing) {
+        await db.runAsync(
+          `UPDATE InspectionSections SET SectionName = ?, SectionKey = ?, Description = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionID = ?`,
+          [sectionName.trim(), key, description.trim() || null, editing.SectionID]
+        );
+      } else {
+        const template = await db.getFirstAsync<{ TemplateID: number }>(
+          `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
+        );
+        const templateId = template?.TemplateID ?? 1;
+        const remarks = await db.getFirstAsync<{ DisplayOrder: number }>(
+          `SELECT DisplayOrder FROM InspectionSections WHERE SectionKey = 'remarks' AND TemplateID = ? AND IsActive = 1 LIMIT 1`,
+          [templateId]
+        );
+        const insertOrder = remarks
+          ? remarks.DisplayOrder
+          : (sections.length > 0
+              ? Math.max(...sections.map((s) => s.DisplayOrder))
+              : 0) + 1;
+        await db.runAsync(
+          `UPDATE InspectionSections SET DisplayOrder = DisplayOrder + 1 WHERE DisplayOrder >= ? AND TemplateID = ?`,
+          [insertOrder, templateId]
+        );
+        await db.runAsync(
+          `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, Description, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
+           VALUES (?, ?, ?, ?, ?, 0, 1, 0, 1)`,
+          [templateId, sectionName.trim(), key, description.trim() || null, insertOrder]
+        );
+      }
+    } catch (error) {
+      Alert.alert("Error", error instanceof Error ? error.message : "Failed to save the section.");
+      return;
     }
 
     setShowDialog(false);

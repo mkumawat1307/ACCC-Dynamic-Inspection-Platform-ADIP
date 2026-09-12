@@ -87,11 +87,11 @@ class DeviceOptionsRepository {
     if (
       existing.some(
         (o) =>
-          o.OptionLabel.trim() === option.OptionLabel.trim() ||
-          o.OptionValue.trim() === option.OptionValue.trim()
+          o.OptionLabel.trim().toLowerCase() === option.OptionLabel.trim().toLowerCase() ||
+          o.OptionValue.trim().toLowerCase() === option.OptionValue.trim().toLowerCase()
       )
     ) {
-      throw new Error(`An option with label or value "${option.OptionLabel.trim()}" already exists for this field`);
+      throw new Error(`"${option.OptionLabel.trim()}" Already Exists`);
     }
 
     const result = await db.runAsync(
@@ -132,11 +132,11 @@ class DeviceOptionsRepository {
     if (
       siblings.some(
         (o) =>
-          o.OptionLabel.trim() === option.OptionLabel.trim() ||
-          o.OptionValue.trim() === option.OptionValue.trim()
+          o.OptionLabel.trim().toLowerCase() === option.OptionLabel.trim().toLowerCase() ||
+          o.OptionValue.trim().toLowerCase() === option.OptionValue.trim().toLowerCase()
       )
     ) {
-      throw new Error(`An option with label or value "${option.OptionLabel.trim()}" already exists for this field`);
+      throw new Error(`"${option.OptionLabel.trim()}" Already Exists`);
     }
 
     await db.runAsync(

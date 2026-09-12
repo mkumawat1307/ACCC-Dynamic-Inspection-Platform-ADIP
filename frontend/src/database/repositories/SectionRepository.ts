@@ -47,4 +47,23 @@ export default class SectionRepository {
       [sectionId]
     );
   }
+
+  /**
+   * Whether another active section already uses this name, compared
+   * case-insensitively after trimming whitespace. Only used for duplicate
+   * detection — stored values are never modified. Pass excludeSectionId when
+   * editing so the section keeps its own name.
+   */
+  static async nameExists(name: string, excludeSectionId?: number): Promise<boolean> {
+    const db = await getDatabase();
+    let query = `SELECT SectionName FROM InspectionSections WHERE IsActive = 1`;
+    const params: number[] = [];
+    if (excludeSectionId !== undefined) {
+      query += ` AND SectionID != ?`;
+      params.push(excludeSectionId);
+    }
+    const rows = (await db.getAllAsync<{ SectionName: string }>(query, params)) ?? [];
+    const target = name.trim().toLowerCase();
+    return rows.some((r) => r.SectionName.trim().toLowerCase() === target);
+  }
 }

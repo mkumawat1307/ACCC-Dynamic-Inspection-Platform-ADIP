@@ -265,33 +265,44 @@ describe("FieldRepository", () => {
   });
 
   describe("keyExists", () => {
-    it("returns true when key exists", async () => {
+    it("returns true when key exists in the section", async () => {
       mockDb.getFirstAsync.mockResolvedValue({ Count: 1 });
       const { FieldRepository } = require("@/src/database/repositories/FieldRepository");
-      const result = await FieldRepository.keyExists("voltage");
+      const result = await FieldRepository.keyExists("voltage", 3);
       expect(result).toBe(true);
     });
 
-    it("returns false when key does not exist", async () => {
+    it("returns false when key does not exist in the section", async () => {
       mockDb.getFirstAsync.mockResolvedValue({ Count: 0 });
       const { FieldRepository } = require("@/src/database/repositories/FieldRepository");
-      const result = await FieldRepository.keyExists("nonexistent");
+      const result = await FieldRepository.keyExists("nonexistent", 3);
       expect(result).toBe(false);
     });
 
     it("returns false when key query returns null", async () => {
       mockDb.getFirstAsync.mockResolvedValue(null);
       const { FieldRepository } = require("@/src/database/repositories/FieldRepository");
-      const result = await FieldRepository.keyExists("unknown");
+      const result = await FieldRepository.keyExists("unknown", 3);
       expect(result).toBe(false);
+    });
+
+    it("scopes the check to the given section and active rows", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ Count: 0 });
+      const { FieldRepository } = require("@/src/database/repositories/FieldRepository");
+      await FieldRepository.keyExists("voltage", 3);
+      const query = (mockDb.getFirstAsync as jest.Mock).mock.calls[0][0];
+      expect(query).toContain("SectionID = ?");
+      expect(query).toContain("IsActive = 1");
     });
 
     it("excludes a given ID from the check", async () => {
       mockDb.getFirstAsync.mockResolvedValue({ Count: 0 });
       const { FieldRepository } = require("@/src/database/repositories/FieldRepository");
-      await FieldRepository.keyExists("voltage", 5);
+      await FieldRepository.keyExists("voltage", 3, 5);
       const query = (mockDb.getFirstAsync as jest.Mock).mock.calls[0][0];
       expect(query).toContain("FieldID !=");
+      const params = (mockDb.getFirstAsync as jest.Mock).mock.calls[0][1];
+      expect(params).toEqual(["voltage", 3, 5]);
     });
   });
 });

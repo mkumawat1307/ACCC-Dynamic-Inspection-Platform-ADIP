@@ -229,30 +229,35 @@ export default function DeviceTypesScreen() {
   const handleSaveField = async () => {
     if (!fieldName.trim() || !fieldLabel.trim()) return;
 
-    if (editingField) {
-      await DeviceFieldDefinitionsRepository.update({
-        ...editingField,
-        Label: fieldLabel.trim(),
-        FieldType: fieldType,
-        IsRequired: fieldRequired ? 1 : 0,
-        IsVisible: fieldVisible ? 1 : 0,
-        Placeholder: fieldPlaceholder.trim() || null,
-      });
-    } else {
-      const maxOrder = fields.length > 0
-        ? Math.max(...fields.map((f) => f.DisplayOrder))
-        : 0;
-      await DeviceFieldDefinitionsRepository.add({
-        DeviceType: selectedType,
-        FieldName: fieldName.trim().replace(/\s+/g, ""),
-        Label: fieldLabel.trim(),
-        FieldType: fieldType,
-        IsRequired: fieldRequired ? 1 : 0,
-        IsVisible: fieldVisible ? 1 : 0,
-        Placeholder: fieldPlaceholder.trim() || null,
-        DisplayOrder: maxOrder + 1,
-        IsActive: 1,
-      }, defaultTemplateId);
+    try {
+      if (editingField) {
+        await DeviceFieldDefinitionsRepository.update({
+          ...editingField,
+          Label: fieldLabel.trim(),
+          FieldType: fieldType,
+          IsRequired: fieldRequired ? 1 : 0,
+          IsVisible: fieldVisible ? 1 : 0,
+          Placeholder: fieldPlaceholder.trim() || null,
+        });
+      } else {
+        const maxOrder = fields.length > 0
+          ? Math.max(...fields.map((f) => f.DisplayOrder))
+          : 0;
+        await DeviceFieldDefinitionsRepository.add({
+          DeviceType: selectedType,
+          FieldName: fieldName.trim().replace(/\s+/g, ""),
+          Label: fieldLabel.trim(),
+          FieldType: fieldType,
+          IsRequired: fieldRequired ? 1 : 0,
+          IsVisible: fieldVisible ? 1 : 0,
+          Placeholder: fieldPlaceholder.trim() || null,
+          DisplayOrder: maxOrder + 1,
+          IsActive: 1,
+        }, defaultTemplateId);
+      }
+    } catch (err) {
+      Alert.alert("Duplicate Field", err instanceof Error ? err.message : "Unable to save the field.");
+      return;
     }
 
     setFieldDialogVisible(false);
@@ -287,20 +292,25 @@ export default function DeviceTypesScreen() {
     if (!newTypeName.trim()) return;
     const type = newTypeName.trim();
 
-    if (deviceTypes.some((dt) => dt.toLowerCase() === type.toLowerCase())) {
-      Alert.alert("Duplicate", `Device type "${type}" already exists.`);
+    try {
+      if (await DeviceFieldDefinitionsRepository.typeNameExists(type, defaultTemplateId)) {
+        Alert.alert("Duplicate", `Device type "${type}" already exists.`);
+        return;
+      }
+
+      await DeviceFieldDefinitionsRepository.add({
+        DeviceType: type,
+        FieldName: type + "Status",
+        Label: type + " Status",
+        FieldType: "dropdown",
+        IsRequired: 0,
+        DisplayOrder: 1,
+        IsActive: 1,
+      }, defaultTemplateId);
+    } catch (err) {
+      Alert.alert("Error", err instanceof Error ? err.message : "Unable to add device type.");
       return;
     }
-
-    await DeviceFieldDefinitionsRepository.add({
-      DeviceType: type,
-      FieldName: type + "Status",
-      Label: type + " Status",
-      FieldType: "dropdown",
-      IsRequired: 0,
-      DisplayOrder: 1,
-      IsActive: 1,
-    }, defaultTemplateId);
 
     setTypeDialogVisible(false);
     setNewTypeName("");

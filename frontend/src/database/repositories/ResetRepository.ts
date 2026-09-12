@@ -115,6 +115,15 @@ export class ResetRepository {
         const duplicates = allFields.slice(1);
 
         for (const dup of duplicates) {
+          // When both the duplicate and canonical field already hold a value for
+          // the same inspection, the canonical value wins. Discard the colliding
+          // duplicate value rows so the remap below cannot violate
+          // UNIQUE(InspectionID, FieldID). Duplicate-only values are preserved
+          // and migrated to the canonical field by the UPDATE below.
+          await db.runAsync(
+            `DELETE FROM InspectionValues WHERE FieldID = ? AND InspectionID IN (SELECT InspectionID FROM InspectionValues WHERE FieldID = ?)`,
+            [dup.FieldID, canonical.FieldID]
+          );
           // Remap InspectionValues referencing duplicate to canonical
           await db.runAsync(
             `UPDATE InspectionValues SET FieldID = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldID = ?`,

@@ -69,9 +69,55 @@ class DeviceFieldDefinitionsRepository {
     return Array.from(new Set(rows.map((r) => r.DeviceType)));
   }
 
+  /**
+   * Whether an active device type with this name already exists, compared
+   * case-insensitively after trimming whitespace. Only used for duplicate
+   * detection — stored values are never modified.
+   */
+  async typeNameExists(deviceType: string, templateId?: number): Promise<boolean> {
+    const types = await this.getDeviceTypes(templateId);
+    const target = deviceType.trim().toLowerCase();
+    return types.some((t) => t.trim().toLowerCase() === target);
+  }
+
   async add(field: DeviceFieldDefinition, templateId?: number): Promise<number> {
     const db = await getDatabase();
     const tid = templateId ?? field.TemplateID ?? 1;
+
+    const existing = await db.getFirstAsync<{ FieldDefID: number; IsActive: number }>(
+      `SELECT FieldDefID, IsActive FROM DeviceFieldDefinitions
+       WHERE TemplateID = ? AND DeviceType = ? AND FieldName = ? LIMIT 1`,
+      [tid, field.DeviceType, field.FieldName]
+    );
+
+    if (existing) {
+      if (existing.IsActive === 1) {
+        throw new Error(
+          `A field named "${field.FieldName}" already exists on device type "${field.DeviceType}".`
+        );
+      }
+      await db.runAsync(
+        `UPDATE DeviceFieldDefinitions
+         SET Label = ?, FieldType = ?, IsRequired = ?, IsVisible = ?, DisplayOrder = ?, Placeholder = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE FieldDefID = ?`,
+        [field.Label, field.FieldType, field.IsRequired, field.IsVisible ?? 1, field.DisplayOrder, field.Placeholder ?? null, existing.FieldDefID]
+      );
+      return existing.FieldDefID;
+    }
+
+    const siblings = (await db.getAllAsync<{ FieldName: string }>(
+      `SELECT FieldName FROM DeviceFieldDefinitions
+       WHERE TemplateID = ? AND DeviceType = ? AND IsActive = 1`,
+      [tid, field.DeviceType]
+    )) ?? [];
+
+    const targetName = field.FieldName.trim().toLowerCase();
+    if (siblings.some((s) => s.FieldName.trim().toLowerCase() === targetName)) {
+      throw new Error(
+        `A field named "${field.FieldName}" already exists on device type "${field.DeviceType}".`
+      );
+    }
+
     const result = await db.runAsync(
       `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, Placeholder)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

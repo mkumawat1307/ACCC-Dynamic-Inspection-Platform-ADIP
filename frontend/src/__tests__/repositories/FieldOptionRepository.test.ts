@@ -208,7 +208,7 @@ describe("FieldOptionRepository", () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
       await expect(
         FieldOptionRepository.create({ FieldID: 1, OptionLabel: "yes", OptionValue: "yes", IsDefault: 0 })
-      ).rejects.toThrow(/already exists/);
+      ).rejects.toThrow(/already exists/i);
     });
 
     it("11. same value with different label still blocked (value identity)", async () => {
@@ -219,7 +219,7 @@ describe("FieldOptionRepository", () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
       await expect(
         FieldOptionRepository.create({ FieldID: 1, OptionLabel: "Installed ", OptionValue: "Yes", IsDefault: 0 })
-      ).rejects.toThrow(/already exists/);
+      ).rejects.toThrow(/already exists/i);
     });
 
     it("12. B: same field + different option allowed", async () => {
@@ -256,7 +256,7 @@ describe("FieldOptionRepository", () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
       await expect(
         FieldOptionRepository.create({ FieldID: 1, OptionLabel: "yes", OptionValue: "yes", IsDefault: 1 })
-      ).rejects.toThrow(/already exists/);
+      ).rejects.toThrow(/already exists/i);
 
       const insertCalls = mockDb.runAsync.mock.calls.filter(
         (c: [string]) => String(c[0]).includes("INSERT INTO FieldOptions")
@@ -291,7 +291,7 @@ describe("FieldOptionRepository", () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
       await expect(
         FieldOptionRepository.update(10, { OptionLabel: "yes", OptionValue: "yes" })
-      ).rejects.toThrow(/already exists/);
+      ).rejects.toThrow(/already exists/i);
     });
 
     it("17. editing label/value to a non-conflicting value allowed", async () => {

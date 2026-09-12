@@ -212,7 +212,7 @@ describe("DeviceOptionsRepository", () => {
           OptionLabel: "Bullet", OptionValue: "Bullet",
           DisplayOrder: 3, IsDefault: 0, IsActive: 1,
         }, 1)
-      ).rejects.toThrow(/already exists/);
+      ).rejects.toThrow(/already exists/i);
     });
 
     it("18. B: same field + different option allowed", async () => {
@@ -255,7 +255,7 @@ describe("DeviceOptionsRepository", () => {
           OptionLabel: "Bullet", OptionValue: "Bullet",
           DisplayOrder: 1, IsDefault: 1, IsActive: 1,
         }, 1)
-      ).rejects.toThrow(/already exists/);
+      ).rejects.toThrow(/already exists/i);
 
       const insertCalls = mockDb.runAsync.mock.calls.filter(
         (c: [string]) => String(c[0]).includes("INSERT INTO DeviceOptions")
@@ -292,7 +292,7 @@ describe("DeviceOptionsRepository", () => {
           OptionLabel: "Bullet", OptionValue: "Bullet",
           DisplayOrder: 1, TemplateID: 1, IsDefault: 0, IsActive: 1,
         })
-      ).rejects.toThrow(/already exists/);
+      ).rejects.toThrow(/already exists/i);
     });
 
     it("23. editing to a non-conflicting value allowed", async () => {

@@ -90,7 +90,7 @@ export default function OptionsScreen() {
         });
       }
     } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Could not save option");
+      Alert.alert("Duplicate", e instanceof Error ? e.message : "Could not save option");
       return;
     }
     setShowDialog(false);

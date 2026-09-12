@@ -84,27 +84,32 @@ export default function FieldsScreen() {
     }
     const key = fieldKey.trim() || generateKey(fieldName.trim());
 
-    if (editing) {
-      await FieldRepository.update(editing.FieldID, {
-        FieldName: fieldName.trim(),
-        FieldKey: key,
-        FieldType: fieldType,
-        Placeholder: placeholder.trim() || null,
-        DefaultValue: editing.DefaultValue ?? null,
-        IsRequired: isRequired ? 1 : 0,
-        IsVisible: isVisible ? 1 : 0,
-      });
-    } else {
-      await FieldRepository.create({
-        SectionID: sid,
-        FieldName: fieldName.trim(),
-        FieldKey: key,
-        FieldType: fieldType,
-        Placeholder: placeholder.trim() || null,
-        DefaultValue: null,
-        IsRequired: isRequired ? 1 : 0,
-        IsVisible: isVisible ? 1 : 0,
-      });
+    try {
+      if (editing) {
+        await FieldRepository.update(editing.FieldID, {
+          FieldName: fieldName.trim(),
+          FieldKey: key,
+          FieldType: fieldType,
+          Placeholder: placeholder.trim() || null,
+          DefaultValue: editing.DefaultValue ?? null,
+          IsRequired: isRequired ? 1 : 0,
+          IsVisible: isVisible ? 1 : 0,
+        });
+      } else {
+        await FieldRepository.create({
+          SectionID: sid,
+          FieldName: fieldName.trim(),
+          FieldKey: key,
+          FieldType: fieldType,
+          Placeholder: placeholder.trim() || null,
+          DefaultValue: null,
+          IsRequired: isRequired ? 1 : 0,
+          IsVisible: isVisible ? 1 : 0,
+        });
+      }
+    } catch (err) {
+      Alert.alert("Duplicate Field", err instanceof Error ? err.message : "Unable to save the field.");
+      return;
     }
 
     setShowDialog(false);

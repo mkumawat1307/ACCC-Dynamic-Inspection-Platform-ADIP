@@ -85,6 +85,14 @@ export class FieldRepository {
   }): Promise<number> {
     const db = await getDatabase();
 
+    if (await FieldRepository.keyExists(data.FieldKey, data.SectionID)) {
+      throw new Error(`A field with the identifier "${data.FieldKey}" already exists in this section.`);
+    }
+
+    if (await FieldRepository.nameExists(data.FieldName, data.SectionID)) {
+      throw new Error(`A field named "${data.FieldName}" already exists in this section.`);
+    }
+
     const maxOrder = await db.getFirstAsync<{ Max: number }>(
       `SELECT COALESCE(MAX(DisplayOrder), 0) as Max
        FROM InspectionFields WHERE SectionID = ?`,
@@ -141,6 +149,29 @@ export class FieldRepository {
     }
   ): Promise<void> {
     const db = await getDatabase();
+
+    if (data.FieldKey !== undefined || data.FieldName !== undefined) {
+      const existing = await db.getFirstAsync<{ SectionID: number }>(
+        `SELECT SectionID FROM InspectionFields WHERE FieldID = ?`,
+        [id]
+      );
+
+      if (existing) {
+        if (
+          data.FieldKey !== undefined &&
+          (await FieldRepository.keyExists(data.FieldKey, existing.SectionID, id))
+        ) {
+          throw new Error(`A field with the identifier "${data.FieldKey}" already exists in this section.`);
+        }
+        if (
+          data.FieldName !== undefined &&
+          (await FieldRepository.nameExists(data.FieldName, existing.SectionID, id))
+        ) {
+          throw new Error(`A field named "${data.FieldName}" already exists in this section.`);
+        }
+      }
+    }
+
     const fields: string[] = [];
     const values: SqlValue[] = [];
 
@@ -205,15 +236,28 @@ export class FieldRepository {
     return (result?.Count ?? 0) > 0;
   }
 
-  static async keyExists(key: string, excludeId?: number): Promise<boolean> {
+  static async keyExists(key: string, sectionId: number, excludeId?: number): Promise<boolean> {
     const db = await getDatabase();
-    let query = `SELECT COUNT(*) as Count FROM InspectionFields WHERE FieldKey = ?`;
-    const params: SqlValue[] = [key];
+    let query = `SELECT COUNT(*) as Count FROM InspectionFields WHERE FieldKey = ? AND IsActive = 1 AND SectionID = ?`;
+    const params: SqlValue[] = [key, sectionId];
     if (excludeId) {
       query += ` AND FieldID != ?`;
       params.push(excludeId);
     }
     const result = await db.getFirstAsync<{ Count: number }>(query, params);
     return (result?.Count ?? 0) > 0;
+  }
+
+  static async nameExists(name: string, sectionId: number, excludeId?: number): Promise<boolean> {
+    const db = await getDatabase();
+    let query = `SELECT FieldName FROM InspectionFields WHERE IsActive = 1 AND SectionID = ?`;
+    const params: SqlValue[] = [sectionId];
+    if (excludeId !== undefined) {
+      query += ` AND FieldID != ?`;
+      params.push(excludeId);
+    }
+    const rows = (await db.getAllAsync<{ FieldName: string }>(query, params)) ?? [];
+    const target = name.trim().toLowerCase();
+    return rows.some((r) => r.FieldName.trim().toLowerCase() === target);
   }
 }
