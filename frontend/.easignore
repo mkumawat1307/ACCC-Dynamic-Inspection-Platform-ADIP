@@ -14,6 +14,11 @@
 #                        declares DownloadStorageModule.kt; autolinked and consumed
 #                        by src/utils/downloadStorage.ts). Excluding it breaks the
 #                        APK at link/autolink time.
+#   modules/watermark-encoder/ - local native Expo module (expo-module.config.json
+#                        declares WatermarkEncoderModule.kt; autolinked and consumed
+#                        via src/native/WatermarkEncoder.ts for the overlay
+#                        watermark path). Excluding it breaks the APK at
+#                        link/autolink time.
 #   app/               - Expo Router screens that Metro bundles into the APK.
 #   src/               - JS/TS app source that Metro bundles (schema, seeds,
 #                        repositories, utils, components, context).

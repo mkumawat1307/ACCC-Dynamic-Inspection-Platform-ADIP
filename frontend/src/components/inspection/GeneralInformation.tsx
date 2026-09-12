@@ -19,6 +19,7 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { cleanPoleToken, InspectionIdentity } from "./photoUtils";
 import PoleRenameConfirmDialog from "./PoleRenameConfirmDialog";
+import { PoleRenameService } from "@/src/database/repositories/PoleRenameService";
 
 export type IdentityRenameDecision =
   | { type: "no-change" }
@@ -168,6 +169,14 @@ async function init() {
       // the form is populated — the staged edit-session values (and the DB) are
       // authoritative from here on.
       InspectionLiveValues.reset();
+    }
+
+    if (!existing && inspectionId != null) {
+      persistedIdentityRef.current = {
+        district: savedValues.district ?? "",
+        block: savedValues.block ?? "",
+        poleId: savedPoleId,
+      };
     }
 
     if (!existing) {
@@ -600,6 +609,15 @@ function revertIdentityToPersisted(
     }
     InspectionEditSession.stagePoleId(persisted.poleId);
     InspectionEditSession.stagePendingRename(null);
+  } else if (inspectionId != null) {
+    const poleField = fields.find((f) => f.FieldKey === "pole_id");
+    if (poleField) {
+      void InspectionRepository.updatePoleIdDirectSave(
+        inspectionId,
+        poleField.FieldID,
+        persisted.poleId
+      );
+    }
   }
   onDataChanged?.();
 }
@@ -608,22 +626,32 @@ function revertIdentityToPersisted(
 // inspection. Returns the decision the caller must act on; the rename dialog is
 // only shown for a true identity change WITH photos — never while typing.
 async function checkIdentityBeforeSave(): Promise<IdentityRenameDecision> {
-  if (!existing) return { type: "no-change" };
-
   const effectiveId = inspectionId;
   if (effectiveId == null) return { type: "no-change" };
   const identity = getEffectiveIdentity();
   if (identity == null) return { type: "cancelled" };
 
+  const persisted = persistedIdentityRef.current;
+
   const newPoleId = identity.poleId;
   if (newPoleId.length > 0) {
     const duplicate = await InspectionRepository.getInspectionByPoleId(newPoleId);
     if (duplicate && duplicate.InspectionID !== effectiveId) {
+      if (!existing) {
+        const poleField = fields.find((f) => f.FieldKey === "pole_id");
+        if (poleField) {
+          await InspectionRepository.updatePoleIdDirectSave(
+            effectiveId,
+            poleField.FieldID,
+            persisted.poleId
+          );
+        }
+        revertPoleId(persisted.poleId);
+      }
       return { type: "duplicate", duplicatePoleId: newPoleId };
     }
   }
 
-  const persisted = persistedIdentityRef.current;
   const identityChanged =
     cleanPoleToken(identity.district) !== cleanPoleToken(persisted.district) ||
     cleanPoleToken(identity.block) !== cleanPoleToken(persisted.block) ||
@@ -824,6 +852,19 @@ return (
             newDistrict: newIdentity.district,
             newBlock: newIdentity.block,
           });
+        } else if (inspectionId != null) {
+          await PoleRenameService.renamePoleId(
+            inspectionId,
+            oldIdentity.poleId,
+            newIdentity.poleId,
+            { renameFiles, updateReports },
+            {
+              oldDistrict: oldIdentity.district,
+              oldBlock: oldIdentity.block,
+              newDistrict: newIdentity.district,
+              newBlock: newIdentity.block,
+            }
+          );
         }
         if (resolve) resolve({ type: "proceed", renameFiles, updateReports });
         onDataChanged?.();

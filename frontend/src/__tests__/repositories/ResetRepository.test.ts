@@ -211,19 +211,49 @@ describe("ResetRepository.performReset", () => {
     expect(insertCalls).toHaveLength(fieldOptions.length);
   });
 
-  it("12. re-inserts default ProjectDeviceTypes (Camera, Switch)", async () => {
+  it("12. restores IsRequired on existing ProjectDeviceTypes (UPDATE, not INSERT OR IGNORE)", async () => {
     mockDb.getAllAsync.mockResolvedValue([
       { SectionKey: "general_information", SectionID: 1 },
     ]);
+    mockDb.getFirstAsync.mockResolvedValue({ ID: 5 });
+
+    const { ResetRepository } = require("@/src/database/repositories/ResetRepository");
+    await ResetRepository.performReset();
+
+    const { FACTORY_DEVICE_TYPES, FACTORY_REQUIRED_DEVICE_TYPES } = require("@/src/database/seeds/factory-config");
+    const updates = mockDb.runAsync.mock.calls
+      .map((c: [string, unknown[]]) => ({ sql: String(c[0]), params: c[1] }))
+      .filter((c) => c.sql.includes("UPDATE ProjectDeviceTypes SET IsActive = 1, IsRequired = ?"));
+    expect(updates).toHaveLength(FACTORY_DEVICE_TYPES.length);
+    for (const update of updates) {
+      expect(update.sql).toContain("SET IsActive = 1, IsRequired = ?");
+      expect(update.sql).not.toContain("UpdatedAt");
+    }
+    const requiredFlag = (dt: string) => (FACTORY_REQUIRED_DEVICE_TYPES.includes(dt) ? 1 : 0);
+    const expectedFlags = FACTORY_DEVICE_TYPES.map((dt: string) => requiredFlag(dt));
+    for (const update of updates) {
+      expect(update.params).toContain(5);
+    }
+    expect(updates.map((u) => (u.params as unknown[])[0])).toEqual(expectedFlags);
+    const ignoredInserts = mockDb.runAsync.mock.calls.filter((c: [string]) => String(c[0]).includes("INSERT OR IGNORE INTO ProjectDeviceTypes"));
+    expect(ignoredInserts).toHaveLength(0);
+  });
+
+  it("12b. inserts a missing default ProjectDeviceTypes row (plain INSERT, never INSERT OR IGNORE)", async () => {
+    mockDb.getAllAsync.mockResolvedValue([
+      { SectionKey: "general_information", SectionID: 1 },
+    ]);
+    mockDb.getFirstAsync.mockResolvedValue(null);
 
     const { ResetRepository } = require("@/src/database/repositories/ResetRepository");
     await ResetRepository.performReset();
 
     const calls = mockDb.runAsync.mock.calls.map((c: [string, unknown[]]) => ({ sql: String(c[0]), params: c[1] }));
-    const inserts = calls.filter((c) => c.sql.includes("INSERT OR IGNORE INTO ProjectDeviceTypes"));
+    const inserts = calls.filter((c) => c.sql.includes("INSERT INTO ProjectDeviceTypes"));
     expect(inserts).toHaveLength(2);
     expect(inserts[0].params).toContain("Camera");
     expect(inserts[1].params).toContain("Switch");
+    expect(calls.some((c) => c.sql.includes("INSERT OR IGNORE INTO ProjectDeviceTypes"))).toBe(false);
   });
 
   it("13. runs inside a transaction (withTransactionAsync called)", async () => {

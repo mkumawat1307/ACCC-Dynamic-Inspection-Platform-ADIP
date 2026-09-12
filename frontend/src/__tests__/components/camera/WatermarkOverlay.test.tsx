@@ -9,6 +9,27 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() },
 }));
 
+function collectFontSizes(node: unknown, out: number[] = []): number[] {
+  if (!node || typeof node !== "object") return out;
+  if (typeof node === "string") return out;
+  if (Array.isArray(node)) {
+    for (const child of node) collectFontSizes(child, out);
+    return out;
+  }
+  const obj = node as Record<string, unknown>;
+  const style = (obj.props as Record<string, unknown> | undefined)?.style as
+    | Record<string, unknown>
+    | undefined;
+  if (style && typeof style.fontSize === "number") {
+    out.push(style.fontSize);
+  }
+  const children = obj.children as unknown[] | undefined;
+  if (Array.isArray(children)) {
+    for (const child of children) collectFontSizes(child, out);
+  }
+  return out;
+}
+
 function collectStrings(node: unknown, out: string[] = []): string[] {
   if (typeof node === "string") {
     out.push(node);
@@ -183,5 +204,90 @@ describe("WatermarkOverlay", () => {
       paddingHorizontal: 12,
       borderRadius: 6,
     });
+  });
+
+  it("portrait and landscape photo dimensions produce consistent font size in a portrait container", () => {
+    const lines = ["P-101", "04-Aug-2026 10:00 AM"];
+    const settings = DEFAULT_WATERMARK_SETTINGS;
+
+    let portraitTree!: ReturnType<typeof TestRenderer.create>;
+    let landscapeTree!: ReturnType<typeof TestRenderer.create>;
+
+    TestRenderer.act(() => {
+      portraitTree = TestRenderer.create(
+        <WatermarkOverlay
+          width={375}
+          height={500}
+          lines={lines}
+          settings={settings}
+          photoWidth={3024}
+          photoHeight={4032}
+        />
+      );
+    });
+
+    TestRenderer.act(() => {
+      landscapeTree = TestRenderer.create(
+        <WatermarkOverlay
+          width={375}
+          height={500}
+          lines={lines}
+          settings={settings}
+          photoWidth={4032}
+          photoHeight={3024}
+        />
+      );
+    });
+
+    const portraitFontSizes = collectFontSizes(portraitTree.toJSON());
+    const landscapeFontSizes = collectFontSizes(landscapeTree.toJSON());
+
+    expect(portraitFontSizes.length).toBeGreaterThan(0);
+    expect(landscapeFontSizes.length).toBeGreaterThan(0);
+
+    const portraitFontSize = portraitFontSizes[0];
+    const landscapeFontSize = landscapeFontSizes[0];
+
+    expect(portraitFontSize).toBe(12);
+    expect(landscapeFontSize).toBe(15);
+  });
+
+  it("matched orientations produce identical font size in matched containers", () => {
+    const lines = ["P-101", "04-Aug-2026 10:00 AM"];
+    const settings = DEFAULT_WATERMARK_SETTINGS;
+
+    let portraitTree!: ReturnType<typeof TestRenderer.create>;
+    let landscapeTree!: ReturnType<typeof TestRenderer.create>;
+
+    TestRenderer.act(() => {
+      portraitTree = TestRenderer.create(
+        <WatermarkOverlay
+          width={375}
+          height={500}
+          lines={lines}
+          settings={settings}
+          photoWidth={3024}
+          photoHeight={4032}
+        />
+      );
+    });
+
+    TestRenderer.act(() => {
+      landscapeTree = TestRenderer.create(
+        <WatermarkOverlay
+          width={500}
+          height={375}
+          lines={lines}
+          settings={settings}
+          photoWidth={4032}
+          photoHeight={3024}
+        />
+      );
+    });
+
+    const portraitFontSizes = collectFontSizes(portraitTree.toJSON());
+    const landscapeFontSizes = collectFontSizes(landscapeTree.toJSON());
+
+    expect(portraitFontSizes[0]).toBe(landscapeFontSizes[0]);
   });
 });

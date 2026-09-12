@@ -23,7 +23,7 @@ describe("PoleRenameService", () => {
   let dbModule: typeof import("@/src/database/db");
   let db: MockDb;
   let PoleRenameService: {
-    renamePoleId: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }) => Promise<{ renamedFiles: number; updatedRecords: number; missingFiles: number; duplicate?: boolean; duplicatePoleId?: string }>;
+    renamePoleId: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }, identity?: RenameIdentity) => Promise<{ renamedFiles: number; updatedRecords: number; missingFiles: number; duplicate?: boolean; duplicatePoleId?: string }>;
     prepareRename: (i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }, identity?: RenameIdentity) => Promise<PreparedPoleRename>;
     writeRenameInTransaction: (db: MockDb, i: number, o: string, n: string, o2: { renameFiles: boolean; updateReports: boolean }, renames: PendingRename[], identity?: RenameIdentity) => Promise<void>;
   };
@@ -576,6 +576,44 @@ describe("PoleRenameService", () => {
         )
       ).resolves.toBeUndefined();
 
+      expect(await valueOf(inspectionId, "pole_id")).toBe("SIK101");
+    });
+
+    it("renamePoleId forwards the identity through prepareRename and writeRenameInTransaction", async () => {
+      const inspectionId = await seedInspection("SIK001");
+      await seedField("pole_id", "Site ID");
+      await seedField("district", "District");
+      await seedField("block", "Block Name");
+      await seedPhoto(inspectionId, "Sikar_BlockA_SIK001_14AUG2026_112948.jpg");
+
+      (downloadStorage.renameFile as jest.Mock).mockImplementation(
+        (uri: string, newFileName: string) => Promise.resolve(`content://media/renamed/${newFileName}`)
+      );
+
+      const result = await PoleRenameService.renamePoleId(
+        inspectionId,
+        "SIK001",
+        "SIK101",
+        { renameFiles: true, updateReports: true },
+        IDENTITY
+      );
+
+      expect(result).toEqual({ renamedFiles: 1, updatedRecords: 1, missingFiles: 0 });
+
+      const photo = await db.getFirstAsync<{ FileName: string }>(
+        "SELECT FileName FROM Photos WHERE InspectionID = ?",
+        [inspectionId]
+      );
+      expect(photo?.FileName).toBe("Jaipur_Malarna_SIK101_14AUG2026_112948.jpg");
+
+      const inspection = await db.getFirstAsync<{ PoleID: string }>(
+        "SELECT PoleID FROM Inspections WHERE InspectionID = ?",
+        [inspectionId]
+      );
+      expect(inspection?.PoleID).toBe("SIK101");
+
+      expect(await valueOf(inspectionId, "district")).toBe("Jaipur");
+      expect(await valueOf(inspectionId, "block")).toBe("Malarna");
       expect(await valueOf(inspectionId, "pole_id")).toBe("SIK101");
     });
   });

@@ -1,6 +1,7 @@
 import {
   parsePictureSize,
   pickExpectedPhotoSize,
+  alignCapturedSizeToContainer,
 } from "@/src/components/camera/expectedPhotoSize";
 
 describe("parsePictureSize", () => {
@@ -140,5 +141,43 @@ describe("pickExpectedPhotoSize", () => {
         ratio: "4:3",
       })
     ).toBeNull();
+  });
+});
+
+describe("alignCapturedSizeToContainer", () => {
+  it("keeps portrait capture dims in a portrait container unchanged", () => {
+    expect(
+      alignCapturedSizeToContainer(
+        { width: 3024, height: 4032 },
+        { width: 375, height: 500 }
+      )
+    ).toEqual({ width: 3024, height: 4032 });
+  });
+
+  it("keeps landscape capture dims in a landscape container unchanged", () => {
+    expect(
+      alignCapturedSizeToContainer(
+        { width: 4032, height: 3024 },
+        { width: 500, height: 375 }
+      )
+    ).toEqual({ width: 4032, height: 3024 });
+  });
+
+  it("swaps landscape capture dims in a portrait container", () => {
+    expect(
+      alignCapturedSizeToContainer(
+        { width: 4032, height: 3024 },
+        { width: 375, height: 500 }
+      )
+    ).toEqual({ width: 3024, height: 4032 });
+  });
+
+  it("swaps portrait capture dims in a landscape container", () => {
+    expect(
+      alignCapturedSizeToContainer(
+        { width: 3024, height: 4032 },
+        { width: 500, height: 375 }
+      )
+    ).toEqual({ width: 4032, height: 3024 });
   });
 });

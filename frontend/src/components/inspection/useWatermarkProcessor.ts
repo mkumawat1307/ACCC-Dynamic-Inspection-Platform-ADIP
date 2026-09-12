@@ -102,6 +102,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const warmupStartRef = useRef(0);
   const cancelledRef = useRef<Set<number>>(new Set());
   const finalizingRef = useRef<Set<number>>(new Set());
+  const abandonedOverlayRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     setWatermarkState(prev => {
@@ -558,8 +559,11 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
 
       if (data.overlay != null) {
         if (job.stage !== "overlay") return;
-        clearWatchdog();
         const wrapped = { ...data, overlay: data.overlay } as typeof data & { overlay: string };
+        armWatchdog(job, () => {
+          abandonedOverlayRef.current.add(job.photoId);
+          scheduleStage(job, "toblob");
+        });
         (async () => {
           const outputPath = `${job.inputPath}.wm.jpg`;
           try {
@@ -571,6 +575,13 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
               95,
               outputPath
             );
+            clearWatchdog();
+            if (abandonedOverlayRef.current.has(job.photoId)) {
+              try {
+                await FileSystem.deleteAsync(outputPath, { idempotent: true });
+              } catch {}
+              return;
+            }
             if (perfRef.current) perfStage(perfRef.current, "nativeComposite");
 
             const fileBase64 = await FileSystem.readAsStringAsync(outputPath, {
@@ -581,11 +592,16 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
             } catch {}
             await saveAndComplete(job, fileBase64);
           } catch (error) {
-            logger.warn("[Watermark] overlay composite failed, falling back to toBlob:", error);
-            try {
-              await FileSystem.deleteAsync(outputPath, { idempotent: true });
-            } catch {}
-            scheduleStage(job, "toblob");
+            const queued = queueRef.current.find(q => q.photoId === job.photoId);
+            if (!queued || queued.stage === "overlay") {
+              logger.warn("[Watermark] overlay composite failed, falling back to toBlob:", error);
+              try {
+                await FileSystem.deleteAsync(outputPath, { idempotent: true });
+              } catch {}
+              scheduleStage(job, "toblob");
+            }
+          } finally {
+            abandonedOverlayRef.current.delete(job.photoId);
           }
         })();
         return;

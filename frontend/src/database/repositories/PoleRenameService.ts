@@ -194,7 +194,8 @@ export class PoleRenameService {
     inspectionId: number,
     oldPoleId: string,
     newPoleId: string,
-    options: PoleRenameOptions
+    options: PoleRenameOptions,
+    identity?: RenameIdentity
   ): Promise<PoleRenameResult> {
 
     const trimmedNewPoleId = newPoleId.trim();
@@ -202,7 +203,7 @@ export class PoleRenameService {
     const db = await getDatabase();
     const projectId = await InspectionRepository.getInspectionProjectId(inspectionId);
 
-    const prepared = await this.prepareRename(inspectionId, oldPoleId, newPoleId, options);
+    const prepared = await this.prepareRename(inspectionId, oldPoleId, newPoleId, options, identity);
     if (prepared.duplicatePoleId) {
       return {
         renamedFiles: 0,
@@ -221,7 +222,8 @@ export class PoleRenameService {
           oldPoleId,
           trimmedNewPoleId,
           options,
-          prepared.renames
+          prepared.renames,
+          identity
         );
       });
     } catch (error) {

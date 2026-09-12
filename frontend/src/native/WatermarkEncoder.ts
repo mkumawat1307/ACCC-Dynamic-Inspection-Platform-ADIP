@@ -1,4 +1,4 @@
-import { NativeModules } from "react-native";
+import { requireOptionalNativeModule } from "expo-modules-core";
 
 const ENCODER_MODULE = "WatermarkEncoder";
 
@@ -38,7 +38,7 @@ export interface WatermarkEncoderNative {
 }
 
 function getModule(): WatermarkEncoderNative | null {
-  const mod = NativeModules[ENCODER_MODULE] as WatermarkEncoderNative | undefined;
+  const mod = requireOptionalNativeModule<WatermarkEncoderNative | undefined>(ENCODER_MODULE);
   return mod && typeof mod.encodeJpeg === "function" ? mod : null;
 }
 
@@ -47,7 +47,7 @@ export function hasNativeWatermarkEncoder(): boolean {
 }
 
 export function hasNativeOverlayEncoder(): boolean {
-  const mod = NativeModules[ENCODER_MODULE] as WatermarkEncoderNative | undefined;
+  const mod = requireOptionalNativeModule<WatermarkEncoderNative | undefined>(ENCODER_MODULE);
   return !!mod && typeof mod.encodeOverlay === "function";
 }
 

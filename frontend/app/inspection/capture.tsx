@@ -26,7 +26,7 @@ import { useAddressLookup } from "@/src/components/camera/useAddressLookup";
 import { saveLocationAddress } from "@/src/components/camera/saveLocationAddress";
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
-import { pickExpectedPhotoSize } from "@/src/components/camera/expectedPhotoSize";
+import { pickExpectedPhotoSize, alignCapturedSizeToContainer } from "@/src/components/camera/expectedPhotoSize";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import {
   FLASH_ICONS,
@@ -158,6 +158,7 @@ export default function CaptureScreen() {
   // before the first capture).
   useEffect(() => {
     if (!cameraReady || cameraSize.width <= 0 || cameraSize.height <= 0) return;
+    setCapturedPhotoSize(null);
     let cancelled = false;
     cameraRef.current
       ?.getAvailablePictureSizesAsync()
@@ -316,9 +317,16 @@ export default function CaptureScreen() {
       }
     }
 
-    // Store photo dimensions for WYSIWYG preview
+    // Store photo dimensions for WYSIWYG preview, aligned to the container
+    // orientation so a physically-rotated capture cannot inflate the live
+    // watermark (cover transform handles matched orientations consistently).
     if (result.width && result.height) {
-      setCapturedPhotoSize({ width: result.width, height: result.height });
+      setCapturedPhotoSize(
+        alignCapturedSizeToContainer(
+          { width: result.width, height: result.height },
+          { width: cameraSize.width, height: cameraSize.height }
+        )
+      );
     }
 
     try {

@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -63,6 +64,8 @@ export default function SectionRenderer({
   const [values, setValues] = useState<Record<number, string>>({});
   const [options, setOptions] = useState<Record<number, any[]>>({});
   const [deviceCounts, setDeviceCounts] = useState<Record<string, number>>({});
+  const [deviceResetStamp, setDeviceResetStamp] = useState<Record<string, number>>({});
+  const lastDeviceCountRef = useRef<Record<string, number>>({});
   const [deviceTypes, setDeviceTypes] = useState<string[]>([]);
   const [requiredDeviceTypes, setRequiredDeviceTypes] = useState<Set<string>>(new Set());
   const [poleIdLoaded, setPoleIdLoaded] = useState(false);
@@ -75,6 +78,8 @@ export default function SectionRenderer({
     try {
       setLoading(true);
       setError(null);
+      lastDeviceCountRef.current = {};
+      setDeviceResetStamp({});
 
       const sectionFields =
         await InspectionFieldRepository.getFieldsBySection(sectionId, inspectionId);
@@ -203,6 +208,14 @@ export default function SectionRenderer({
       if (deviceType) {
         if (value === "") return;
         const newCount = Number(value);
+        const prevCount = lastDeviceCountRef.current[deviceType] ?? 0;
+        lastDeviceCountRef.current[deviceType] = newCount;
+        if (prevCount > 0 && newCount === 0) {
+          setDeviceResetStamp((prev) => ({
+            ...prev,
+            [deviceType]: (prev[deviceType] ?? 0) + 1,
+          }));
+        }
         setDeviceCounts((prev) => ({
           ...prev,
           [deviceType]: newCount,
@@ -277,6 +290,7 @@ export default function SectionRenderer({
             existing={existing}
             onDataChanged={onDataChanged}
             deviceProgress={progress?.devices}
+            resetStamp={deviceResetStamp[currentDeviceType] ?? 0}
           />
         </View>
       )}

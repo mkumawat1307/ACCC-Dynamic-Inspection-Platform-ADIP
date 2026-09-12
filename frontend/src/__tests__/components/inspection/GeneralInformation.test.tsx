@@ -12,6 +12,7 @@ import { InspectionRepository } from "@/src/database/repositories/InspectionRepo
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { InspectionEditSessionState } from "@/src/database/repositories/InspectionEditSessionState";
+import { PoleRenameService } from "@/src/database/repositories/PoleRenameService";
 import type { InspectionField } from "@/src/database/repositories/InspectionTypes";
 
 jest.mock("@/src/database/db");
@@ -77,9 +78,18 @@ jest.mock("@/src/components/inspection/FieldRenderer", () => {
   };
 });
 
+jest.mock("@/src/database/repositories/PoleRenameService", () => ({
+  PoleRenameService: {
+    renamePoleId: jest.fn(),
+    prepareRename: jest.fn(),
+    writeRenameInTransaction: jest.fn(),
+  },
+}));
+
 const useInspectionMock = useInspection as jest.Mock;
 const repo = InspectionRepository as jest.Mocked<typeof InspectionRepository>;
 const photoRepo = (PhotoRepository as unknown as { getByInspection: jest.Mock });
+const mockRenameService = PoleRenameService as jest.Mocked<typeof PoleRenameService>;
 
 const poleField: InspectionField = {
   FieldID: 1,
@@ -1308,5 +1318,162 @@ describe("GeneralInformation locked fields (date, division, district)", () => {
     expect(editableOf(tree, 2)).toBe(false);
     expect(editableOf(tree, 3)).toBe(false);
     expect(editableOf(tree, 4)).toBe(true);
+  });
+});
+
+describe("GeneralInformation NEW inspection save-time identity rename", () => {
+  const ref = React.createRef<GeneralInformationHandle>();
+
+  async function renderNew(): Promise<ReturnType<typeof TestRenderer.create>> {
+    return renderComponent({
+      existing: false,
+      ref,
+      ensureDraft: jest.fn().mockResolvedValue(101),
+    });
+  }
+
+  async function invokeConfirm(): Promise<IdentityRenameDecision> {
+    let decision: IdentityRenameDecision = { type: "no-change" };
+    await act(async () => {
+      decision = await ref.current!.confirmIdentityRename();
+    });
+    return decision;
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    jest.spyOn(Alert, "alert");
+    setPoleId.mockReset();
+    setInspectionId.mockReset();
+    getPhotoStates.mockReset();
+    getPhotoStates.mockReturnValue({});
+    await InspectionEditSession.discard();
+    mockContext({ inspectionId: 101 });
+    repo.getFieldsByKey.mockResolvedValue([poleField, districtField, blockField]);
+    repo.getInspectionValues.mockResolvedValue({
+      pole_id: "P1",
+      district: "Sikar",
+      block: "B1",
+    });
+    repo.getInspectionPoleId.mockResolvedValue("P1");
+    repo.getInspectionByPoleId.mockResolvedValue(null);
+    repo.saveFieldValue.mockResolvedValue(undefined);
+    repo.updateInspectionPoleId.mockResolvedValue(undefined);
+    repo.updatePoleIdDirectSave.mockResolvedValue(undefined);
+    photoRepo.getByInspection.mockResolvedValue([]);
+    mockRenameService.renamePoleId.mockReset();
+    mockRenameService.renamePoleId.mockResolvedValue({
+      renamedFiles: 1,
+      updatedRecords: 1,
+      missingFiles: 0,
+    });
+  });
+
+  it("keeps identity + stored records in sync when a photo-captured new inspection changes the Site ID before save", async () => {
+    photoRepo.getByInspection.mockResolvedValue([makePhoto(1)]);
+    const tree = await renderNew();
+    await changePoleId(tree, "P2");
+
+    let promise!: Promise<IdentityRenameDecision>;
+    await act(async () => {
+      promise = ref.current!.confirmIdentityRename();
+      await flushPromises();
+    });
+    expect(dialogVisible(tree)).toBe(true);
+    const dialogText = collectStrings(tree.toJSON()).join(" ");
+    expect(dialogText).toContain("Sikar_B1_P1");
+    expect(dialogText).toContain("Sikar_B1_P2");
+
+    await pressButton(tree, "Rename");
+    let decision!: IdentityRenameDecision;
+    await act(async () => {
+      decision = await promise;
+    });
+
+    expect(decision).toEqual({ type: "proceed", renameFiles: true, updateReports: true });
+    expect(mockRenameService.renamePoleId).toHaveBeenCalledWith(
+      101,
+      "P1",
+      "P2",
+      { renameFiles: true, updateReports: true },
+      { oldDistrict: "Sikar", oldBlock: "B1", newDistrict: "Sikar", newBlock: "B1" }
+    );
+  });
+
+  it("cancelling the dialog reverts both the on-screen identity and the auto-saved draft row", async () => {
+    photoRepo.getByInspection.mockResolvedValue([makePhoto(1)]);
+    const tree = await renderNew();
+    await changePoleId(tree, "P2");
+
+    let promise!: Promise<IdentityRenameDecision>;
+    await act(async () => {
+      promise = ref.current!.confirmIdentityRename();
+      await flushPromises();
+    });
+    expect(dialogVisible(tree)).toBe(true);
+
+    await pressButton(tree, "Cancel");
+    let decision!: IdentityRenameDecision;
+    await act(async () => {
+      decision = await promise;
+    });
+
+    expect(decision).toEqual({ type: "cancelled" });
+    expect(dialogVisible(tree)).toBe(false);
+    expect(renderedFieldValues(tree)[0]).toBe("P1");
+    expect(setPoleId).toHaveBeenLastCalledWith("P1");
+    // The settled typing save already wrote "P2" — cancel must undo it.
+    expect(repo.updatePoleIdDirectSave).toHaveBeenLastCalledWith(
+      101,
+      poleField.FieldID,
+      "P1"
+    );
+    expect(mockRenameService.renamePoleId).not.toHaveBeenCalled();
+  });
+
+  it("returns no-change (no dialog) when the identity was never changed", async () => {
+    photoRepo.getByInspection.mockResolvedValue([makePhoto(1)]);
+    const tree = await renderNew();
+
+    const decision = await invokeConfirm();
+
+    expect(decision).toEqual({ type: "no-change" });
+    expect(dialogVisible(tree)).toBe(false);
+    expect(mockRenameService.renamePoleId).not.toHaveBeenCalled();
+  });
+
+  it("returns no-rename when the identity changed but no photos exist", async () => {
+    photoRepo.getByInspection.mockResolvedValue([]);
+    const tree = await renderNew();
+    await changePoleId(tree, "P2");
+
+    const decision = await invokeConfirm();
+
+    expect(decision).toEqual({ type: "no-rename" });
+    expect(dialogVisible(tree)).toBe(false);
+    expect(mockRenameService.renamePoleId).not.toHaveBeenCalled();
+  });
+
+  it("returns duplicate and reverts when the new Site ID already exists at save time", async () => {
+    photoRepo.getByInspection.mockResolvedValue([makePhoto(1)]);
+    repo.getInspectionByPoleId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ InspectionID: 99, PoleID: "P2", Status: "draft" });
+    const tree = await renderNew();
+    await changePoleId(tree, "P2");
+
+    const decision = await invokeConfirm();
+
+    expect(decision).toEqual({ type: "duplicate", duplicatePoleId: "P2" });
+    expect(dialogVisible(tree)).toBe(false);
+    expect(mockRenameService.renamePoleId).not.toHaveBeenCalled();
+    // The draft row was auto-written with "P2" — a duplicate at save must
+    // revert the stored identity so the form and database stay in sync.
+    expect(repo.updatePoleIdDirectSave).toHaveBeenLastCalledWith(
+      101,
+      poleField.FieldID,
+      "P1"
+    );
+    expect(setPoleId).toHaveBeenLastCalledWith("P1");
   });
 });

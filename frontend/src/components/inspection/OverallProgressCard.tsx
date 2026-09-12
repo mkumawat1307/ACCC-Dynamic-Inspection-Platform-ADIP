@@ -14,7 +14,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Card, ProgressBar } from "react-native-paper";
 import type { InspectionProgress } from "@/src/database/repositories/InspectionProgressService";
-import { COLORS, SPACING } from "@/src/constants/ui";
+import { COLORS, RADIUS, SPACING } from "@/src/constants/ui";
 
 interface Props {
   progress: InspectionProgress;
@@ -48,8 +48,9 @@ export default function OverallProgressCard({ progress }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    marginTop: SPACING.md,
-    marginBottom: 16,
+    marginBottom: 12,
+    borderRadius: RADIUS.md,
+    overflow: "hidden",
   },
   content: {
     paddingVertical: 10,
@@ -73,6 +74,7 @@ const styles = StyleSheet.create({
   bar: {
     marginTop: SPACING.sm - 2,
     borderRadius: 4,
+    height: 6,
   },
   footerRow: {
     flexDirection: "row",

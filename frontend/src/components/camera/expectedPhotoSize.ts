@@ -62,3 +62,21 @@ export function pickExpectedPhotoSize(
     ? { width: best.height, height: best.width }
     : { width: best.width, height: best.height };
 }
+
+/**
+ * Normalize a captured photo's oriented dimensions so its orientation matches
+ * the preview container. When the device is physically rotated inside a
+ * portrait-locked app, the captured photo dims flip orientation while the
+ * container stays fixed. Without alignment the live cover transform inflates
+ * the preview watermark (container/photo orientation mismatch), making the
+ * correct saved-photo watermark look small by comparison.
+ */
+export function alignCapturedSizeToContainer(
+  capture: PhotoSize,
+  container: PhotoSize
+): PhotoSize {
+  const capturePortrait = capture.height > capture.width;
+  const containerPortrait = container.height > container.width;
+  if (capturePortrait === containerPortrait) return capture;
+  return { width: capture.height, height: capture.width };
+}

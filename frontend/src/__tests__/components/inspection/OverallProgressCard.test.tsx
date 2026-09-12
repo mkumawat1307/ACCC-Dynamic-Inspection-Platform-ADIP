@@ -165,23 +165,37 @@ describe("OverallProgressCard", () => {
     });
     const rootCard = hosts(tree!).find((node) => {
       const s = node.style ?? {};
-      return s.marginTop != null && s.marginBottom != null;
+      return s.borderRadius === 12 && s.overflow === "hidden";
     });
     expect(rootCard).toBeTruthy();
     const style = rootCard!.style!;
     expect(style.marginHorizontal).toBeUndefined();
   });
 
-  it("applies enough bottom margin to visually separate the card from the first section below", () => {
+  it("shares the section-card visual chrome: 12pt corners, hidden overflow, no top margin, 12pt bottom spacing", () => {
     let tree: ReturnType<typeof TestRenderer.create>;
     TestRenderer.act(() => {
       tree = TestRenderer.create(<OverallProgressCard progress={progressData()} />);
     });
     const rootCard = hosts(tree!).find((node) => {
       const s = node.style ?? {};
-      return s.marginTop != null && s.marginBottom != null;
+      return s.borderRadius === 12 && s.overflow === "hidden";
     });
     expect(rootCard).toBeTruthy();
-    expect((rootCard!.style as Record<string, number>).marginBottom).toBeGreaterThanOrEqual(16);
+    const style = rootCard!.style!;
+    expect(style.marginBottom).toBe(12);
+    expect(style.marginTop).toBeUndefined();
+    expect(style.marginHorizontal).toBeUndefined();
+  });
+
+  it("draws the progress bar with an explicit height and rounded corners", () => {
+    let tree: ReturnType<typeof TestRenderer.create>;
+    TestRenderer.act(() => {
+      tree = TestRenderer.create(<OverallProgressCard progress={progressData()} />);
+    });
+    const bar = tree!.root.findAll(
+      (n) => (n as { type?: unknown }).type === "ProgressBar"
+    )[0]!;
+    expect(bar.props.style).toMatchObject({ height: 6, borderRadius: 4 });
   });
 });

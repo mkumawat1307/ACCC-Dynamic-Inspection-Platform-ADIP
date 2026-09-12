@@ -525,19 +525,19 @@ const handleSave = async () => {
   // existing inspection. This is the explicit Save boundary — nothing is
   // written to the database until this point, and only a fully valid Save
   // deactivates the edit session.
-  if (isExisting) {
-    const decision = await generalInfoRef.current?.confirmIdentityRename();
-    if (decision?.type === "duplicate") {
-      Alert.alert(
-        "Duplicate Site ID",
-        `Site ID ${decision.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`
-      );
-      return;
-    }
-    if (decision?.type === "cancelled") {
-      return;
-    }
+  const decision = await generalInfoRef.current?.confirmIdentityRename();
+  if (decision?.type === "duplicate") {
+    Alert.alert(
+      "Duplicate Site ID",
+      `Site ID ${decision.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`
+    );
+    return;
+  }
+  if (decision?.type === "cancelled") {
+    return;
+  }
 
+  if (isExisting) {
     const committed = await InspectionEditSession.commit();
     if (!committed) {
       Alert.alert(
@@ -658,6 +658,7 @@ return (
       ref={scrollViewRef}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      automaticallyAdjustKeyboardInsets
       scrollEnabled={!dropdownOpen}
       onLayout={(event) => {
         scrollViewTopRef.current = event.nativeEvent.layout.y;

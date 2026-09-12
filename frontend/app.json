@@ -32,6 +32,9 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
+    "autolinking": {
+      "nativeModulesDir": "./modules"
+    },
     "web": {
       "bundler": "metro",
       "output": "single",

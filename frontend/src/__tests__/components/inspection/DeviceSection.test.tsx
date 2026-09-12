@@ -303,6 +303,15 @@ describe("DeviceSection device count changes", () => {
     }>;
   }
 
+  function deviceToggle(
+    tree: ReturnType<typeof TestRenderer.create>,
+    deviceNo: number
+  ): { props: { onPress: () => void } } {
+    return tree.root.find(
+      (n) => (n.props as { testID?: string } | undefined)?.testID === `dev-toggle-${deviceNo}`
+    ) as unknown as { props: { onPress: () => void } };
+  }
+
   it("re-creates pruned devices on grow by restoring the deactivated rows (same RecordID)", async () => {
     fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
     optionsRepo.getDropdownData.mockResolvedValue([
@@ -484,7 +493,8 @@ describe("DeviceSection device count changes", () => {
     });
     expect(recordsRepo.restorePendingDeactivatedRecords).toHaveBeenCalledWith(42, "Camera", 4);
 
-    // Device 2 was restored (RecordID 7), devices 3/4 are brand-new rows.
+    // Device 2 was restored (RecordID 7), devices 3/4 are brand-new rows and
+    // therefore start collapsed. Expand device 4 before typing into it.
     act(() => {
       findVoltageInputs(tree)[1].props.onChangeText("20");
     });
@@ -495,7 +505,11 @@ describe("DeviceSection device count changes", () => {
     expect(device2.RecordID).toBe(7);
 
     act(() => {
-      findVoltageInputs(tree)[3].props.onChangeText("30");
+      deviceToggle(tree, 4).props.onPress();
+    });
+    act(() => {
+      // Device 3 stays collapsed, so device 4 sits at index 2.
+      findVoltageInputs(tree)[2].props.onChangeText("30");
     });
     const device4Call = recordsRepo.scheduleDeviceRecordSave.mock.calls[
       recordsRepo.scheduleDeviceRecordSave.mock.calls.length - 1
@@ -616,6 +630,7 @@ describe("DeviceSection per-device progress + collapse", () => {
       { label: "Fixed", value: "Fixed", isDefault: 0 },
     ]);
     recordsRepo.getByInspectionAll.mockResolvedValue(recordList ?? [mockRecord]);
+    recordsRepo.getByInspection.mockResolvedValue(recordList ?? [mockRecord]);
     recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
     recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
     recordsRepo.cancelPendingSaves.mockImplementation(() => undefined);
@@ -727,11 +742,13 @@ describe("DeviceSection per-device progress + collapse", () => {
     expect(textOf(tree)).not.toContain("completed");
   });
 
-  it("new devices added on grow default to expanded", async () => {
+  it("new devices added on grow default to collapsed", async () => {
     const tree = await renderWithProgress(undefined, [mockRecord]);
     expect(findTextInput(tree, "Voltage")).toBeTruthy();
 
-    // Simulate growth by re-rendering with two records and count 2.
+    // Simulate growth by re-rendering with count 2: device 2 is a brand-new
+    // instance (never saved), so it must start collapsed while device 1 stays
+    // expanded.
     const secondRecord = { ...mockRecord, DeviceNo: 2 };
     fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
     optionsRepo.getDropdownData.mockResolvedValue([
@@ -743,7 +760,7 @@ describe("DeviceSection per-device progress + collapse", () => {
     recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
     recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
     recordsRepo.deactivateBeyond.mockResolvedValue(undefined);
-    recordsRepo.restorePendingDeactivatedRecords.mockResolvedValue([secondRecord]);
+    recordsRepo.restorePendingDeactivatedRecords.mockResolvedValue([]);
 
     await act(async () => {
       tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={2} deviceProgress={[]} />);
@@ -752,7 +769,16 @@ describe("DeviceSection per-device progress + collapse", () => {
       (n) => (n as { type?: unknown }).type === "TextInput" &&
         (n.props as { label?: string }).label === "Voltage"
     );
-    expect(voltageInputs).toHaveLength(2);
+    // Device 1 stays expanded; the new device 2 is collapsed.
+    expect(voltageInputs).toHaveLength(1);
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    const expanded = tree.root.findAll(
+      (n) => (n as { type?: unknown }).type === "TextInput" &&
+        (n.props as { label?: string }).label === "Voltage"
+    );
+    expect(expanded).toHaveLength(2);
   });
 
   it("renders a red bold * after the label of a required field", async () => {
@@ -786,5 +812,229 @@ describe("DeviceSection per-device progress + collapse", () => {
     });
     expect(fieldLabelNode).toBeTruthy();
     expect(textOf(tree)).toContain("Mount Type *");
+  });
+});
+
+describe("DeviceSection default expansion state (CHANGE 1 regression)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function voltageInputs(tree: ReturnType<typeof TestRenderer.create>) {
+    return tree.root.findAll(
+      (n) =>
+        (n as { type?: unknown }).type === "TextInput" &&
+        (n.props as { label?: string }).label === "Voltage"
+    ) as unknown as Array<{ props: { label: string; value?: string } }>;
+  }
+
+  function deviceToggle(
+    tree: ReturnType<typeof TestRenderer.create>,
+    deviceNo: number
+  ): { props: { onPress: () => void } } {
+    return tree.root.find(
+      (n) => (n.props as { testID?: string } | undefined)?.testID === `dev-toggle-${deviceNo}`
+    ) as unknown as { props: { onPress: () => void } };
+  }
+
+  async function renderFreshCount(count: number) {
+    fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField]);
+    optionsRepo.getDropdownData.mockResolvedValue([]);
+    recordsRepo.getByInspection.mockResolvedValue([]);
+    recordsRepo.getByInspectionAll.mockResolvedValue([]);
+    recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
+    recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
+    recordsRepo.cancelPendingSaves.mockImplementation(() => undefined);
+    recordsRepo.deactivateBeyond.mockResolvedValue(undefined);
+    recordsRepo.restorePendingDeactivatedRecords.mockResolvedValue([]);
+    recordsRepo.save.mockResolvedValue(1);
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={count} />
+      );
+    });
+    return tree;
+  }
+
+  it("1. fresh device count = 1: device 1 is expanded", async () => {
+    const tree = await renderFreshCount(1);
+    expect(voltageInputs(tree)).toHaveLength(1);
+    expect(findTextInput(tree, "Voltage")).toBeTruthy();
+  });
+
+  it("2. fresh device count = 3: device 1 expanded, devices 2 and 3 collapsed", async () => {
+    const tree = await renderFreshCount(3);
+    expect(voltageInputs(tree)).toHaveLength(1);
+    expect(findTextInput(tree, "Voltage")).toBeTruthy();
+  });
+
+  it("3. grow count 1 -> 2: device 1 keeps its expansion state, device 2 starts collapsed", async () => {
+    const tree = await renderFreshCount(1);
+    expect(voltageInputs(tree)).toHaveLength(1);
+
+    recordsRepo.getByInspection.mockResolvedValue([mockRecord]);
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={2} />);
+    });
+
+    expect(voltageInputs(tree)).toHaveLength(1);
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(2);
+  });
+
+  it("4. grow count 2 -> 3: device 1 stays expanded, devices 2 and 3 start collapsed", async () => {
+    const tree = await renderFreshCount(2);
+    expect(voltageInputs(tree)).toHaveLength(1);
+
+    recordsRepo.getByInspection.mockResolvedValue([mockRecord]);
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={3} />);
+    });
+
+    expect(voltageInputs(tree)).toHaveLength(1);
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(2);
+    act(() => {
+      deviceToggle(tree, 3).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(3);
+  });
+
+  it("5. a device created collapsed can still be manually expanded", async () => {
+    const tree = await renderFreshCount(3);
+    expect(voltageInputs(tree)).toHaveLength(1);
+
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(2);
+  });
+
+  it("6. existing/restored devices loaded from the database are NOT auto-collapsed", async () => {
+    const secondRecord = { ...mockRecord, DeviceNo: 2 };
+    fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField]);
+    optionsRepo.getDropdownData.mockResolvedValue([]);
+    recordsRepo.getByInspection.mockResolvedValue([mockRecord, secondRecord]);
+    recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
+    recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
+    recordsRepo.cancelPendingSaves.mockImplementation(() => undefined);
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={2} />
+      );
+    });
+
+    expect(voltageInputs(tree)).toHaveLength(2);
+    expect(findTextInput(tree, "Voltage")).toBeTruthy();
+  });
+
+  it("7. restored devices (deactivated then re-added on grow) keep their expansion state", async () => {
+    const secondRecord = { ...mockRecord, DeviceNo: 2 };
+    fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField]);
+    optionsRepo.getDropdownData.mockResolvedValue([]);
+    recordsRepo.getByInspection.mockResolvedValue([mockRecord]);
+    recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
+    recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
+    recordsRepo.cancelPendingSaves.mockImplementation(() => undefined);
+    recordsRepo.deactivateBeyond.mockResolvedValue(undefined);
+    recordsRepo.restorePendingDeactivatedRecords.mockResolvedValue([secondRecord]);
+    recordsRepo.save.mockResolvedValue(1);
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} />
+      );
+    });
+    expect(voltageInputs(tree)).toHaveLength(1);
+
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={2} />);
+    });
+
+    // Device 2 was deactivated earlier and is restored from the database on
+    // grow — it must NOT be treated as a brand-new device and collapsed.
+    const inputs = voltageInputs(tree);
+    expect(inputs).toHaveLength(2);
+  });
+
+  it("8. count reset 1→2→3→0→3: 0 fully tears down, regrow creates a fresh set", async () => {
+    const tree = await renderFreshCount(1);
+    expect(voltageInputs(tree)).toHaveLength(1);
+
+    // 1 -> 2
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={2} />);
+    });
+    // Device 1 keeps its state, device 2 collapses.
+    expect(voltageInputs(tree)).toHaveLength(1);
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(2);
+
+    // 2 -> 3
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={3} />);
+    });
+    // Device 1 keeps its state, device 2 stays expanded (manual), device 3 collapses.
+    act(() => {
+      deviceToggle(tree, 3).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(3);
+
+    // 3 -> 0: all device instances removed.
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={0} />);
+    });
+    expect(voltageInputs(tree)).toHaveLength(0);
+
+    // 0 -> 3: a brand-new device set. Device 1 expanded, devices 2 and 3
+    // collapsed — no stale expansion state from the previous instances.
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={3} />);
+    });
+    expect(voltageInputs(tree)).toHaveLength(1);
+    expect(findTextInput(tree, "Voltage")).toBeTruthy();
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(2);
+  });
+
+  it("9. count reset 1→2→0→2: no stale expansion state from previous instances", async () => {
+    const tree = await renderFreshCount(1);
+    expect(voltageInputs(tree)).toHaveLength(1);
+
+    // 1 -> 2
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={2} />);
+    });
+    expect(voltageInputs(tree)).toHaveLength(1);
+
+    // 2 -> 0: tear down.
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={0} />);
+    });
+    expect(voltageInputs(tree)).toHaveLength(0);
+
+    // 0 -> 2: fresh set — device 1 expanded, device 2 collapsed.
+    await act(async () => {
+      tree.update(<DeviceSection inspectionId={42} deviceType="Camera" count={2} />);
+    });
+    expect(voltageInputs(tree)).toHaveLength(1);
+    expect(findTextInput(tree, "Voltage")).toBeTruthy();
+    act(() => {
+      deviceToggle(tree, 2).props.onPress();
+    });
+    expect(voltageInputs(tree)).toHaveLength(2);
   });
 });

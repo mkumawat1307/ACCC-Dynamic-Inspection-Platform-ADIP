@@ -123,10 +123,19 @@ function findVoltageInputs(tree: ReturnType<typeof TestRenderer.create>) {
   }>;
 }
 
-function SectionHost({ count }: { count: number }) {
+function SectionHost({ count, resetStamp = 0 }: { count: number; resetStamp?: number }) {
   return count > 0 ? (
-    <DeviceSection inspectionId={42} deviceType="Camera" count={count} />
+    <DeviceSection inspectionId={42} deviceType="Camera" count={count} resetStamp={resetStamp} />
   ) : null;
+}
+
+function expandDevice(tree: ReturnType<typeof TestRenderer.create>, deviceNo: number) {
+  const toggle = tree.root.find(
+    (n) => (n.props as { testID?: string } | undefined)?.testID === `dev-toggle-${deviceNo}`
+  ) as unknown as { props: { onPress: () => void } };
+  act(() => {
+    toggle.props.onPress();
+  });
 }
 
 describe("DeviceSection integration — flush-before-deactivate fix (11 regression tests)", () => {
@@ -171,6 +180,10 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
     await act(async () => {
       tree = TestRenderer.create(<SectionHost count={3} />);
     });
+    // Fresh devices 2 and 3 start collapsed (only device 1 is expanded).
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+    expandDevice(tree, 2);
+    expandDevice(tree, 3);
     expect(findVoltageInputs(tree)).toHaveLength(3);
 
     act(() => {
@@ -199,6 +212,8 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
     expect(cam2[0].DeviceData ?? "").toContain('"15"');
     expect(cam3[0].DeviceData ?? "").toContain('"16"');
 
+    // Restored devices keep their expanded state after the grow (they were
+    // expanded before the shrink, and restored rows are not auto-collapsed).
     expect(findVoltageInputs(tree)[1].props.value).toBe("15");
     expect(findVoltageInputs(tree)[2].props.value).toBe("16");
   });
@@ -218,6 +233,8 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       jest.advanceTimersByTime(600);
     });
 
+    expandDevice(tree, 2);
+    expandDevice(tree, 3);
     act(() => {
       findVoltageInputs(tree)[1].props.onChangeText("15");
       findVoltageInputs(tree)[2].props.onChangeText("16");
@@ -248,6 +265,8 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree = TestRenderer.create(<SectionHost count={3} />);
     });
 
+    expandDevice(tree, 2);
+    expandDevice(tree, 3);
     act(() => {
       findVoltageInputs(tree)[1].props.onChangeText("15");
       findVoltageInputs(tree)[2].props.onChangeText("16");
@@ -261,6 +280,7 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       jest.advanceTimersByTime(600);
     });
 
+    await act(async () => {});
     await act(async () => {});
 
     const rows = await cameraRows(db);
@@ -284,6 +304,7 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree = TestRenderer.create(<SectionHost count={3} />);
     });
 
+    expandDevice(tree, 2);
     act(() => {
       findVoltageInputs(tree)[1].props.onChangeText("15");
     });
@@ -326,6 +347,10 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree.update(<SectionHost count={3} />);
     });
 
+    // Fresh devices 2 and 3 exist but start collapsed; device 1 stays open.
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+    expandDevice(tree, 2);
+    expandDevice(tree, 3);
     expect(findVoltageInputs(tree)).toHaveLength(3);
 
     expect(findVoltageInputs(tree)[0].props.value).toBe("");
@@ -341,6 +366,7 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree = TestRenderer.create(<SectionHost count={2} />);
     });
 
+    expandDevice(tree, 2);
     act(() => {
       findVoltageInputs(tree)[0].props.onChangeText("10");
       findVoltageInputs(tree)[1].props.onChangeText("20");
@@ -357,9 +383,14 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree.update(<SectionHost count={4} />);
     });
 
-    expect(findVoltageInputs(tree)).toHaveLength(4);
+    // Device 2 was restored (kept expanded); devices 3 and 4 are fresh and
+    // start collapsed.
+    expect(findVoltageInputs(tree)).toHaveLength(2);
     expect(findVoltageInputs(tree)[0].props.value).toBe("10");
     expect(findVoltageInputs(tree)[1].props.value).toBe("20");
+    expandDevice(tree, 3);
+    expandDevice(tree, 4);
+    expect(findVoltageInputs(tree)).toHaveLength(4);
     expect(findVoltageInputs(tree)[2].props.value).toBe("");
     expect(findVoltageInputs(tree)[3].props.value).toBe("");
 
@@ -380,6 +411,22 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
         </>
       );
     });
+
+    // Fresh devices: Camera 1 and Battery 1 are expanded; cameras 2/3 and
+    // battery 2 start collapsed. Expand cameras 2/3 so the Camera voltage
+    // inputs sit at indexes 0-2 (not interleaved with Battery inputs).
+    // Camera renders first, so the first dev-toggle-2 / dev-toggle-3 match
+    // belongs to the Camera section.
+    const expandCameraDevice = (deviceNo: number) => {
+      const toggles = tree.root.findAll(
+        (n) => (n.props as { testID?: string } | undefined)?.testID === `dev-toggle-${deviceNo}`
+      );
+      act(() => {
+        (toggles[0].props as { onPress: () => void }).onPress();
+      });
+    };
+    expandCameraDevice(2);
+    expandCameraDevice(3);
 
     const voltageInputs = tree.root.findAll((n) => {
       if ((n as { type?: unknown }).type !== "TextInput") return false;
@@ -421,6 +468,7 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree = TestRenderer.create(<SectionHost count={3} />);
     });
 
+    expandDevice(tree, 2);
     act(() => {
       findVoltageInputs(tree)[1].props.onChangeText("15");
     });
@@ -454,6 +502,8 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree = TestRenderer.create(<SectionHost count={3} />);
     });
 
+    expandDevice(tree, 2);
+    expandDevice(tree, 3);
     act(() => {
       findVoltageInputs(tree)[1].props.onChangeText("15");
       findVoltageInputs(tree)[2].props.onChangeText("16");
@@ -541,6 +591,10 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
       tree.update(<SectionHost count={3} />);
     });
 
+    // Devices 2 and 3 were freshly created by the 1→3 grow, so they start
+    // collapsed; expand them before typing into their fields.
+    expandDevice(tree, 2);
+    expandDevice(tree, 3);
     act(() => {
       findVoltageInputs(tree)[1].props.onChangeText("20");
       findVoltageInputs(tree)[2].props.onChangeText("30");
@@ -571,5 +625,95 @@ describe("DeviceSection integration — flush-before-deactivate fix (11 regressi
     expect(cam2!.DeviceData ?? "").toContain('"20"');
     const cam3 = rows.find((r) => r.DeviceNo === 3 && r.IsActive === 1);
     expect(cam3!.DeviceData ?? "").toContain('"30"');
+  });
+
+  it("12. count reset 1→2→3→0→3: remount after 0 collapses devices 2 and 3 when resetStamp is set", async () => {
+    await setup();
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(<SectionHost count={1} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+
+    // 1 -> 2: device 2 starts collapsed.
+    await act(async () => {
+      tree.update(<SectionHost count={2} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+
+    // 2 -> 3: device 3 starts collapsed.
+    await act(async () => {
+      tree.update(<SectionHost count={3} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+
+    // 3 -> 0: SectionRenderer hides DeviceSection entirely (count must be > 0).
+    await act(async () => {
+      tree.update(<SectionHost count={0} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(0);
+
+    // 0 -> 3 WITHOUT the reset stamp reproduces the bug being fixed: the prior
+    // set's records are still active in the DB, so the remount treats them as
+    // existing and devices 1, 2 and 3 all render expanded.
+    await act(async () => {
+      tree.update(<SectionHost count={3} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(3);
+
+    // 0 -> 3 WITH the reset stamp (SectionRenderer records that the count hit
+    // 0): the set is treated as brand new — device 1 expanded, 2 and 3
+    // collapsed, with no expansion state leaking from the previous set.
+    await act(async () => {
+      tree.update(<SectionHost count={0} />);
+    });
+    await act(async () => {
+      tree.update(<SectionHost count={3} resetStamp={1} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+
+    expandDevice(tree, 2);
+    expect(findVoltageInputs(tree)).toHaveLength(2);
+    expandDevice(tree, 3);
+    expect(findVoltageInputs(tree)).toHaveLength(3);
+  });
+
+  it("13. count reset 1→2→0→2: remount after 0 collapses device 2 when resetStamp is set", async () => {
+    await setup();
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(<SectionHost count={1} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+
+    await act(async () => {
+      tree.update(<SectionHost count={2} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+
+    await act(async () => {
+      tree.update(<SectionHost count={0} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(0);
+
+    // Without the reset stamp the prior set's records remain expanded (bug).
+    await act(async () => {
+      tree.update(<SectionHost count={2} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(2);
+
+    // With the reset stamp device 2 starts collapsed.
+    await act(async () => {
+      tree.update(<SectionHost count={0} />);
+    });
+    await act(async () => {
+      tree.update(<SectionHost count={2} resetStamp={1} />);
+    });
+    expect(findVoltageInputs(tree)).toHaveLength(1);
+
+    expandDevice(tree, 2);
+    expect(findVoltageInputs(tree)).toHaveLength(2);
   });
 });

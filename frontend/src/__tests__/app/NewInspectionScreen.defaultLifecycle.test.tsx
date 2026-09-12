@@ -1,5 +1,6 @@
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
+import { ScrollView } from "react-native";
 import type { SQLiteDatabase } from "expo-sqlite";
 import type { Project } from "@/src/models/Project";
 
@@ -695,6 +696,31 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     expect(json).not.toContain("Default Device Type");
     expect(json).not.toContain("Custom Device Types");
     expect(json).not.toContain("Custom Sections");
+    await act(async () => {
+      tree!.unmount();
+    });
+  });
+
+  it("main inspection ScrollView auto-adjusts for the keyboard inset", async () => {
+    await openSeededProject();
+    mockParamsState.current = {
+      projectId: "1",
+      projectData: JSON.stringify(testProject()),
+    };
+
+    let tree: ReturnType<typeof TestRenderer.create> | undefined;
+    await act(async () => {
+      tree = TestRenderer.create(<NewInspectionScreen />);
+    });
+    await settle();
+
+    const scrollViews = tree!.root.findAll(
+      (n) => (n as { type?: unknown }).type === ScrollView
+    );
+    expect(scrollViews.length).toBeGreaterThan(0);
+    // The top-level inspection form ScrollView must let the OS move content
+    // above the keyboard when a field is focused.
+    expect(scrollViews[0].props.automaticallyAdjustKeyboardInsets).toBe(true);
     await act(async () => {
       tree!.unmount();
     });

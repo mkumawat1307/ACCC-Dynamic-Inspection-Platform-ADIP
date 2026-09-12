@@ -362,6 +362,18 @@ describe("DeviceSection default persistence — Phase 7A regression (10 tests)",
         return (n.props as any).label === "Voltage";
       });
 
+    const expandDevice = (t: ReturnType<typeof TestRenderer.create>, deviceNo: number) => {
+      const toggle = t.root.find(
+        (n) => (n.props as any)?.testID === `dev-toggle-${deviceNo}`
+      );
+      act(() => {
+        (toggle.props as any).onPress();
+      });
+    };
+
+    // Freshly created devices 2 and 3 start collapsed; expand them first.
+    expandDevice(tree, 2);
+    expandDevice(tree, 3);
     act(() => {
       const inputs = findVoltageInputs(tree);
       (inputs[1].props as any).onChangeText("20");

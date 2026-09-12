@@ -26,6 +26,7 @@ interface Props {
   existing?: boolean;
   onDataChanged?: () => void;
   deviceProgress?: DeviceProgress[];
+  resetStamp?: number;
 }
 
 function deviceDbStillValid(expectedDbPath?: string | null): boolean {
@@ -47,7 +48,7 @@ interface DropdownItem {
   IsActive?: number;
 }
 
-export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false, existing = false, onDataChanged, deviceProgress }: Props) {
+export default function DeviceSection({ inspectionId, deviceType, count, templateId, locked = false, existing = false, onDataChanged, deviceProgress, resetStamp = 0 }: Props) {
   const [fields, setFields] = useState<DeviceFieldDefinition[]>([]);
   const [deletedDefs, setDeletedDefs] = useState<DeviceFieldDefinition[]>([]);
   const [records, setRecords] = useState<DeviceRecord[]>([]);
@@ -60,6 +61,8 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   const prevCountRef = useRef(count);
   const countEditedRef = useRef(false);
   const countOpsRef = useRef(Promise.resolve());
+  const everSeenNos = useRef<Set<number>>(new Set());
+  const fullyResetRef = useRef(false);
   const dropdownRefs = useRef<Record<string, View | null>>({});
   const { setDropdownOpen } = useInspectionScroll();
 
@@ -75,6 +78,9 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
 
       const existingRecords = await DeviceRecordsRepository.getByInspection(inspectionId, deviceType);
       let list = existingRecords.length > 0 ? existingRecords : [];
+      if (resetStamp === 0) {
+        for (const rec of list) everSeenNos.current.add(rec.DeviceNo);
+      }
 
       const savedValuesByField = new Map<string, Set<string>>();
       for (const rec of list) {
@@ -164,6 +170,16 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   useEffect(() => {
     if (loading) return;
 
+    if (records.length > 0 && count === 0) {
+      // Full teardown: when the count is edited to 0, every device instance is
+      // removed. Clear the ever-seen marker so the next grow creates a brand
+      // new set (device 1 expanded, the rest collapsed) instead of re-using
+      // stale expansion state from the previous instance set.
+      everSeenNos.current = new Set();
+      fullyResetRef.current = true;
+      setCollapsedNos([]);
+    }
+
     if (count !== prevCountRef.current) {
       countEditedRef.current = true;
     }
@@ -199,6 +215,8 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
 
     if (count > records.length) {
       const growCount = count;
+      const wasFullReset = fullyResetRef.current;
+      fullyResetRef.current = false;
       countOpsRef.current = countOpsRef.current.then(async () => {
         const expectedDbPath = getActiveProjectPath();
         if (!deviceDbStillValid(expectedDbPath)) return undefined;
@@ -207,6 +225,9 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         const restored = await DeviceRecordsRepository.restorePendingDeactivatedRecords(
           inspectionId, deviceType, growCount,
         );
+        if (!wasFullReset) {
+          for (const r of restored) everSeenNos.current.add(r.DeviceNo);
+        }
         return restored;
       }).then(async (restored) => {
         const expectedDbPath = getActiveProjectPath();
@@ -226,6 +247,7 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         const activeNos = new Set(activeRecords.map((r) => r.DeviceNo));
         for (const r of activeRecords) {
           if (r.RecordID) persistedIds.current.set(r.DeviceNo, r.RecordID);
+          if (!wasFullReset) everSeenNos.current.add(r.DeviceNo);
         }
 
         const emptyData: Record<string, string | null> = {};
@@ -277,6 +299,29 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
     }
 
   }, [count, loading, records.length, fields, inspectionId, deviceType, existing, onDataChanged]);
+
+  // Newly created device instances default to collapsed so only the first
+  // device stays open. A device number is treated as new only the first time
+  // it is seen; restored/deactivated devices and existing loaded records keep
+  // their current expansion state through count edits.
+  useEffect(() => {
+    const currentNos = records.map((r) => r.DeviceNo);
+    const newNos = currentNos.filter((no) => !everSeenNos.current.has(no));
+    for (const no of newNos) everSeenNos.current.add(no);
+    if (newNos.length === 0) return;
+
+    setCollapsedNos((prev) => {
+      const collapsed = new Set(prev);
+      let changed = false;
+      for (const no of newNos) {
+        if (no !== 1 && !collapsed.has(no)) {
+          collapsed.add(no);
+          changed = true;
+        }
+      }
+      return changed ? [...collapsed] : prev;
+    });
+  }, [records]);
 
   useEffect(() => {
     return () => {

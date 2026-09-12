@@ -1,0 +1,8 @@
+{
+  "name": "expo-watermark-encoder",
+  "version": "0.1.0",
+  "main": "src/index.ts",
+  "description": "Native JPEG watermark compositor (encodeJpeg + encodeOverlay) for photo capture (Android)",
+  "keywords": ["expo", "android", "watermark", "jpeg", "capture"],
+  "license": "UNLICENSED"
+}

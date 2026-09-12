@@ -228,8 +228,8 @@ export class ResetRepository {
           );
         } else {
           await db.runAsync(
-            `UPDATE DeviceFieldDefinitions SET Label = ?, FieldType = ?, IsRequired = ?, DisplayOrder = ?, IsVisible = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE DeviceType = ? AND FieldName = ?`,
-            [df.Label, df.FieldType, df.IsRequired, df.DisplayOrder, df.DeviceType, df.FieldName]
+            `UPDATE DeviceFieldDefinitions SET Label = ?, FieldType = ?, IsRequired = ?, DisplayOrder = ?, IsVisible = 1, Placeholder = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE DeviceType = ? AND FieldName = ?`,
+            [df.Label, df.FieldType, df.IsRequired, df.DisplayOrder, null, df.DeviceType, df.FieldName]
           );
         }
       }
@@ -307,10 +307,21 @@ export class ResetRepository {
 
       for (const dt of FACTORY_DEVICE_TYPES) {
         const isRequired = FACTORY_REQUIRED_DEVICE_TYPES.includes(dt) ? 1 : 0;
-        await db.runAsync(
-          `INSERT OR IGNORE INTO ProjectDeviceTypes (DeviceType, IsActive, IsRequired) VALUES (?, 1, ?)`,
-          [dt, isRequired]
+        const existingType = await db.getFirstAsync<{ ID: number }>(
+          `SELECT ID FROM ProjectDeviceTypes WHERE DeviceType = ? LIMIT 1`,
+          [dt]
         );
+        if (existingType) {
+          await db.runAsync(
+            `UPDATE ProjectDeviceTypes SET IsActive = 1, IsRequired = ? WHERE ID = ?`,
+            [isRequired, existingType.ID]
+          );
+        } else {
+          await db.runAsync(
+            `INSERT INTO ProjectDeviceTypes (DeviceType, IsActive, IsRequired) VALUES (?, 1, ?)`,
+            [dt, isRequired]
+          );
+        }
       }
     });
   }
