@@ -369,7 +369,7 @@ static async validateInspection(
         AND s.IsActive = 1
         AND t.IsDefault = 1
         AND i.InspectionID = ?
-      GROUP BY f.FieldKey
+      GROUP BY f.FieldID
       `,
       [inspectionId]
     );

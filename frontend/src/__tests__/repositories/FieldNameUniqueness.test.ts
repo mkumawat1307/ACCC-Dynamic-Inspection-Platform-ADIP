@@ -89,12 +89,14 @@ it("4. returns false when the match is in a different section", async () => {
 
 it("8. create allows the same FieldName in a different section (delete->recreate flow)", async () => {
     mockDb.getFirstAsync.mockResolvedValue({ Max: 0 });
-    mockDb.getAllAsync.mockResolvedValue([]);
+    mockDb.getAllAsync
+      .mockResolvedValueOnce([{ SectionID: 1 }])
+      .mockResolvedValueOnce([]);
 
     const id = await FieldRepository.create({ SectionID: 2, FieldName: "Voltage", FieldKey: "voltage", FieldType: "text" });
 
     expect(id).toBe(42);
-    const scan = mockDb.getAllAsync.mock.calls[0];
+    const scan = mockDb.getAllAsync.mock.calls[1];
     expect(scan[1]).toEqual([2]);
     expect(mockDb.runAsync).toHaveBeenCalledTimes(1);
   });
@@ -119,6 +121,7 @@ it("8. create allows the same FieldName in a different section (delete->recreate
     });
 
     it("11. key check runs before the name check", async () => {
+      mockDb.getAllAsync.mockResolvedValue([{ SectionID: 1 }]);
       mockDb.getFirstAsync.mockResolvedValue({ Count: 1 });
 
       await expect(
@@ -126,9 +129,13 @@ it("8. create allows the same FieldName in a different section (delete->recreate
       ).rejects.toThrow(/already exists/);
 
       const firstLookup = String(mockDb.getFirstAsync.mock.calls[0][0]);
-      expect(firstLookup).toContain("FieldKey = ?");
-      expect(firstLookup).toContain("SectionID = ?");
-      expect(mockDb.getAllAsync).not.toHaveBeenCalled();
+      expect(firstLookup).toContain("LOWER(TRIM(FieldKey))");
+      expect(firstLookup).toContain("SectionID IN");
+      expect(firstLookup).not.toContain("SectionID = ?");
+
+      expect(mockDb.getAllAsync).toHaveBeenCalledTimes(1);
+      const sectionsQuery = String(mockDb.getAllAsync.mock.calls[0][0]);
+      expect(sectionsQuery).toContain("InspectionSections WHERE IsActive = 1");
     });
   });
 

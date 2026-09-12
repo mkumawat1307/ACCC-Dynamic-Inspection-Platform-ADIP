@@ -219,7 +219,7 @@ class DeviceFieldDefinitionsRepository {
     for (const f of fields) {
       await db.runAsync(
         `INSERT INTO DeviceFieldDefinitions (TemplateID, DeviceType, FieldName, Label, FieldType, IsRequired, IsVisible, DisplayOrder, IsActive, Placeholder)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
         [targetTemplateId, f.DeviceType, f.FieldName, f.Label, f.FieldType, f.IsRequired, f.IsVisible ?? 1, f.DisplayOrder, f.Placeholder ?? null]
       );
     }

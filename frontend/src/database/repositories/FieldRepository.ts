@@ -85,8 +85,8 @@ export class FieldRepository {
   }): Promise<number> {
     const db = await getDatabase();
 
-    if (await FieldRepository.keyExists(data.FieldKey, data.SectionID)) {
-      throw new Error(`A field with the identifier "${data.FieldKey}" already exists in this section.`);
+    if (await FieldRepository.keyExists(data.FieldKey)) {
+      throw new Error(`A field with the identifier "${data.FieldKey}" already exists.`);
     }
 
     if (await FieldRepository.nameExists(data.FieldName, data.SectionID)) {
@@ -159,9 +159,9 @@ export class FieldRepository {
       if (existing) {
         if (
           data.FieldKey !== undefined &&
-          (await FieldRepository.keyExists(data.FieldKey, existing.SectionID, id))
+          (await FieldRepository.keyExists(data.FieldKey, id))
         ) {
-          throw new Error(`A field with the identifier "${data.FieldKey}" already exists in this section.`);
+          throw new Error(`A field with the identifier "${data.FieldKey}" already exists.`);
         }
         if (
           data.FieldName !== undefined &&
@@ -236,11 +236,21 @@ export class FieldRepository {
     return (result?.Count ?? 0) > 0;
   }
 
-  static async keyExists(key: string, sectionId: number, excludeId?: number): Promise<boolean> {
+  static async keyExists(key: string, excludeId?: number): Promise<boolean> {
     const db = await getDatabase();
-    let query = `SELECT COUNT(*) as Count FROM InspectionFields WHERE FieldKey = ? AND IsActive = 1 AND SectionID = ?`;
-    const params: SqlValue[] = [key, sectionId];
-    if (excludeId) {
+    const activeSections =
+      (await db.getAllAsync<{ SectionID: number }>(
+        `SELECT SectionID FROM InspectionSections WHERE IsActive = 1`
+      )) ?? [];
+    if (activeSections.length === 0) return false;
+    const placeholders = activeSections.map(() => "?").join(", ");
+    let query = `SELECT COUNT(*) as Count FROM InspectionFields
+                 WHERE IsActive = 1 AND SectionID IN (${placeholders}) AND LOWER(TRIM(FieldKey)) = LOWER(TRIM(?))`;
+    const params: SqlValue[] = [
+      ...activeSections.map((s) => s.SectionID),
+      key.trim().toLowerCase(),
+    ];
+    if (excludeId !== undefined) {
       query += ` AND FieldID != ?`;
       params.push(excludeId);
     }
