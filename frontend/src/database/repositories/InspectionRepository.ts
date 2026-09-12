@@ -317,9 +317,10 @@ static async getInspectionValues(
   const rows = await db.getAllAsync<{
     FieldKey: string;
     FieldValue: string;
+    IsActive: number;
   }>(
     `
-    SELECT f.FieldKey, v.FieldValue
+    SELECT f.FieldKey, v.FieldValue, f.IsActive
     FROM InspectionValues v
     JOIN InspectionFields f ON v.FieldID = f.FieldID
     WHERE v.InspectionID = ?
@@ -330,7 +331,36 @@ static async getInspectionValues(
   const values: Record<string, string> = {};
 
   rows.forEach((row) => {
+    if (row.IsActive !== 1) {
+      return;
+    }
     values[row.FieldKey] = row.FieldValue ?? "";
+  });
+
+  return values;
+}
+
+static async getInspectionValuesById(
+  inspectionId: number
+): Promise<Map<number, string>> {
+  const db = await getDatabase();
+
+  const rows = await db.getAllAsync<{
+    FieldID: number;
+    FieldValue: string;
+  }>(
+    `
+    SELECT FieldID, FieldValue
+    FROM InspectionValues
+    WHERE InspectionID = ?
+    `,
+    [inspectionId]
+  );
+
+  const values = new Map<number, string>();
+
+  rows.forEach((row) => {
+    values.set(row.FieldID, row.FieldValue ?? "");
   });
 
   return values;

@@ -349,7 +349,7 @@ describe("schema.ts schema functions", () => {
       "UPDATE InspectionSections SET IsActive = 0, IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionKey = 'categorization'"
     );
     expect(mockRunAsync).toHaveBeenCalledWith(
-      "UPDATE InspectionFields SET IsActive = 0, IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'"
+      "UPDATE InspectionFields SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE FieldKey = 'pole_category'"
     );
     expect(mockRunAsync).toHaveBeenCalledWith(
       expect.stringContaining("UPDATE FieldOptions SET IsActive = 0")

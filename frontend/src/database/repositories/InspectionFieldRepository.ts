@@ -23,9 +23,10 @@ export default class InspectionFieldRepository {
     const rows = await db.getAllAsync<{
       FieldKey: string;
       FieldValue: string;
+      IsActive: number;
     }>(
       `
-      SELECT f.FieldKey, v.FieldValue
+      SELECT f.FieldKey, v.FieldValue, f.IsActive
       FROM InspectionValues v
       JOIN InspectionFields f ON v.FieldID = f.FieldID
       WHERE v.InspectionID = ?
@@ -36,6 +37,9 @@ export default class InspectionFieldRepository {
     const values: Record<string, string> = {};
 
     rows.forEach((row) => {
+      if (row.IsActive !== 1) {
+        return;
+      }
       values[row.FieldKey] = row.FieldValue ?? "";
     });
 
