@@ -64,7 +64,8 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   const everSeenNos = useRef<Set<number>>(new Set());
   const fullyResetRef = useRef(false);
   const dropdownRefs = useRef<Record<string, View | null>>({});
-  const { setDropdownOpen } = useInspectionScroll();
+  const textInputRefs = useRef<Record<string, View | null>>({});
+  const { setDropdownOpen, scrollFocusedFieldIntoView } = useInspectionScroll();
 
   useEffect(() => {
     (async () => {
@@ -411,6 +412,10 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           onFocus={() => {
             Keyboard.dismiss();
             setDropdownOpen(true);
+            const container = dropdownRefs.current[dropdownKey];
+            if (typeof scrollFocusedFieldIntoView === "function" && container) {
+              scrollFocusedFieldIntoView({ current: container });
+            }
           }}
           onChange={(dropdownValue) => {
             setDropdownOpen(false);
@@ -433,7 +438,13 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
         </Pressable>
       </View>
     ) : (
-      <View key={field.FieldDefID} style={styles.fieldHalf}>
+      <View
+        key={field.FieldDefID}
+        style={styles.fieldHalf}
+        ref={(node) => {
+          textInputRefs.current[dropdownKey] = node;
+        }}
+      >
         <TextInput
           mode="outlined"
           label={fieldLabelWithRequired(fieldLabel, field.IsRequired === 1) as string}
@@ -452,6 +463,12 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
           style={styles.input}
           dense
           editable={!locked}
+          onFocus={() => {
+            const container = textInputRefs.current[dropdownKey];
+            if (typeof scrollFocusedFieldIntoView === "function" && container) {
+              scrollFocusedFieldIntoView({ current: container });
+            }
+          }}
         />
       </View>
     );

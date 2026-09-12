@@ -90,6 +90,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const queueRef = useRef<WatermarkJob[]>([]);
   const failedJobsRef = useRef<Map<number, WatermarkJob>>(new Map());
   const processingRef = useRef(false);
+  const activeJobIdRef = useRef<number | null>(null);
   const webViewRef = useRef<WebView>(null);
   const readyRef = useRef(false);
   const readyWaitStartRef = useRef(0);
@@ -124,7 +125,15 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     return () => { clearWatchdog(); };
   }, []);
 
+  function resetIfActive(job: { photoId: number } | null | undefined): boolean {
+    if (!job || activeJobIdRef.current !== job.photoId) return false;
+    activeJobIdRef.current = null;
+    processingRef.current = false;
+    return true;
+  }
+
   function clearWatermarkState(photoId: number) {
+    const job = queueRef.current.find(j => j.photoId === photoId);
     cancelledRef.current.add(photoId);
     setWatermarkState(prev => {
       const next = { ...prev };
@@ -134,6 +143,11 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     queueRef.current = queueRef.current.filter(j => j.photoId !== photoId);
     failedJobsRef.current.delete(photoId);
     clearWatchdog();
+    if (job?.inputPath) {
+      Promise.resolve(FileSystem.deleteAsync(job.inputPath, { idempotent: true })).catch(() => {});
+    }
+    resetIfActive(job);
+    processNext();
   }
 
   function clearWatchdog() {
@@ -184,10 +198,14 @@ function persistStatus(photoId: number, status: string, expectedDbPath?: string)
 
 function handleJobFailure(job: WatermarkJob) {
     clearWatchdog();
-    if (cancelledRef.current.has(job.photoId)) return;
     if (finalizingRef.current.has(job.photoId)) return;
     const idx = queueRef.current.findIndex(j => j.photoId === job.photoId);
-    if (idx < 0) return;
+    if (idx < 0 || cancelledRef.current.has(job.photoId)) {
+      if (idx >= 0) queueRef.current.splice(idx, 1);
+      resetIfActive(job);
+      processNext();
+      return;
+    }
     if (job.retries < 1) {
       const retry = { ...job, retries: job.retries + 1 };
       queueRef.current[idx] = retry;
@@ -201,14 +219,18 @@ function handleJobFailure(job: WatermarkJob) {
     }
     if (perfRef.current) perfReport(perfRef.current, "watermark-failed");
     perfRef.current = null;
-    processingRef.current = false;
+    resetIfActive(job);
     processNext();
 }
 
   async function handleJobComplete(photoId: number) {
     clearWatchdog();
     const idx = queueRef.current.findIndex(j => j.photoId === photoId);
-    if (idx < 0) return;
+    if (idx < 0) {
+      resetIfActive({ photoId });
+      processNext();
+      return;
+    }
 
     const job = queueRef.current[idx];
     queueRef.current.splice(idx, 1);
@@ -233,7 +255,7 @@ setWatermarkState(prev => ({ ...prev, [photoId]: "completed" }));
     uiPerfStageIfProbe("timeoutWaitStart", "setTimeoutActive", `photo=${photoId}`);
     uiPerfStageIfProbe("animationStart", "animationRunning", `photo=${photoId}`);
     uiPerfStageIfProbe("interactionManagerStart", "interactionManagerUsed", `photo=${photoId}`);
-    processingRef.current = false;
+    resetIfActive(job);
     processNext();
 }
 
@@ -336,9 +358,13 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
       return;
     }
     const queued = queueRef.current.find(j => j.photoId === job.photoId);
-    if (!queued) return;
+    if (!queued) {
+      resetIfActive(job);
+      processNext();
+      return;
+    }
     queued.stage = next;
-    processingRef.current = false;
+    resetIfActive(job);
     processNext();
 }
 
@@ -353,6 +379,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
     if (finalizingRef.current.has(job.photoId)) return;
 
     processingRef.current = true;
+    activeJobIdRef.current = job.photoId;
 
     setWatermarkState(prev => ({ ...prev, [job.photoId]: "processing" }));
     persistStatus(job.photoId, "processing", job.projectDbPath);
@@ -377,6 +404,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
     readyRef.current = false;
     setWebViewReady(false);
     processingRef.current = false;
+    activeJobIdRef.current = null;
     warmupDoneRef.current = false;
     const head = queueRef.current[0];
     if (head && !cancelledRef.current.has(head.photoId) && !finalizingRef.current.has(head.photoId)) {
@@ -399,7 +427,11 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
 
 function saveAndComplete(job: WatermarkJob, base64: string) {
     return (async () => {
-      if (cancelledRef.current.has(job.photoId)) return;
+      if (cancelledRef.current.has(job.photoId)) {
+        resetIfActive(job);
+        processNext();
+        return;
+      }
       if (finalizingRef.current.has(job.photoId)) return;
       finalizingRef.current.add(job.photoId);
       try {
@@ -415,7 +447,7 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
           queueRef.current = queueRef.current.filter(j => j.photoId !== job.photoId);
           setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
           persistStatus(job.photoId, "captured", job.projectDbPath);
-          processingRef.current = false;
+          resetIfActive(job);
           processNext();
           return;
         }
@@ -437,6 +469,11 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
           try {
             await deletePhoto(contentUri);
           } catch {}
+          try {
+            await FileSystem.deleteAsync(job.inputPath, { idempotent: true });
+          } catch {}
+          resetIfActive(job);
+          processNext();
           return;
         }
 
@@ -451,7 +488,7 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
           queueRef.current = queueRef.current.filter(j => j.photoId !== job.photoId);
           setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
           persistStatus(job.photoId, "captured", job.projectDbPath);
-          processingRef.current = false;
+          resetIfActive(job);
           processNext();
           return;
         }
@@ -580,6 +617,8 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
               try {
                 await FileSystem.deleteAsync(outputPath, { idempotent: true });
               } catch {}
+              resetIfActive(job);
+              processNext();
               return;
             }
             if (perfRef.current) perfStage(perfRef.current, "nativeComposite");

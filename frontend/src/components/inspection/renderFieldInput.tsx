@@ -50,12 +50,26 @@ export const FieldInput: React.FC<FieldInputProps> = ({
   const isCameraCount = fieldKey === "camera_count";
   const isSwitchCount = fieldKey === "switch_count";
   const dropdownViewRef = useRef<View>(null);
-  const { setDropdownOpen } = useInspectionScroll();
+  const textInputRef = useRef<View>(null);
+  const { setDropdownOpen, scrollFocusedFieldIntoView } = useInspectionScroll();
+
+  const handleTextInputFocus = () => {
+    // Keep the focused input visible above the soft keyboard. On Android the
+    // window shrinks (adjustResize) without re-scrolling the form, so the
+    // input must be measured and moved into the visible keyboard-adjusted
+    // window area explicitly.
+    if (typeof scrollFocusedFieldIntoView === "function") {
+      scrollFocusedFieldIntoView(textInputRef);
+    }
+  };
 
   const handleDropdownFocus = () => {
     Keyboard.dismiss();
     setDropdownFocus(true);
     setDropdownOpen(true);
+    if (typeof scrollFocusedFieldIntoView === "function") {
+      scrollFocusedFieldIntoView(dropdownViewRef);
+    }
   };
 
   function updateNumber(text: string) {
@@ -71,120 +85,138 @@ export const FieldInput: React.FC<FieldInputProps> = ({
 
     case "TEXT":
       return (
-        <TextInput
-          mode="outlined"
-          label={displayLabel}
-          value={value}
-          editable={editable}
-          placeholder={placeholder}
-          error={!!error}
-          onChangeText={onChange}
-          style={styles.input}
-          outlineStyle={styles.outline}
-          contentStyle={styles.content}
-          dense
-        />
+        <View ref={textInputRef}>
+          <TextInput
+            mode="outlined"
+            label={displayLabel}
+            value={value}
+            editable={editable}
+            placeholder={placeholder}
+            error={!!error}
+            onChangeText={onChange}
+            style={styles.input}
+            outlineStyle={styles.outline}
+            contentStyle={styles.content}
+            onFocus={handleTextInputFocus}
+            dense
+          />
+        </View>
       );
 
     case "NUMBER":
       return (
-        <TextInput
-          mode="outlined"
-          label={displayLabel}
-          value={value}
-          editable={editable}
-          placeholder={placeholder}
-          keyboardType="decimal-pad"
-          error={!!error}
-          onChangeText={updateNumber}
-          style={styles.input}
-          outlineStyle={styles.outline}
-          contentStyle={styles.content}
-          dense
-        />
+        <View ref={textInputRef}>
+          <TextInput
+            mode="outlined"
+            label={displayLabel}
+            value={value}
+            editable={editable}
+            placeholder={placeholder}
+            keyboardType="decimal-pad"
+            error={!!error}
+            onChangeText={updateNumber}
+            style={styles.input}
+            outlineStyle={styles.outline}
+            contentStyle={styles.content}
+            onFocus={handleTextInputFocus}
+            dense
+          />
+        </View>
       );
 
     case "MULTILINE":
       return (
-        <TextInput
-          mode="outlined"
-          label={displayLabel}
-          value={value}
-          editable={editable}
-          placeholder={placeholder}
-          multiline
-          numberOfLines={4}
-          error={!!error}
-          onChangeText={onChange}
-          style={styles.input}
-          outlineStyle={styles.outline}
-        />
+        <View ref={textInputRef}>
+          <TextInput
+            mode="outlined"
+            label={displayLabel}
+            value={value}
+            editable={editable}
+            placeholder={placeholder}
+            multiline
+            numberOfLines={4}
+            error={!!error}
+            onChangeText={onChange}
+            style={styles.input}
+            outlineStyle={styles.outline}
+            onFocus={handleTextInputFocus}
+          />
+        </View>
       );
 
     case "DATE_AUTO":
       return (
-        <TextInput
-          mode="outlined"
-          label={displayLabel}
-          value={value}
-          editable={editable}
-          placeholder="DD-MM-YYYY"
-          error={!!error}
-          right={
-            <TextInput.Icon
-              icon="calendar-check"
-            />
-          }
-          onChangeText={onChange}
-          style={styles.input}
-          outlineStyle={styles.outline}
-          contentStyle={styles.content}
-          dense
-        />
+        <View ref={textInputRef}>
+          <TextInput
+            mode="outlined"
+            label={displayLabel}
+            value={value}
+            editable={editable}
+            placeholder="DD-MM-YYYY"
+            error={!!error}
+            right={
+              <TextInput.Icon
+                icon="calendar-check"
+              />
+            }
+            onChangeText={onChange}
+            style={styles.input}
+            outlineStyle={styles.outline}
+            contentStyle={styles.content}
+            onFocus={handleTextInputFocus}
+            dense
+          />
+        </View>
       );
 
     case "DATE":
       return (
-        <TextInput
-          mode="outlined"
-          label={displayLabel}
-          value={value}
-          editable={editable}
-          placeholder="DD-MM-YYYY"
-          error={!!error}
-          right={
-            <TextInput.Icon
-              icon="calendar"
-            />
-          }
-          onChangeText={onChange}
-          style={styles.input}
-          outlineStyle={styles.outline}
-          contentStyle={styles.content}
-          dense
-        />
+        <View ref={textInputRef}>
+          <TextInput
+            mode="outlined"
+            label={displayLabel}
+            value={value}
+            editable={editable}
+            placeholder="DD-MM-YYYY"
+            error={!!error}
+            right={
+              <TextInput.Icon
+                icon="calendar"
+              />
+            }
+            onChangeText={onChange}
+            style={styles.input}
+            outlineStyle={styles.outline}
+            contentStyle={styles.content}
+            onFocus={handleTextInputFocus}
+            dense
+          />
+        </View>
       );
 
     case "TIME":
       return (
-        <TextInput
-          mode="outlined"
-          label={displayLabel}
-          value={value}
-          editable={editable}
-          placeholder="HH:MM"
-          error={!!error}
-          right={
-            <TextInput.Icon
-              icon="clock-outline"
-            />
-          }
-          onChangeText={onChange}
-          style={styles.input}
-          outlineStyle={styles.outline}
-          contentStyle={styles.content}
-          dense
-        />
+        <View ref={textInputRef}>
+          <TextInput
+            mode="outlined"
+            label={displayLabel}
+            value={value}
+            editable={editable}
+            placeholder="HH:MM"
+            error={!!error}
+            right={
+              <TextInput.Icon
+                icon="clock-outline"
+              />
+            }
+            onChangeText={onChange}
+            style={styles.input}
+            outlineStyle={styles.outline}
+            contentStyle={styles.content}
+            onFocus={handleTextInputFocus}
+            dense
+          />
+        </View>
       );
 
     case "DROPDOWN":
@@ -282,19 +314,22 @@ export const FieldInput: React.FC<FieldInputProps> = ({
 
     default:
       return (
-        <TextInput
-          mode="outlined"
-          label={displayLabel}
-          value={value}
-          editable={editable}
-          placeholder={placeholder}
-          error={!!error}
-          onChangeText={onChange}
-          style={styles.input}
-          outlineStyle={styles.outline}
-          contentStyle={styles.content}
-          dense
-        />
+        <View ref={textInputRef}>
+          <TextInput
+            mode="outlined"
+            label={displayLabel}
+            value={value}
+            editable={editable}
+            placeholder={placeholder}
+            error={!!error}
+            onChangeText={onChange}
+            style={styles.input}
+            outlineStyle={styles.outline}
+            contentStyle={styles.content}
+            onFocus={handleTextInputFocus}
+            dense
+          />
+        </View>
       );
   }
 }

@@ -26,14 +26,21 @@ jest.mock("react-native-element-dropdown", () => ({
   },
 }));
 
+let mockScrollFocusedFieldIntoView: jest.Mock;
+
 jest.mock("@/src/context/InspectionScrollContext", () => ({
   useInspectionScroll: () => ({
     scrollViewRef: { current: null },
     scrollOffsetRef: { current: 0 },
     setDropdownOpen: jest.fn(),
+    scrollFocusedFieldIntoView: mockScrollFocusedFieldIntoView,
   }),
   InspectionScrollProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
+
+beforeEach(() => {
+  mockScrollFocusedFieldIntoView = jest.fn();
+});
 
 function renderNumber(params: Partial<React.ComponentProps<typeof FieldInput>> = {}) {
   const onChange = jest.fn();
@@ -246,5 +253,50 @@ describe("required field indicator", () => {
     const plainText = (children as unknown[])[0];
     expect(typeof plainText).toBe("string");
     expect(plainText).toBe("Model");
+  });
+});
+
+describe("keyboard scroll wiring on focus", () => {
+  it("scrolls the wrapped input into view when a TEXT input is focused", () => {
+    const { tree } = renderNumber({ fieldType: "text", label: "Remarks" });
+    const input = findInput(tree) as unknown as { props: { onFocus?: () => void } };
+    act(() => {
+      input.props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledTimes(1);
+    const arg = mockScrollFocusedFieldIntoView.mock.calls[0][0];
+    expect(arg).toBeTruthy();
+    expect(arg.current).not.toBeNull();
+  });
+
+  it("scrolls the wrapped input into view when a NUMBER input is focused", () => {
+    const { tree } = renderNumber();
+    const input = findInput(tree) as unknown as { props: { onFocus?: () => void } };
+    act(() => {
+      input.props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledWith(expect.anything());
+    expect(mockScrollFocusedFieldIntoView.mock.calls[0][0]).toBeTruthy();
+  });
+
+  it("scrolls the wrapped input into view when a MULTILINE input is focused", () => {
+    const { tree } = renderNumber({ fieldType: "multiline", label: "Notes" });
+    const input = findInput(tree) as unknown as { props: { onFocus?: () => void } };
+    act(() => {
+      input.props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls the dropdown wrapper into view when a DROPDOWN is focused", () => {
+    const { tree } = renderDropdown();
+    const dd = findDropdown(tree);
+    act(() => {
+      dd.props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledTimes(1);
+    const arg = mockScrollFocusedFieldIntoView.mock.calls[0][0];
+    expect(arg).toMatchObject({ current: expect.anything() });
+    expect(arg.current).not.toBeNull();
   });
 });

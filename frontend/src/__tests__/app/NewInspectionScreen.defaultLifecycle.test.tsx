@@ -163,7 +163,10 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
     scrollViewRef: { current: null },
     scrollOffsetRef: { current: 0 },
     setDropdownOpen: jest.fn(),
+    scrollFocusedFieldIntoView: jest.fn(),
   }),
+  keyboardBottomInset: () => 0,
+  FOCUS_PADDING: 20,
 }));
 
 jest.mock("@/src/context/PhotoStatesContext", () => ({
@@ -717,7 +720,7 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     const scrollViews = tree!.root.findAll(
       (n) => (n as { type?: unknown }).type === ScrollView
     );
-    expect(scrollViews.length).toBeGreaterThan(0);
+    expect(scrollViews.length).toBe(1);
     // The top-level inspection form ScrollView must let the OS move content
     // above the keyboard when a field is focused.
     expect(scrollViews[0].props.automaticallyAdjustKeyboardInsets).toBe(true);

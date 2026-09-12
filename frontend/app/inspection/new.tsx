@@ -26,7 +26,12 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
 import { usePhotosProcessing } from "@/src/context/PhotoStatesContext";
-import { InspectionScrollProvider } from "@/src/context/InspectionScrollContext";
+import {
+  InspectionScrollProvider,
+  useInspectionScroll,
+  keyboardBottomInset,
+  FOCUS_PADDING,
+} from "@/src/context/InspectionScrollContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
 import SectionRenderer from "@/src/components/inspection/SectionRenderer";
 import GeneralInformation, { type GeneralInformationHandle } from "@/src/components/inspection/GeneralInformation";
@@ -61,6 +66,23 @@ import InspectionSectionProgress from "@/src/components/inspection/InspectionSec
 import OverallProgressCard from "@/src/components/inspection/OverallProgressCard";
 import type { InspectionSectionProgress as InspectionSectionProgressData } from "@/src/database/repositories/InspectionProgressService";
 
+// On Android the window shrinks when the keyboard opens (adjustResize) but the
+// ScrollView is NOT given any extra bottom scroll height automatically. A field
+// sitting near the bottom of the content (e.g. Remarks) then cannot be scrolled
+// high enough above the keyboard because the scroll hits the content's max
+// offset. This wrapper adds a bottom inset that exists only while the keyboard
+// is visible, giving the ScrollView the room to move the focused field fully
+// above the keyboard without leaving empty space when the keyboard is closed.
+function ScrollContents({ children }: { children: React.ReactNode }) {
+  const { keyboardHeight } = useInspectionScroll();
+  const bottomInset = keyboardBottomInset(keyboardHeight ?? 0, FOCUS_PADDING);
+  return (
+    <View style={bottomInset > 0 ? { paddingBottom: bottomInset } : undefined}>
+      {children}
+    </View>
+  );
+}
+
 export default function NewInspectionScreen({
   title = "New Inspection",
 }: {
@@ -73,6 +95,7 @@ export default function NewInspectionScreen({
   const scrollOffsetRef = useRef(0);
   const scrollViewTopRef = useRef(0);
   const scrollViewHeightRef = useRef(0);
+  const scrollContentHeightRef = useRef(0);
   const sectionRefs = useRef<Map<number, View>>(new Map());
   const expandedSectionsRef = useRef<number[]>([1]);
   const sectionScrollCoordinatorRef = useRef<SectionScrollCoordinator | null>(null);
@@ -653,7 +676,14 @@ return (
     <Appbar.BackAction onPress={handleBack} />
     <Appbar.Content title={title} />
   </Appbar.Header>
-  <InspectionScrollProvider scrollViewRef={scrollViewRef} scrollOffsetRef={scrollOffsetRef} setDropdownOpen={setDropdownOpen}>
+  <InspectionScrollProvider
+    scrollViewRef={scrollViewRef}
+    scrollOffsetRef={scrollOffsetRef}
+    scrollViewTopRef={scrollViewTopRef}
+    scrollViewHeightRef={scrollViewHeightRef}
+    scrollContentHeightRef={scrollContentHeightRef}
+    setDropdownOpen={setDropdownOpen}
+  >
     <ScrollView
       ref={scrollViewRef}
       contentContainerStyle={styles.content}
@@ -663,6 +693,9 @@ return (
       onLayout={(event) => {
         scrollViewTopRef.current = event.nativeEvent.layout.y;
         scrollViewHeightRef.current = event.nativeEvent.layout.height;
+      }}
+      onContentSizeChange={(width, height) => {
+        scrollContentHeightRef.current = height;
       }}
       onScroll={(event) => {
         const offset = event.nativeEvent.contentOffset.y;
@@ -680,6 +713,7 @@ return (
       }}
       scrollEventThrottle={16}
     >
+      <ScrollContents>
       <Text variant="headlineMedium" style={styles.title}>
         {title}
       </Text>
@@ -779,6 +813,7 @@ return (
   </Button>
 
 </View>
+      </ScrollContents>
       </ScrollView>
     </InspectionScrollProvider>
   </SafeAreaView>

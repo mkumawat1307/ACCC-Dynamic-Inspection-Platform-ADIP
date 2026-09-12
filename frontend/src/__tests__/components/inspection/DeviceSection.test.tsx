@@ -107,12 +107,14 @@ jest.mock("react-native-element-dropdown", () => ({
 
 const mockScrollTo = jest.fn();
 const mockScrollRef = { current: { scrollTo: mockScrollTo } };
+let mockScrollFocusedFieldIntoView: jest.Mock;
 
 jest.mock("@/src/context/InspectionScrollContext", () => ({
   useInspectionScroll: () => ({
     scrollViewRef: mockScrollRef,
     scrollOffsetRef: { current: 0 },
     setDropdownOpen: jest.fn(),
+    scrollFocusedFieldIntoView: mockScrollFocusedFieldIntoView,
   }),
   InspectionScrollProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -1036,5 +1038,101 @@ describe("DeviceSection default expansion state (CHANGE 1 regression)", () => {
       deviceToggle(tree, 2).props.onPress();
     });
     expect(voltageInputs(tree)).toHaveLength(2);
+  });
+});
+
+describe("DeviceSection keyboard scroll wiring", () => {
+  const multilineField = {
+    FieldDefID: 5,
+    TemplateID: 1,
+    DeviceType: "Camera",
+    FieldName: "Remarks",
+    Label: "Remarks",
+    FieldType: "multiline",
+    IsRequired: 0,
+    DisplayOrder: 5,
+    IsActive: 1,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockScrollFocusedFieldIntoView = jest.fn();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  async function renderDeviceFields(fields: unknown[]) {
+    fieldDefsRepo.getByDeviceType.mockResolvedValue(fields as never);
+    optionsRepo.getDropdownData.mockResolvedValue([
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
+    ]);
+    recordsRepo.getByInspectionAll.mockResolvedValue([mockRecord]);
+    recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
+    recordsRepo.cancelPendingSaves.mockImplementation(() => undefined);
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={1} />
+      );
+    });
+    return tree;
+  }
+
+  function textInputWithLabel(tree: ReturnType<typeof TestRenderer.create>, label: string) {
+    return tree.root.findAll((n) => {
+      if ((n as { type?: unknown }).type !== "TextInput") return false;
+      return (n.props as { label?: string }).label === label;
+    })[0] as unknown as {
+      props: { onFocus?: () => void };
+    };
+  }
+
+  it("scrolls a text field wrapper into view on focus", async () => {
+    const tree = await renderDeviceFields([textField]);
+    act(() => {
+      textInputWithLabel(tree, "Serial No").props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledTimes(1);
+    const arg = mockScrollFocusedFieldIntoView.mock.calls[0][0];
+    expect(arg).toBeTruthy();
+    expect(arg.current).not.toBeNull();
+  });
+
+  it("scrolls a number field wrapper into view on focus", async () => {
+    const tree = await renderDeviceFields([numberField]);
+    act(() => {
+      textInputWithLabel(tree, "Voltage").props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledTimes(1);
+    const arg = mockScrollFocusedFieldIntoView.mock.calls[0][0];
+    expect(arg.current).not.toBeNull();
+  });
+
+  it("scrolls a multiline Remarks field wrapper into view on focus", async () => {
+    const tree = await renderDeviceFields([multilineField]);
+    act(() => {
+      textInputWithLabel(tree, "Remarks").props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledTimes(1);
+    const arg = mockScrollFocusedFieldIntoView.mock.calls[0][0];
+    expect(arg.current).not.toBeNull();
+  });
+
+  it("keeps the dropdown focus-scroll behavior", async () => {
+    const tree = await renderDeviceFields([dropdownField]);
+    const dropdowns = tree.root.findAll((n) => (n as { type?: unknown }).type === "Dropdown");
+    expect(dropdowns.length).toBe(1);
+    act(() => {
+      (dropdowns[0] as unknown as { props: { onFocus?: () => void } }).props.onFocus?.();
+    });
+    expect(mockScrollFocusedFieldIntoView).toHaveBeenCalledTimes(1);
+    const arg = mockScrollFocusedFieldIntoView.mock.calls[0][0];
+    expect(arg).toMatchObject({ current: expect.anything() });
+    expect(arg.current).not.toBeNull();
   });
 });

@@ -1759,3 +1759,387 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
     unmount();
   });
 });
+
+describe("useWatermarkProcessor cancellation queue recovery", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it("resets processing after a photo is discarded mid-save and still processes the next queued photo", async () => {
+    let resolveWrite: (v: { contentUri: string; fileName: string }) => void = () => {};
+    (writePhotoUnique as jest.Mock).mockImplementation(
+      () => new Promise<{ contentUri: string; fileName: string }>((res) => {
+        resolveWrite = res;
+      })
+    );
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    expect(result.current.watermarkState[1]).toBe("processing");
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(writePhotoUnique).toHaveBeenCalledTimes(1);
+
+    TestRenderer.act(() => {
+      result.current.clearWatermarkState(1);
+    });
+    expect(result.current.watermarkState[1]).toBeUndefined();
+
+    TestRenderer.act(() => {
+      resolveWrite({ contentUri: "content://media/x/photo.jpg", fileName: "photo.jpg" });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(deletePhoto).toHaveBeenCalledWith("content://media/x/photo.jpg");
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith("file:///tmp/t.jpg", { idempotent: true });
+    expect(PhotoRepository.updateFinalPath).not.toHaveBeenCalled();
+
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/x/u.jpg",
+      fileName: "u.jpg",
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(2, "file:///tmp/u.jpg", "u.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const nextScript = injectJavaScript.mock.calls[injectJavaScript.mock.calls.length - 1][0] as string;
+    expect(nextScript).toContain('"photoId":2');
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 2, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(result.current.watermarkState[2]).toBe("completed");
+    expect(result.current.watermarkState[1]).toBeUndefined();
+    unmount();
+  });
+
+  it("frees the queue immediately when the active pre-payload photo is discarded", async () => {
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/x/u.jpg",
+      fileName: "u.jpg",
+    });
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    expect(result.current.watermarkState[1]).toBe("processing");
+
+    TestRenderer.act(() => {
+      result.current.clearWatermarkState(1);
+    });
+    expect(result.current.watermarkState[1]).toBeUndefined();
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(2, "file:///tmp/u.jpg", "u.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(2);
+    const nextScript = injectJavaScript.mock.calls[1][0] as string;
+    expect(nextScript).toContain('"photoId":2');
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 2, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(result.current.watermarkState[2]).toBe("completed");
+    expect(result.current.watermarkState[1]).toBeUndefined();
+    unmount();
+  });
+
+  it("keeps the saving photo flowing when a different queued (pending) photo is discarded", async () => {
+    let resolveWrite: (v: { contentUri: string; fileName: string }) => void = () => {};
+    (writePhotoUnique as jest.Mock).mockImplementation(
+      () => new Promise<{ contentUri: string; fileName: string }>((res) => {
+        resolveWrite = res;
+      })
+    );
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(writePhotoUnique).toHaveBeenCalledTimes(1);
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(2, "file:///tmp/u.jpg", "u.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.clearWatermarkState(2);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(result.current.watermarkState[2]).toBeUndefined();
+
+    TestRenderer.act(() => {
+      resolveWrite({ contentUri: "content://media/x/photo.jpg", fileName: "photo.jpg" });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+    expect(result.current.watermarkState[1]).toBe("completed");
+    expect(PhotoRepository.updateFinalPath).toHaveBeenCalledWith(
+      1,
+      "photo.jpg",
+      "content://media/x/photo.jpg",
+      expect.stringContaining("New Delhi_Project Alpha")
+    );
+
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/x/v.jpg",
+      fileName: "v.jpg",
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(3, "file:///tmp/v.jpg", "v.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(2);
+    const nextScript = injectJavaScript.mock.calls[1][0] as string;
+    expect(nextScript).toContain('"photoId":3');
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 3, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(result.current.watermarkState[3]).toBe("completed");
+    unmount();
+  });
+
+  it("ignores a discarded photo's late renderer payload so it cannot corrupt the newer active job", async () => {
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/x/u.jpg",
+      fileName: "u.jpg",
+    });
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    expect(result.current.watermarkState[1]).toBe("processing");
+
+    TestRenderer.act(() => {
+      result.current.clearWatermarkState(1);
+    });
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(2, "file:///tmp/u.jpg", "u.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(2);
+    expect(result.current.watermarkState[2]).toBe("processing");
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, base64: "STALE" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    expect(writePhotoUnique).not.toHaveBeenCalled();
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 2, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await TestRenderer.act(async () => {
+      await new Promise(r => setTimeout(r, 150));
+    });
+
+    expect(result.current.watermarkState[2]).toBe("completed");
+    expect(result.current.watermarkState[1]).toBeUndefined();
+    unmount();
+  });
+
+  it("clears the stage watchdog when the active photo is discarded and later queued photos still process", async () => {
+    jest.useFakeTimers();
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/x/u.jpg",
+      fileName: "u.jpg",
+    });
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+
+    TestRenderer.act(() => {
+      result.current.clearWatermarkState(1);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(8000);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(8000);
+    });
+    expect(result.current.watermarkState[1]).toBeUndefined();
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(2, "file:///tmp/u.jpg", "u.jpg", ["line"]);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(2);
+    const nextScript = injectJavaScript.mock.calls[1][0] as string;
+    expect(nextScript).toContain('"photoId":2');
+
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 2, base64: "BASE64DATA" }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(150);
+    });
+
+    expect(result.current.watermarkState[2]).toBe("completed");
+    unmount();
+  });
+});
