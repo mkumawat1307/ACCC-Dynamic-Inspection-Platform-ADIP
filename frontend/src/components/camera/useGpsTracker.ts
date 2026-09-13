@@ -40,10 +40,10 @@ function toFix(loc: LocationLike): GpsFix {
 }
 
 function isAcceptableFix(loc: LocationLike): boolean {
-  return (
-    loc.coords.accuracy != null &&
-    loc.coords.accuracy <= MAX_GPS_ACCURACY_M
-  );
+  // A fix is only acceptable for capture if it is BOTH accurate and fresh.
+  // Accuracy alone is not enough — a one-shot result that resolves to a
+  // stale/cached timestamp must never be accepted as the photo's GPS snapshot.
+  return isFixUsable(toFix(loc), Date.now());
 }
 
 export function useGpsTracker() {

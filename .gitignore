@@ -3,7 +3,8 @@ node_modules/
 .npmrc
 
 # Repository-level instruction file (local-only, not tracked)
-/AGENTS.md
+AGENTS.md
+
 
 # Expo local state (not source of truth, regenerated)
 .expo/

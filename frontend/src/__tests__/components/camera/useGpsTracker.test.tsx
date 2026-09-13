@@ -15,6 +15,7 @@ import { useGpsTracker, GpsFix } from "@/src/components/camera/useGpsTracker";
 import {
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
   GPS_ONE_SHOT_TIMEOUT_COLD_MS,
+  GPS_STALE_MS,
 } from "@/src/components/camera/captureConfig";
 
 let captureGpsFn: (() => Promise<GpsFix | null>) | null = null;
@@ -252,6 +253,31 @@ describe("useGpsTracker", () => {
     expect(outcome).toBe("null");
     if (promise) await promise;
     expect(rendered(tree)).toBe("stale|10,20");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("captureGps rejects a stale-but-accurate one-shot result (freshness gate regression)", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLocation(34.05, -118.25, 12);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|34.05,-118.25");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STALE_MS + 1_000);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("stale|34.05,-118.25");
+    let outcome: string | null = null;
+    await TestRenderer.act(async () => {
+      const p = captureGpsFn!().then((f) => {
+        outcome = f ? `${f.latitude},${f.longitude}` : "null";
+        return f;
+      });
+      await flushAsync();
+      await p;
+    });
+    expect(outcome).toBe("null");
+    expect(rendered(tree)).toBe("stale|34.05,-118.25");
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 
