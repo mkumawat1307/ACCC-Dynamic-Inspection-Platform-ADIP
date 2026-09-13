@@ -59,7 +59,7 @@ import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecor
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
-import { validatePhotosForSave } from "@/src/components/inspection/photoUtils";
+import { validatePhotosForSave, extractProjectPhotoStates } from "@/src/components/inspection/photoUtils";
 import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 import useInspectionProgress from "@/src/hooks/useInspectionProgress";
 import InspectionSectionProgress from "@/src/components/inspection/InspectionSectionProgress";
@@ -243,6 +243,7 @@ export default function NewInspectionScreen({
       cancelPendingOpen();
       sectionScrollCoordinatorRef.current?.cancel();
       InspectionLiveValues.reset();
+      InspectionRepository.cancelPendingFieldValueSaves();
     };
   }, []);
 
@@ -286,8 +287,9 @@ const validateSectionsAndDevices = async (): Promise<{
 }> => {
   if (!inspectionId) return { valid: true, missingFields: [] };
 
-  // 1. Flush pending device saves (cancel timers, write latest rows) -- no timer wait
+  // 1. Flush pending device + field-value saves (cancel timers, write latest rows) -- no timer wait
   await DeviceRecordsRepository.flushPendingDeviceSaves();
+  await InspectionRepository.flushPendingFieldValueSaves();
 
   // 2. Validate sections, then devices against the flushed rows
   const sectionResult =
@@ -536,7 +538,10 @@ const handleSave = async () => {
       inspectionId
     );
 
-  const photoValidation = validatePhotosForSave(photos, getPhotoStates());
+  const photoValidation = validatePhotosForSave(
+    photos,
+    extractProjectPhotoStates(contextProject?.DBPath, getPhotoStates())
+  );
 
   if (!photoValidation.canSave) {
     const message = getPhotoBlockMessage(photoValidation.reason);
@@ -617,6 +622,10 @@ const handleCancel = () => {
         onPress: async () => {
 
           try {
+
+            // Drop pending debounced saves before the inspection row goes away,
+            // so no delayed write can resurrect data for a deleted inspection.
+            InspectionRepository.cancelPendingFieldValueSaves();
 
             // Only delete if this is a NEW inspection
             if (!routeInspectionId && inspectionId) {

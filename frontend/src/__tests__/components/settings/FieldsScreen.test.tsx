@@ -293,4 +293,62 @@ describe("FieldsScreen (Sections -> Fields)", () => {
     expect(repo.delete).toHaveBeenCalledTimes(1);
     expect(repo.hardDelete).not.toHaveBeenCalled();
   });
+
+  it("types into Field Name without deriving the key live and derives FieldKey at Save (create)", async () => {
+    (repo.create as jest.Mock).mockResolvedValue(1);
+    const tree = await renderScreen();
+    act(() => {
+      (nodeByText(tree, "Button", "Add Field")?.onPress as () => void)();
+    });
+    expect(textInputByLabel(tree, "Field Key")).toBeUndefined();
+    act(() => {
+      (textInputByLabel(tree, "Field Name *") as unknown as {
+        onChangeText: (t: string) => void;
+      }).onChangeText("Voltage AC");
+    });
+    expect(textInputByLabel(tree, "Field Name *")?.value).toBe("Voltage AC");
+    act(() => {
+      (nodeByText(tree, "Button", "Save")?.onPress as () => void)();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ FieldName: "Voltage AC", FieldKey: "voltage_ac" })
+    );
+  });
+
+  it("renaming a field preserves its original FieldKey (no live key regeneration)", async () => {
+    (repo.update as jest.Mock).mockResolvedValue(undefined);
+    const tree = await renderScreen([SAMPLE_FIELD()]);
+    const editButton = nodesByType(tree, "IconButton").find(
+      (n) => (n as TestNode).props.icon === "pencil"
+    );
+    expect(editButton).toBeDefined();
+    act(() => {
+      ((editButton as unknown as TestNode).props as { onPress: () => void }).onPress();
+    });
+    act(() => {
+      (textInputByLabel(tree, "Field Name *") as unknown as {
+        onChangeText: (t: string) => void;
+      }).onChangeText("Voltage AC");
+    });
+    expect(textInputByLabel(tree, "Field Name *")?.value).toBe("Voltage AC");
+    act(() => {
+      (nodeByText(tree, "Button", "Save")?.onPress as () => void)();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ FieldName: "Voltage AC", FieldKey: "voltage" })
+    );
+  });
 });

@@ -11,9 +11,34 @@ interface CachedAddress {
   fullAddress: string;
 }
 
+export interface AddressLookup {
+  lines: string[];
+  fullAddress: string;
+  getAddressFor(
+    latitude: number,
+    longitude: number
+  ): CachedAddress | null;
+  resolveAddress(latitude: number, longitude: number): Promise<string | null>;
+}
+
+function cacheHit(
+  cache: CachedAddress | null,
+  latitude: number,
+  longitude: number
+): CachedAddress | null {
+  if (
+    cache &&
+    haversineMeters(cache.latitude, cache.longitude, latitude, longitude) <=
+      ADDRESS_CACHE_RADIUS_M
+  ) {
+    return cache;
+  }
+  return null;
+}
+
 export function useAddressLookup(
   coords: { latitude: number; longitude: number } | null
-): { lines: string[]; fullAddress: string } {
+): AddressLookup {
   const [lines, setLines] = useState<string[]>([]);
   const [fullAddress, setFullAddress] = useState<string>("");
   const cacheRef = useRef<CachedAddress | null>(null);
@@ -25,12 +50,8 @@ export function useAddressLookup(
       return;
     }
     const { latitude, longitude } = coords;
-    const cached = cacheRef.current;
-    if (
-      cached &&
-      haversineMeters(cached.latitude, cached.longitude, latitude, longitude) <=
-        ADDRESS_CACHE_RADIUS_M
-    ) {
+    const cached = cacheHit(cacheRef.current, latitude, longitude);
+    if (cached) {
       setLines(cached.lines);
       setFullAddress(cached.fullAddress);
       return;
@@ -68,5 +89,28 @@ export function useAddressLookup(
     };
   }, [coords]);
 
-  return { lines, fullAddress };
+  const getAddressFor = (latitude: number, longitude: number): CachedAddress | null =>
+    cacheHit(cacheRef.current, latitude, longitude);
+
+  const resolveAddress = async (
+    latitude: number,
+    longitude: number
+  ): Promise<string | null> => {
+    const cached = cacheHit(cacheRef.current, latitude, longitude);
+    if (cached) return cached.fullAddress;
+    const result = await reverseGeocode(latitude, longitude);
+    if (!result) return null;
+    const addrLines = formatAddressLines(result.address);
+    if (addrLines.length === 0) return null;
+    const entry: CachedAddress = {
+      latitude,
+      longitude,
+      lines: addrLines,
+      fullAddress: result.formatted,
+    };
+    cacheRef.current = entry;
+    return entry.fullAddress;
+  };
+
+  return { lines, fullAddress, getAddressFor, resolveAddress };
 }

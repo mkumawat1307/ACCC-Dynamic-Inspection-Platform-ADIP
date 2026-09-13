@@ -3,6 +3,32 @@ import type { WatermarkDateFormat, WatermarkTimeFormat } from "@/src/utils/water
 
 export type WatermarkState = "pending" | "processing" | "completed" | "failed";
 
+export function normalizePhotoStateScope(projectDbPath?: string | null): string {
+  return (projectDbPath ?? "").replace(/^file:\/\//, "");
+}
+
+export function makePhotoStateKey(
+  projectDbPath: string | null | undefined,
+  photoId: number
+): string {
+  return `${normalizePhotoStateScope(projectDbPath)}::${photoId}`;
+}
+
+export function extractProjectPhotoStates(
+  projectDbPath: string | null | undefined,
+  allStates: Record<string, WatermarkState>
+): Record<number, WatermarkState> {
+  const prefix = `${normalizePhotoStateScope(projectDbPath)}::`;
+  const result: Record<number, WatermarkState> = {};
+  for (const [key, state] of Object.entries(allStates)) {
+    if (!key.startsWith(prefix)) continue;
+    const suffix = key.slice(prefix.length);
+    if (!/^\d+$/.test(suffix)) continue;
+    result[Number(suffix)] = state;
+  }
+  return result;
+}
+
 export function uniqueFileNameSuffix(): string {
   return Math.floor(Math.random() * 0xffffff).toString(36).padStart(6, "0");
 }

@@ -13,6 +13,7 @@ import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { InspectionEditSessionState } from "@/src/database/repositories/InspectionEditSessionState";
 import { PoleRenameService } from "@/src/database/repositories/PoleRenameService";
+import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import type { InspectionField } from "@/src/database/repositories/InspectionTypes";
 
 jest.mock("@/src/database/db");
@@ -54,6 +55,9 @@ jest.mock("@/src/database/repositories/InspectionRepository", () => ({
     saveFieldValue: jest.fn(),
     updateInspectionPoleId: jest.fn(),
     updatePoleIdDirectSave: jest.fn(),
+    scheduleFieldValueSave: jest.fn(),
+    flushPendingFieldValueSaves: jest.fn(),
+    cancelPendingFieldValueSaves: jest.fn(),
   },
 }));
 
@@ -1102,26 +1106,49 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
     expect(dialogVisible(tree)).toBe(false);
   });
 
-  it("returns duplicate and the settled save alerts + reverts when the Site ID matches another inspection", async () => {
+  it("returns duplicate, reverts on-screen and staged identity to the persisted Site ID, and never alerts or writes the duplicate (Bug 1 regression)", async () => {
     repo.getInspectionByPoleId.mockImplementation((poleId: string) =>
       poleId === "SIK101"
         ? Promise.resolve({ InspectionID: 99, PoleID: "SIK101", Status: "draft" })
         : Promise.resolve(null)
     );
     const tree = await renderWithRef();
+
+    // Simulate a stale staged value captured by an earlier settled typing save
+    // (the real updatePoleIdDirectSave stages the pole into the session, which
+    // is mocked out here — so seed the session directly).
+    InspectionEditSessionState.stagePoleId("SOKAY");
+    InspectionEditSessionState.stageFieldValue(poleField.FieldID, "SOKAY");
+
+    // Then a duplicate is typed and the user saves inside the debounce window.
     await setPoleText(tree, "SIK101");
 
     const decision = await invokeConfirm();
 
     expect(decision).toEqual({ type: "duplicate", duplicatePoleId: "SIK101" });
-
-    // The pending settled save (existing mode) then hits the same duplicate.
-    await flushSettle(tree);
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Duplicate Site ID",
-      expect.stringContaining("already exists")
-    );
     expect(setPoleId).toHaveBeenLastCalledWith("OLD");
+    // The duplicate alert is deferred to the caller (new.tsx) — never here.
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalledWith(
+      42,
+      poleField.FieldID,
+      "SIK101"
+    );
+
+    // Bug 1: the session must hold the REVERTED value. Without re-staging, the
+    // earlier staged "SOKAY" would be persisted by the next commit even though
+    // the on-screen field shows the persisted Site ID.
+    expect(InspectionEditSessionState.getStagedPoleId()).toBe("OLD");
+    expect(InspectionEditSessionState.getStagedFieldValues().get(poleField.FieldID)).toBe("OLD");
+
+    // The settle-cancelled typing timer must never fire afterwards.
+    await flushSettle(tree);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalledWith(
+      42,
+      poleField.FieldID,
+      "SIK101"
+    );
   });
 
   it("shows the rename dialog and stages the pending rename + identity on confirm", async () => {
@@ -1454,6 +1481,24 @@ describe("GeneralInformation NEW inspection save-time identity rename", () => {
     expect(mockRenameService.renamePoleId).not.toHaveBeenCalled();
   });
 
+  it("persists the latest Site ID when save happens inside the debounce window (Bug 2 regression)", async () => {
+    photoRepo.getByInspection.mockResolvedValue([]);
+    const tree = await renderNew();
+    // Type without waiting for the 500ms settled save to fire.
+    await setPoleText(tree, "P2");
+
+    const decision = await invokeConfirm();
+
+    expect(decision).toEqual({ type: "no-rename" });
+    // The settle cancelled the pending typing save, so checkIdentityBeforeSave
+    // must persist P2 itself — otherwise the database keeps the stale P1.
+    expect(repo.updatePoleIdDirectSave).toHaveBeenLastCalledWith(
+      101,
+      poleField.FieldID,
+      "P2"
+    );
+  });
+
   it("returns duplicate and reverts when the new Site ID already exists at save time", async () => {
     photoRepo.getByInspection.mockResolvedValue([makePhoto(1)]);
     repo.getInspectionByPoleId
@@ -1475,5 +1520,272 @@ describe("GeneralInformation NEW inspection save-time identity rename", () => {
       "P1"
     );
     expect(setPoleId).toHaveBeenLastCalledWith("P1");
+  });
+});
+
+describe("GeneralInformation fetchCurrentLocation — GPS button", () => {
+  const gpsField: InspectionField = {
+    FieldID: 50,
+    SectionID: 1,
+    FieldName: "GPS Coordinates",
+    FieldKey: "gps",
+    FieldType: "text",
+    Placeholder: null,
+    DefaultValue: null,
+    HelpText: null,
+    ValidationRule: null,
+    DisplayOrder: 50,
+    IsRequired: 0,
+    IsVisible: 1,
+    IsActive: 1,
+    CreatedAt: "2026-01-01T00:00:00",
+    UpdatedAt: "2026-01-01T00:00:00",
+  };
+
+  const locationField: InspectionField = {
+    FieldID: 51,
+    SectionID: 1,
+    FieldName: "Location",
+    FieldKey: "location",
+    FieldType: "text",
+    Placeholder: null,
+    DefaultValue: null,
+    HelpText: null,
+    ValidationRule: null,
+    DisplayOrder: 51,
+    IsRequired: 0,
+    IsVisible: 1,
+    IsActive: 1,
+    CreatedAt: "2026-01-01T00:00:00",
+    UpdatedAt: "2026-01-01T00:00:00",
+  };
+
+  const getCurrentLocationMock =
+    jest.requireMock("@/src/utils/location").getCurrentLocation as jest.Mock;
+  const reverseGeocodeMock = jest.requireMock("@/src/utils/geo").reverseGeocode as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Alert, "alert");
+    setPoleId.mockReset();
+    setInspectionId.mockReset();
+    getPhotoStates.mockReset();
+    getPhotoStates.mockReturnValue({});
+    InspectionLiveValues.reset();
+    mockContext({ inspectionId: 42 });
+    repo.getFieldsByKey.mockResolvedValue([
+      poleField,
+      gpsField,
+      locationField,
+    ]);
+    repo.getInspectionValues.mockResolvedValue({});
+    repo.getInspectionPoleId.mockResolvedValue("OLD");
+    repo.getInspectionByPoleId.mockResolvedValue(null);
+    repo.saveFieldValue.mockResolvedValue(undefined);
+    repo.updateInspectionPoleId.mockResolvedValue(undefined);
+    repo.updatePoleIdDirectSave.mockResolvedValue(undefined);
+    photoRepo.getByInspection.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    InspectionLiveValues.reset();
+    jest.restoreAllMocks();
+  });
+
+  it("saves gps coordinates and reverse-geocoded address on success", async () => {
+    getCurrentLocationMock.mockResolvedValue({
+      latitude: 34.05,
+      longitude: -118.25,
+    });
+    reverseGeocodeMock.mockResolvedValue({ formatted: "123 Main St" });
+    const tree = await renderComponent();
+
+    await pressButton(tree, "Get Current Location");
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(repo.saveFieldValue).toHaveBeenCalledWith(
+      42,
+      gpsField.FieldID,
+      "34.050000, -118.250000"
+    );
+    expect(repo.saveFieldValue).toHaveBeenCalledWith(
+      42,
+      locationField.FieldID,
+      "123 Main St"
+    );
+    expect(getCurrentLocationMock).toHaveBeenCalledTimes(1);
+    expect(reverseGeocodeMock).toHaveBeenCalledWith(34.05, -118.25);
+    expect(InspectionLiveValues.getLiveFieldValues()?.get(gpsField.FieldID)).toBe(
+      "34.050000, -118.250000"
+    );
+    expect(InspectionLiveValues.getLiveFieldValues()?.get(locationField.FieldID)).toBe(
+      "123 Main St"
+    );
+  });
+
+  it("does not save the address field when reverse geocoding returns no formatted address", async () => {
+    getCurrentLocationMock.mockResolvedValue({
+      latitude: 34.05,
+      longitude: -118.25,
+    });
+    reverseGeocodeMock.mockResolvedValue({ formatted: "" });
+    const tree = await renderComponent();
+
+    await pressButton(tree, "Get Current Location");
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(repo.saveFieldValue).toHaveBeenCalledWith(
+      42,
+      gpsField.FieldID,
+      "34.050000, -118.250000"
+    );
+    expect(repo.saveFieldValue).not.toHaveBeenCalledWith(
+      42,
+      locationField.FieldID,
+      expect.anything()
+    );
+  });
+
+  it("does nothing when no location fix is available", async () => {
+    getCurrentLocationMock.mockResolvedValue(null);
+    const tree = await renderComponent();
+
+    await pressButton(tree, "Get Current Location");
+
+    expect(reverseGeocodeMock).not.toHaveBeenCalled();
+    expect(repo.saveFieldValue).not.toHaveBeenCalled();
+    expect(InspectionLiveValues.getLiveFieldValues()).toBeUndefined();
+  });
+
+  it("does nothing when reverse geocoding throws (gps saved, address skipped)", async () => {
+    getCurrentLocationMock.mockResolvedValue({
+      latitude: 34.05,
+      longitude: -118.25,
+    });
+    reverseGeocodeMock.mockRejectedValue(new Error("network"));
+    const tree = await renderComponent();
+
+    await pressButton(tree, "Get Current Location");
+    await act(async () => {
+      await flushPromises();
+    });
+
+    expect(repo.saveFieldValue).toHaveBeenCalledWith(
+      42,
+      gpsField.FieldID,
+      "34.050000, -118.250000"
+    );
+    expect(repo.saveFieldValue).not.toHaveBeenCalledWith(
+      42,
+      locationField.FieldID,
+      expect.anything()
+    );
+  });
+
+  it("cancels an in-flight fetch when the component unmounts (stale seq guard)", async () => {
+    let resolveLocation!: (value: { latitude: number; longitude: number }) => void;
+    getCurrentLocationMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLocation = resolve;
+      })
+    );
+    const tree = await renderComponent();
+
+    await pressButton(tree, "Get Current Location");
+    await act(async () => {
+      tree.unmount();
+    });
+    await act(async () => {
+      resolveLocation({ latitude: 34.05, longitude: -118.25 });
+      await flushPromises();
+    });
+
+    expect(reverseGeocodeMock).not.toHaveBeenCalled();
+    expect(repo.saveFieldValue).not.toHaveBeenCalled();
+    expect(InspectionLiveValues.getLiveFieldValues()).toBeUndefined();
+  });
+});
+
+describe("GeneralInformation checking indicator lifecycle", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(Alert, "alert");
+    setPoleId.mockReset();
+    setInspectionId.mockReset();
+    getPhotoStates.mockReset();
+    getPhotoStates.mockReturnValue({});
+    mockContext({ inspectionId: null });
+    repo.getFieldsByKey.mockResolvedValue([poleField]);
+    repo.getInspectionValues.mockResolvedValue({});
+    repo.getInspectionPoleId.mockResolvedValue("");
+    repo.getInspectionByPoleId.mockResolvedValue(null);
+    repo.saveFieldValue.mockResolvedValue(undefined);
+    repo.updateInspectionPoleId.mockResolvedValue(undefined);
+    repo.updatePoleIdDirectSave.mockResolvedValue(undefined);
+    photoRepo.getByInspection.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("hides the checking indicator when an inspection switch bumps the version mid-check (must not orphan the indicator)", async () => {
+    let resolveFirst!: (row: { InspectionID: number; PoleID: string; Status: string } | null) => void;
+    repo.getInspectionByPoleId.mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveFirst = res;
+        })
+    );
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    tree = await renderComponent();
+
+    // First settled check for "SIK101" parks on the duplicate query.
+    await act(async () => {
+      await (tree.root.findAll((n) => (n as { type?: unknown }).type === FieldRenderer)[0]
+        .props as { onChange: (t: string) => Promise<void> }).onChange("SIK101");
+      await new Promise((resolve) => setTimeout(resolve, 620));
+    });
+    expect(collectStrings(tree.root)).toContain("Checking SITE ID...");
+
+    // Mirrors new.tsx adopting a lazy draft mid-check: inspectionId changes via
+    // context, which tears down the [inspectionId] effect (version bump).
+    await act(async () => {
+      mockContext({ inspectionId: 101 });
+      tree.update(<GeneralInformation existing={false} />);
+      await flushPromises();
+    });
+
+    // The parked check resolves AFTER the switch. It must not leave the
+    // indicator stuck — the check is stale and must not control the UI.
+    await act(async () => {
+      resolveFirst(null);
+      await flushPromises();
+      await new Promise((resolve) => setTimeout(resolve, 620));
+    });
+
+    expect(collectStrings(tree.root)).not.toContain("Checking SITE ID...");
+  });
+
+  it("hides the checking indicator when the new-inspection duplicate check completes (no draft created)", async () => {
+    repo.getInspectionByPoleId.mockResolvedValue({
+      InspectionID: 99,
+      PoleID: "ABC123",
+      Status: "draft",
+    });
+    const tree = await renderComponent();
+
+    await changePoleId(tree, "ABC123");
+
+    const duplicateCall = (Alert.alert as jest.Mock).mock.calls.find(
+      ([title]: string[]) => title === "Inspection Already Exists"
+    );
+    expect(duplicateCall).toBeDefined();
+    expect(String(duplicateCall[1])).toContain("ABC123");
+    expect(collectStrings(tree.root)).not.toContain("Checking SITE ID...");
   });
 });

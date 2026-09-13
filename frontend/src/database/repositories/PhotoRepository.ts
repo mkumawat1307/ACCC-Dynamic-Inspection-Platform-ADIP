@@ -1,5 +1,5 @@
 //frontend\src\database\repositories\PhotoRepository.ts
-import { getDatabase } from "../db";
+import { getActiveProjectPath, getDatabase } from "../db";
 import { Photo } from "@/src/models/Photo";
 
 export default class PhotoRepository {
@@ -41,7 +41,16 @@ export default class PhotoRepository {
     photo: Photo
   ): Promise<number> {
 
+    const expectedProjectDb = getActiveProjectPath();
+    if (!expectedProjectDb) {
+      throw new Error("[PhotoRepository] No active project DB; refusing photo insert.");
+    }
+
     const db = await getDatabase();
+
+    if (getActiveProjectPath() !== expectedProjectDb) {
+      throw new Error("[PhotoRepository] Active project DB changed during insert; aborting photo insert.");
+    }
 
     const result = await db.runAsync(
       `

@@ -158,15 +158,31 @@ class DeviceOptionsRepository {
   async setDefault(deviceType: string, fieldName: string, optionId: number, templateId?: number): Promise<void> {
     const db = await getDatabase();
     const tid = templateId ?? 1;
-    await db.runAsync(
-      `UPDATE DeviceOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
-       WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1`,
-      [deviceType, fieldName, tid]
-    );
-    await db.runAsync(
-      `UPDATE DeviceOptions SET IsDefault = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE OptionID = ?`,
-      [optionId]
-    );
+    await db.withTransactionAsync(async () => {
+      const option = await db.getFirstAsync<{ DeviceType: string; FieldName: string; TemplateID: number; IsActive: number }>(
+        `SELECT DeviceType, FieldName, TemplateID, IsActive FROM DeviceOptions WHERE OptionID = ?`,
+        [optionId]
+      );
+      if (!option) {
+        throw new Error(`Option ID ${optionId} does not exist.`);
+      }
+      if (option.DeviceType !== deviceType || option.FieldName !== fieldName || option.TemplateID !== tid) {
+        throw new Error(`Option ID ${optionId} does not belong to ${deviceType}:${fieldName} for template ${tid}.`);
+      }
+      if (option.IsActive !== 1) {
+        throw new Error(`Option ID ${optionId} is inactive and cannot be set as default.`);
+      }
+
+      await db.runAsync(
+        `UPDATE DeviceOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE DeviceType = ? AND FieldName = ? AND TemplateID = ? AND IsActive = 1`,
+        [deviceType, fieldName, tid]
+      );
+      await db.runAsync(
+        `UPDATE DeviceOptions SET IsDefault = 1, UpdatedAt = CURRENT_TIMESTAMP WHERE OptionID = ?`,
+        [optionId]
+      );
+    });
   }
 
   async delete(id: number): Promise<void> {
@@ -239,12 +255,32 @@ class DeviceOptionsRepository {
       `SELECT * FROM DeviceOptions WHERE TemplateID = ? AND IsActive = 1 ORDER BY FieldName, DisplayOrder`,
       [sourceTemplateId]
     );
+    const existing = await db.getAllAsync<DeviceOption>(
+      `SELECT * FROM DeviceOptions WHERE TemplateID = ? AND IsActive = 1`,
+      [targetTemplateId]
+    );
+    const groupHasDefault = new Set<string>();
+    const seenKeys = new Set<string>();
+    for (const t of existing) {
+      const group = `${t.DeviceType}::${t.FieldName}`;
+      if (t.IsDefault === 1) groupHasDefault.add(group);
+      seenKeys.add(`${group}::${t.OptionLabel.trim().toLowerCase()}`);
+      seenKeys.add(`${group}::${t.OptionValue.trim().toLowerCase()}`);
+    }
     for (const o of options) {
+      const group = `${o.DeviceType}::${o.FieldName}`;
+      const labelKey = `${group}::${o.OptionLabel.trim().toLowerCase()}`;
+      const valueKey = `${group}::${o.OptionValue.trim().toLowerCase()}`;
+      if (seenKeys.has(labelKey) || seenKeys.has(valueKey)) continue;
+      const isDefault = o.IsDefault === 1 && !groupHasDefault.has(group) ? 1 : 0;
       await db.runAsync(
         `INSERT INTO DeviceOptions (TemplateID, DeviceType, FieldName, OptionLabel, OptionValue, DisplayOrder, IsDefault, IsActive)
-         VALUES (?, ?, ?, ?, ?, ?, 0, 1)`,
-        [targetTemplateId, o.DeviceType, o.FieldName, o.OptionLabel, o.OptionValue, o.DisplayOrder]
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        [targetTemplateId, o.DeviceType, o.FieldName, o.OptionLabel, o.OptionValue, o.DisplayOrder, isDefault]
       );
+      seenKeys.add(labelKey);
+      seenKeys.add(valueKey);
+      if (isDefault === 1) groupHasDefault.add(group);
     }
   }
 }

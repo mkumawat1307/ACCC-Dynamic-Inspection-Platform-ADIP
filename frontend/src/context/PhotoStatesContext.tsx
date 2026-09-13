@@ -10,24 +10,24 @@ import React, {
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
 
 export interface PhotoStatesContextType {
-  photoStates: Record<number, WatermarkState>;
-  setPhotoStates: React.Dispatch<React.SetStateAction<Record<number, WatermarkState>>>;
-  getPhotoStates: () => Record<number, WatermarkState>;
+  photoStates: Record<string, WatermarkState>;
+  setPhotoStates: React.Dispatch<React.SetStateAction<Record<string, WatermarkState>>>;
+  getPhotoStates: () => Record<string, WatermarkState>;
 }
 
 const PhotoStatesContext = createContext<PhotoStatesContextType | undefined>(undefined);
 const PhotosProcessingContext = createContext<boolean>(false);
 
 export function PhotoStatesProvider({ children }: { children: React.ReactNode }) {
-  const [photoStates, setPhotoStatesState] = useState<Record<number, WatermarkState>>({});
-  const photoStatesRef = useRef<Record<number, WatermarkState>>({});
+  const [photoStates, setPhotoStatesState] = useState<Record<string, WatermarkState>>({});
+  const photoStatesRef = useRef<Record<string, WatermarkState>>({});
 
   const setPhotoStates = useCallback(
-    (updater: React.SetStateAction<Record<number, WatermarkState>>) => {
+    (updater: React.SetStateAction<Record<string, WatermarkState>>) => {
       setPhotoStatesState((prev) => {
         const next =
           typeof updater === "function"
-            ? (updater as (p: Record<number, WatermarkState>) => Record<number, WatermarkState>)(prev)
+            ? (updater as (p: Record<string, WatermarkState>) => Record<string, WatermarkState>)(prev)
             : updater;
         photoStatesRef.current = next;
         return next;

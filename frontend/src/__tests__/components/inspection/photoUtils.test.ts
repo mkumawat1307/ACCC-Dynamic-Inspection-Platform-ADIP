@@ -5,11 +5,15 @@ import {
   formatWatermarkDate,
   formatLatLngWM,
   generateFileName,
+  WatermarkState,
   validatePhotosForSave,
   cleanPoleToken,
   renamePoleTokenInFileName,
   renameIdentityInFileName,
   decidePoleIdChange,
+  normalizePhotoStateScope,
+  makePhotoStateKey,
+  extractProjectPhotoStates,
 } from "@/src/components/inspection/photoUtils";
 import { Photo } from "@/src/models/Photo";
 
@@ -526,6 +530,93 @@ describe("decidePoleIdChange", () => {
     expect(decidePoleIdChange(photos, {})).toEqual({
       type: "dialog",
       photoCount: 1,
+    });
+  });
+});
+
+describe("photo state scoping helpers", () => {
+  it("normalizePhotoStateScope strips the file:// scheme", () => {
+    expect(normalizePhotoStateScope("file:///mock/db.db")).toBe("/mock/db.db");
+    expect(normalizePhotoStateScope("/mock/db.db")).toBe("/mock/db.db");
+    expect(normalizePhotoStateScope("")).toBe("");
+    expect(normalizePhotoStateScope(undefined)).toBe("");
+    expect(normalizePhotoStateScope(null)).toBe("");
+  });
+
+  it("makePhotoStateKey combines the normalized scope and photo id", () => {
+    expect(makePhotoStateKey("file:///db/a.db", 7)).toBe("/db/a.db::7");
+    expect(makePhotoStateKey("/db/a.db", 7)).toBe("/db/a.db::7");
+    expect(makePhotoStateKey(undefined, 7)).toBe("::7");
+    expect(makePhotoStateKey(null, 7)).toBe("::7");
+  });
+
+  it("produces identical keys for a path with and without file://", () => {
+    expect(makePhotoStateKey("file:///mock/db.db", 15)).toBe(
+      makePhotoStateKey("/mock/db.db", 15)
+    );
+    expect(makePhotoStateKey("file:///db/a.db", 1)).toBe("/db/a.db::1");
+  });
+
+  it("extractProjectPhotoStates returns only the matching project's numeric photo states", () => {
+    const all: Record<string, WatermarkState> = {
+      [makePhotoStateKey("file:///a/a.db", 1)]: "completed",
+      [makePhotoStateKey("/a/a.db", 2)]: "pending",
+      [makePhotoStateKey("/a/b.db", 15)]: "failed",
+      "::15": "completed",
+      "12": "completed",
+    };
+    const filtered = extractProjectPhotoStates("/a/a.db", all);
+    expect(filtered).toEqual({ 1: "completed", 2: "pending" });
+  });
+
+  it("extractProjectPhotoStates ignores out-of-scope and non-numeric keys", () => {
+    const all: Record<string, WatermarkState> = {
+      [makePhotoStateKey("/a/a.db", 1)]: "completed",
+      [makePhotoStateKey("/a/b.db", 1)]: "failed",
+      [makePhotoStateKey("/a/a.db", 99)]: "processing",
+      "/a/a.db::x": "completed",
+    };
+    expect(extractProjectPhotoStates("/a/a.db", all)).toEqual({
+      1: "completed",
+      99: "processing",
+    });
+  });
+
+  it("extractProjectPhotoStates returns an empty map for a null path", () => {
+    const all: Record<string, WatermarkState> = {
+      [makePhotoStateKey("/a/a.db", 1)]: "completed",
+    };
+    expect(extractProjectPhotoStates(null, all)).toEqual({});
+  });
+});
+
+describe("save validation over scoped photo state", () => {
+  const dbPath = "/mock/db.db";
+
+  it("blocks when the current project's photo is processing even if another project is completed", () => {
+    const photos = [makePhoto(1, "file:///tmp/1.jpg")];
+    const scopedStates: Record<string, WatermarkState> = {
+      [makePhotoStateKey(dbPath, 1)]: "processing",
+      [makePhotoStateKey("/other/db.db", 1)]: "completed",
+    };
+    const currentProjectStates = extractProjectPhotoStates(dbPath, scopedStates);
+    expect(currentProjectStates).toEqual({ 1: "processing" });
+    expect(validatePhotosForSave(photos, currentProjectStates)).toEqual({
+      canSave: false,
+      reason: "processing",
+    });
+  });
+
+  it("allows when the current project is completed and another project is still pending", () => {
+    const photos = [makePhoto(1, "content://media/1.jpg")];
+    const scopedStates: Record<string, WatermarkState> = {
+      [makePhotoStateKey(dbPath, 1)]: "completed",
+      [makePhotoStateKey("/other/db.db", 1)]: "pending",
+    };
+    const currentProjectStates = extractProjectPhotoStates(dbPath, scopedStates);
+    expect(validatePhotosForSave(photos, currentProjectStates)).toEqual({
+      canSave: true,
+      reason: null,
     });
   });
 });

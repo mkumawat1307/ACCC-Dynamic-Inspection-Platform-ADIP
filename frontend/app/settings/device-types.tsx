@@ -227,7 +227,8 @@ export default function DeviceTypesScreen() {
   };
 
   const handleSaveField = async () => {
-    if (!fieldName.trim() || !fieldLabel.trim()) return;
+    const resolvedFieldName = fieldName.trim() || generateFieldName(fieldLabel.trim());
+    if (!resolvedFieldName || !fieldLabel.trim()) return;
 
     try {
       if (editingField) {
@@ -245,7 +246,7 @@ export default function DeviceTypesScreen() {
           : 0;
         await DeviceFieldDefinitionsRepository.add({
           DeviceType: selectedType,
-          FieldName: fieldName.trim().replace(/\s+/g, ""),
+          FieldName: resolvedFieldName.replace(/\s+/g, ""),
           Label: fieldLabel.trim(),
           FieldType: fieldType,
           IsRequired: fieldRequired ? 1 : 0,
@@ -409,7 +410,7 @@ export default function DeviceTypesScreen() {
           fieldType={fieldType}
           fieldRequired={fieldRequired}
           onDismiss={() => setFieldDialogVisible(false)}
-          onFieldLabelChange={(text) => { setFieldLabel(text); if (!editingField) setFieldName(generateFieldName(text)); }}
+          onFieldLabelChange={setFieldLabel}
           onFieldTypeChange={setFieldType}
           onFieldRequiredToggle={() => setFieldRequired(!fieldRequired)}
           onSave={handleSaveField}

@@ -212,6 +212,92 @@ static async createInspection(
   return newId;
 }
 
+private static fieldValueSaveRegistry = new Map<
+  string,
+  {
+    inspectionId: number;
+    fieldId: number;
+    value: string;
+    timer: ReturnType<typeof setTimeout>;
+  }
+>();
+
+private static fieldValueSaveInFlight = new Map<string, Promise<void>>();
+
+private static issueFieldValueSave(
+  inspectionId: number,
+  fieldId: number,
+  value: string
+): Promise<void> {
+  const key = `${inspectionId}:${fieldId}`;
+  const promise = this.saveFieldValue(inspectionId, fieldId, value).finally(() => {
+    if (this.fieldValueSaveInFlight.get(key) === promise) {
+      this.fieldValueSaveInFlight.delete(key);
+    }
+  });
+  this.fieldValueSaveInFlight.set(key, promise);
+  return promise;
+}
+
+static scheduleFieldValueSave(
+  inspectionId: number,
+  fieldId: number,
+  value: string,
+  debounceMs = 500
+): void {
+  // Editing an existing inspection: defer to the edit session (committed on Save).
+  if (InspectionEditSessionState.isActive(inspectionId)) {
+    InspectionEditSessionState.stageFieldValue(fieldId, value);
+    return;
+  }
+
+  const key = `${inspectionId}:${fieldId}`;
+  const previous = this.fieldValueSaveRegistry.get(key);
+  if (previous) {
+    clearTimeout(previous.timer);
+  }
+
+  const timer = setTimeout(() => {
+    const current = this.fieldValueSaveRegistry.get(key);
+    if (current === undefined || current.timer !== timer) return;
+    this.fieldValueSaveRegistry.delete(key);
+    void this.issueFieldValueSave(inspectionId, fieldId, value);
+  }, debounceMs);
+
+  this.fieldValueSaveRegistry.set(key, {
+    inspectionId,
+    fieldId,
+    value,
+    timer,
+  });
+}
+
+static async flushPendingFieldValueSaves(): Promise<void> {
+  const entries = Array.from(this.fieldValueSaveRegistry.values());
+  this.fieldValueSaveRegistry.clear();
+  for (const entry of entries) {
+    clearTimeout(entry.timer);
+  }
+  // Drain writes that already fired and are still in flight so the flushed
+  // (latest) values are guaranteed to be persisted last, never overwritten by
+  // a stale value that began executing before the flush.
+  const inFlight = Array.from(this.fieldValueSaveInFlight.values());
+  await Promise.all(inFlight);
+  await Promise.all(
+    entries.map((entry) =>
+      this.issueFieldValueSave(entry.inspectionId, entry.fieldId, entry.value)
+    )
+  );
+}
+
+static cancelPendingFieldValueSaves(): void {
+  const entries = Array.from(this.fieldValueSaveRegistry.values());
+  for (const entry of entries) {
+    clearTimeout(entry.timer);
+  }
+  this.fieldValueSaveRegistry.clear();
+}
+
 static async saveFieldValue(
   inspectionId: number,
   fieldId: number,

@@ -39,6 +39,7 @@ export function gpsPillText(
     if (cat === "medium") return "🟡 Medium Accuracy";
     return "🔴 Low Accuracy";
   }
+  if (status === "stale") return "🟠 Stale GPS – tap to refresh";
   if (status === "denied") return "GPS denied";
   return "Acquiring GPS…";
 }

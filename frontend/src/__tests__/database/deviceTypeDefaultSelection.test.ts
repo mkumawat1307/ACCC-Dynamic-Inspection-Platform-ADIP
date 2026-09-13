@@ -169,13 +169,15 @@ describe("DeviceOptionsRepository — real DB tests", () => {
       expect(statusDefault).toBe("New");
     });
 
-    it("with non-existent optionId — clears default without crash", async () => {
+    it("with non-existent optionId — rejects and preserves the existing default", async () => {
       await insertOption(db, { OptionLabel: "A", OptionValue: "A", IsDefault: 1, DisplayOrder: 1 });
 
-      await DeviceOptionsRepository.setDefault("Camera", "CameraStatus", 99999, TID);
+      await expect(
+        DeviceOptionsRepository.setDefault("Camera", "CameraStatus", 99999, TID)
+      ).rejects.toThrow("Option ID 99999 does not exist.");
 
       const result = await DeviceOptionsRepository.getDefaultOption("Camera", "CameraStatus", TID);
-      expect(result).toBeNull();
+      expect(result).toBe("A");
     });
 
     it("sets default on already-default option (no-op)", async () => {
@@ -248,7 +250,7 @@ describe("DeviceOptionsRepository — real DB tests", () => {
   });
 
   describe("cloneAll() invariant safety", () => {
-    it("clones options with IsDefault=0 regardless of source", async () => {
+    it("clones options preserving the source IsDefault when the target is empty", async () => {
       await insertOption(db, { OptionLabel: "A", OptionValue: "A", IsDefault: 1, DisplayOrder: 1 });
       await insertOption(db, { OptionLabel: "B", OptionValue: "B", IsDefault: 0, DisplayOrder: 2 });
 
@@ -256,7 +258,7 @@ describe("DeviceOptionsRepository — real DB tests", () => {
 
       const cloned = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", 2);
       expect(cloned).toHaveLength(2);
-      expect(cloned.find((o) => o.OptionLabel === "A")?.IsDefault).toBe(0);
+      expect(cloned.find((o) => o.OptionLabel === "A")?.IsDefault).toBe(1);
       expect(cloned.find((o) => o.OptionLabel === "B")?.IsDefault).toBe(0);
     });
 
@@ -277,6 +279,91 @@ describe("DeviceOptionsRepository — real DB tests", () => {
 
       const clonedA = targetOptions.find((o) => o.OptionLabel === "A");
       expect(clonedA?.IsDefault).toBe(0);
+    });
+
+    it("leaves the source rows unchanged after cloning", async () => {
+      await insertOption(db, { OptionLabel: "A", OptionValue: "A", IsDefault: 1, DisplayOrder: 1 });
+      await insertOption(db, { OptionLabel: "B", OptionValue: "B", IsDefault: 0, DisplayOrder: 2 });
+
+      await DeviceOptionsRepository.cloneAll(TID, 2);
+
+      const source = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID);
+      expect(source).toHaveLength(2);
+      expect(source.find((o) => o.OptionLabel === "A")).toMatchObject({
+        OptionLabel: "A",
+        OptionValue: "A",
+        IsDefault: 1,
+        DisplayOrder: 1,
+      });
+      expect(source.find((o) => o.OptionLabel === "B")).toMatchObject({
+        OptionLabel: "B",
+        OptionValue: "B",
+        IsDefault: 0,
+        DisplayOrder: 2,
+      });
+    });
+
+    it("copies label, value, device type and display order onto the clones", async () => {
+      await insertOption(db, {
+        DeviceType: "Switch",
+        FieldName: "SwitchStatus",
+        OptionLabel: "On",
+        OptionValue: "On",
+        IsDefault: 1,
+        DisplayOrder: 3,
+      });
+
+      await DeviceOptionsRepository.cloneAll(TID, 2);
+
+      const cloned = await DeviceOptionsRepository.getByField("Switch", "SwitchStatus", 2);
+      expect(cloned).toHaveLength(1);
+      expect(cloned[0]).toMatchObject({
+        DeviceType: "Switch",
+        FieldName: "SwitchStatus",
+        OptionLabel: "On",
+        OptionValue: "On",
+        DisplayOrder: 3,
+        IsDefault: 1,
+        IsActive: 1,
+      });
+    });
+
+    it("does not create duplicate active options when the target already has the same label", async () => {
+      await insertOption(db, { OptionLabel: "Working", OptionValue: "Working", IsDefault: 1, DisplayOrder: 1 });
+      await insertOption(db, { TemplateID: 2, OptionLabel: "Working", OptionValue: "Working", IsDefault: 1, DisplayOrder: 1 });
+
+      await DeviceOptionsRepository.cloneAll(TID, 2);
+
+      const rows = await db.getAllAsync<{ OptionLabel: string }>(
+        "SELECT OptionLabel FROM DeviceOptions WHERE TemplateID = ? AND DeviceType = 'Camera' AND FieldName = 'CameraStatus' AND IsActive = 1",
+        [2]
+      );
+      expect(rows.filter((r) => r.OptionLabel === "Working").length).toBe(1);
+    });
+
+    it("skips a cloned option whose value duplicates an active target option even with a different label", async () => {
+      await insertOption(db, { OptionLabel: "Working", OptionValue: "Working", IsDefault: 1, DisplayOrder: 1 });
+      await insertOption(db, { TemplateID: 2, OptionLabel: "Current", OptionValue: "Working", IsDefault: 1, DisplayOrder: 1 });
+
+      await DeviceOptionsRepository.cloneAll(TID, 2);
+
+      const rows = await db.getAllAsync<{ OptionLabel: string }>(
+        "SELECT OptionLabel FROM DeviceOptions WHERE TemplateID = ? AND DeviceType = 'Camera' AND FieldName = 'CameraStatus' AND IsActive = 1",
+        [2]
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].OptionLabel).toBe("Current");
+    });
+
+    it("allows cloning an option that only collides with an inactive target option", async () => {
+      await insertOption(db, { OptionLabel: "A", OptionValue: "A", IsDefault: 1, DisplayOrder: 1 });
+      await insertOption(db, { TemplateID: 2, OptionLabel: "A", OptionValue: "A", IsDefault: 0, IsActive: 0, DisplayOrder: 1 });
+
+      await DeviceOptionsRepository.cloneAll(TID, 2);
+
+      const cloned = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", 2);
+      expect(cloned).toHaveLength(1);
+      expect(cloned.find((o) => o.OptionLabel === "A")?.IsDefault).toBe(1);
     });
   });
 });

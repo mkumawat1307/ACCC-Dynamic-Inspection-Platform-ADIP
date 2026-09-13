@@ -26,6 +26,7 @@ import {
   encodeWatermarkOverlay,
 } from "@/src/native/WatermarkEncoder";
 import { usePhotoStates } from "@/src/context/PhotoStatesContext";
+import { makePhotoStateKey, normalizePhotoStateScope } from "@/src/components/inspection/photoUtils";
 import { perfStart, perfStage, perfReport, perfNow, perfLog, PerfAccumulator, uiPerfStage, uiPerfProbeSummary, uiPerfSetProbe, uiPerfStageIfProbe } from "@/src/utils/perf";
 
 type WatermarkStage = "overlay" | "rgba" | "toblob";
@@ -106,13 +107,14 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const abandonedOverlayRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
+    const keyPrefix = `${normalizePhotoStateScope(project?.DBPath)}::`;
     setWatermarkState(prev => {
       const next = { ...prev };
       let changed = false;
       for (const key of Object.keys(next)) {
-        const id = Number(key);
-        if (next[id] === "pending" || next[id] === "processing") {
-          next[id] = "failed";
+        if (!key.startsWith(keyPrefix)) continue;
+        if (next[key] === "pending" || next[key] === "processing") {
+          next[key] = "failed";
           changed = true;
         }
       }
@@ -137,7 +139,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     cancelledRef.current.add(photoId);
     setWatermarkState(prev => {
       const next = { ...prev };
-      delete next[photoId];
+      delete next[makePhotoStateKey(job?.projectDbPath ?? project?.DBPath, photoId)];
       return next;
     });
     queueRef.current = queueRef.current.filter(j => j.photoId !== photoId);
@@ -209,12 +211,12 @@ function handleJobFailure(job: WatermarkJob) {
     if (job.retries < 1) {
       const retry = { ...job, retries: job.retries + 1 };
       queueRef.current[idx] = retry;
-      setWatermarkState(prev => ({ ...prev, [job.photoId]: "pending" }));
+      setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, job.photoId)]: "pending" }));
       persistStatus(job.photoId, "captured", job.projectDbPath);
     } else {
       queueRef.current.splice(idx, 1);
       failedJobsRef.current.set(job.photoId, job);
-      setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
+      setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, job.photoId)]: "failed" }));
       persistStatus(job.photoId, "failed", job.projectDbPath);
     }
     if (perfRef.current) perfReport(perfRef.current, "watermark-failed");
@@ -249,7 +251,7 @@ function handleJobFailure(job: WatermarkJob) {
       }
     }
 
-setWatermarkState(prev => ({ ...prev, [photoId]: "completed" }));
+setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, photoId)]: "completed" }));
     uiPerfStage("stateUpdated", `photo=${photoId}`, uiPerfProbeSummary());
     uiPerfStage("reactRenderStart", `photo=${photoId}`, uiPerfProbeSummary());
     uiPerfStageIfProbe("timeoutWaitStart", "setTimeoutActive", `photo=${photoId}`);
@@ -381,7 +383,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
     processingRef.current = true;
     activeJobIdRef.current = job.photoId;
 
-    setWatermarkState(prev => ({ ...prev, [job.photoId]: "processing" }));
+    setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, job.photoId)]: "processing" }));
     persistStatus(job.photoId, "processing", job.projectDbPath);
     uiPerfStage("overlayStart", `photo=${job.photoId} stage=${job.stage}`);
 
@@ -413,7 +415,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
         const idx = queueRef.current.findIndex(j => j.photoId === head.photoId);
         if (idx >= 0) {
           queueRef.current[idx] = retry;
-          setWatermarkState(prev => ({ ...prev, [head.photoId]: "pending" }));
+          setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(head.projectDbPath, head.photoId)]: "pending" }));
           persistStatus(head.photoId, "captured", head.projectDbPath);
         }
       } else {
@@ -445,7 +447,7 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
             expected: job.projectDbPath,
           });
           queueRef.current = queueRef.current.filter(j => j.photoId !== job.photoId);
-          setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
+          setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, job.photoId)]: "failed" }));
           persistStatus(job.photoId, "captured", job.projectDbPath);
           resetIfActive(job);
           processNext();
@@ -486,7 +488,7 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
             expected: job.projectDbPath,
           });
           queueRef.current = queueRef.current.filter(j => j.photoId !== job.photoId);
-          setWatermarkState(prev => ({ ...prev, [job.photoId]: "failed" }));
+          setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, job.photoId)]: "failed" }));
           persistStatus(job.photoId, "captured", job.projectDbPath);
           resetIfActive(job);
           processNext();
@@ -736,7 +738,7 @@ function enqueueWatermark(
       writeLabel: project ? photoStorageLabelForProject(project) : "",
     };
     queueRef.current.push(job);
-    setWatermarkState(prev => ({ ...prev, [photoId]: "pending" }));
+    setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, job.photoId)]: "pending" }));
     if (!processingRef.current) {
       processNext();
     }

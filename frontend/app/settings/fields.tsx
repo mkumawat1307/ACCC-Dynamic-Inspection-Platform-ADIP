@@ -247,7 +247,7 @@ const getTypeLabel = (type: string) =>
           fieldType={fieldType}
           fieldRequired={isRequired}
           onDismiss={() => setShowDialog(false)}
-          onFieldLabelChange={(text) => { setFieldName(text); setFieldKey(generateKey(text)); }}
+          onFieldLabelChange={setFieldName}
           onFieldTypeChange={setFieldType}
           onFieldRequiredToggle={() => setIsRequired(!isRequired)}
           onSave={handleSave}

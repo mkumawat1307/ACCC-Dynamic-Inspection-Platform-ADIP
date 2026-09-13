@@ -66,10 +66,10 @@ const [renamePrompt, setRenamePrompt] = useState<{
   newIdentity: InspectionIdentity;
   photoCount: number;
 } | null>(null);
-const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleCheckTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 const poleIdSaveChain = useRef<Promise<unknown>>(Promise.resolve());
 const poleCheckVersion = useRef(0);
+const gpsFetchSeq = useRef(0);
 const renamePromptResolverRef = useRef<((decision: IdentityRenameDecision) => void) | null>(null);
 // The district/block/pole identity persisted for this inspection. Filenames and
 // report values are keyed to these tokens; save-time renames diff against them.
@@ -86,10 +86,12 @@ inspectionIdRef.current = inspectionId;
 
 useEffect(() => {
   return () => {
-    if (saveTimeout.current) {
-      clearTimeout(saveTimeout.current);
-      saveTimeout.current = null;
-    }
+    // Drop any debounced field-value saves so a stale write can never land on
+    // the next inspection after this one unmounts. Do NOT bump poleCheckVersion
+    // here: an inspectionId change is not new user input, and bumping it would
+    // orphan a mid-flight check — its version-guarded finally would skip the
+    // setCheckingPoleId(false) and leave "Checking SITE ID..." visible forever.
+    InspectionRepository.cancelPendingFieldValueSaves();
     if (poleCheckTimeout.current) {
       clearTimeout(poleCheckTimeout.current);
       poleCheckTimeout.current = null;
@@ -100,6 +102,14 @@ useEffect(() => {
 useEffect(() => {
   init();
 }, [inspectionId]);
+
+// Invalidate any in-flight "Use Current Location" fetch on unmount so a late
+// result can never repopulate a different inspection's gps/location fields.
+useEffect(() => {
+  return () => {
+    gpsFetchSeq.current += 1;
+  };
+}, []);
 
 async function init() {
   const targetId = inspectionId;
@@ -279,61 +289,69 @@ async function loadFields(templateId?: number) {
 }
 
 async function fetchCurrentLocation() {
-  const location = await getCurrentLocation();
+  if (!inspectionId) return;
 
-  if (!location || !inspectionId) return;
-
-  const latitude = location.latitude.toFixed(6);
-  const longitude = location.longitude.toFixed(6);
-  const gpsValue = `${latitude}, ${longitude}`;
-
+  const seq = ++gpsFetchSeq.current;
   setLocationResolving(true);
-  let address = "";
   try {
-    const result = await reverseGeocode(location.latitude, location.longitude);
-    address = result?.formatted ?? "";
-  } finally {
-    setLocationResolving(false);
-  }
+    const location = await getCurrentLocation();
+    if (gpsFetchSeq.current !== seq) return;
+    if (!location) return;
 
-  setValues((prev) => ({
-    ...prev,
-    gps: gpsValue,
-    ...(address ? { location: address } : {}),
-  }));
+    const latitude = location.latitude.toFixed(6);
+    const longitude = location.longitude.toFixed(6);
+    const gpsValue = `${latitude}, ${longitude}`;
 
-  const gpsField = fields.find(f => f.FieldKey === "gps");
-  if (gpsField) {
-    InspectionLiveValues.setFieldValue(gpsField.FieldID, gpsValue);
-  }
-  if (address) {
-    const locationField = fields.find(f => f.FieldKey === "location");
-    if (locationField) {
-      InspectionLiveValues.setFieldValue(locationField.FieldID, address);
+    let address = "";
+    try {
+      const result = await reverseGeocode(location.latitude, location.longitude);
+      address = result?.formatted ?? "";
+    } catch (error) {
+      logger.error("Address Resolve Error:", error);
     }
-  }
-  onDataChanged?.();
+    if (gpsFetchSeq.current !== seq) return;
 
-  try {
+    setValues((prev) => ({
+      ...prev,
+      gps: gpsValue,
+      ...(address ? { location: address } : {}),
+    }));
+
+    const gpsField = fields.find(f => f.FieldKey === "gps");
     if (gpsField) {
-      await InspectionRepository.saveFieldValue(
-        inspectionId,
-        gpsField.FieldID,
-        gpsValue
-      );
+      InspectionLiveValues.setFieldValue(gpsField.FieldID, gpsValue);
     }
     if (address) {
       const locationField = fields.find(f => f.FieldKey === "location");
       if (locationField) {
-        await InspectionRepository.saveFieldValue(
-          inspectionId,
-          locationField.FieldID,
-          address
-        );
+        InspectionLiveValues.setFieldValue(locationField.FieldID, address);
       }
     }
-  } catch (error) {
-    logger.error("GPS Save Error:", error);
+    onDataChanged?.();
+
+    try {
+      if (gpsField) {
+        await InspectionRepository.saveFieldValue(
+          inspectionId,
+          gpsField.FieldID,
+          gpsValue
+        );
+      }
+      if (address) {
+        const locationField = fields.find(f => f.FieldKey === "location");
+        if (locationField) {
+          await InspectionRepository.saveFieldValue(
+            inspectionId,
+            locationField.FieldID,
+            address
+          );
+        }
+      }
+    } catch (error) {
+      logger.error("GPS Save Error:", error);
+    }
+  } finally {
+    if (gpsFetchSeq.current === seq) setLocationResolving(false);
   }
 }
 
@@ -496,6 +514,18 @@ function revertPoleId(value: string) {
   setPoleId(value);
   setFormUnlocked(value.trim().length > 0);
   syncLiveField("pole_id", value);
+  // Keep the edit session's staged identity in sync with the on-screen revert.
+  // Without this, a previously-staged Site ID (e.g. from an earlier settled
+  // save) stays staged and would be persisted on the next commit even though
+  // the field now shows the persisted value.
+  if (InspectionEditSession.isActive(inspectionId)) {
+    const poleField = fields.find((f) => f.FieldKey === "pole_id");
+    if (poleField) {
+      InspectionEditSession.stageFieldValue(poleField.FieldID, value);
+    }
+    InspectionEditSession.stagePoleId(value);
+    InspectionEditSession.stagePendingRename(null);
+  }
   onDataChanged?.();
 }
 
@@ -506,10 +536,7 @@ function revertPoleId(value: string) {
 // row and all other section data are left untouched.
 function clearSiteId() {
   poleCheckVersion.current += 1;
-  if (saveTimeout.current) {
-    clearTimeout(saveTimeout.current);
-    saveTimeout.current = null;
-  }
+  InspectionRepository.cancelPendingFieldValueSaves();
   if (poleCheckTimeout.current) {
     clearTimeout(poleCheckTimeout.current);
     poleCheckTimeout.current = null;
@@ -530,10 +557,7 @@ function clearSiteId() {
 // = null) with a clean in-memory form.
 async function handleCreateNew() {
   poleCheckVersion.current += 1;
-  if (saveTimeout.current) {
-    clearTimeout(saveTimeout.current);
-    saveTimeout.current = null;
-  }
+  InspectionRepository.cancelPendingFieldValueSaves();
   if (poleCheckTimeout.current) {
     clearTimeout(poleCheckTimeout.current);
     poleCheckTimeout.current = null;
@@ -622,12 +646,29 @@ function revertIdentityToPersisted(
   onDataChanged?.();
 }
 
+// Settle (cancel + drain) any in-flight/pending Site ID debounce so a save-time
+// decision is computed against the value the user actually typed, and a stale
+// timer can never fire AFTER the save has committed. Called at the start of
+// checkIdentityBeforeSave.
+async function settlePoleDebounce() {
+  poleCheckVersion.current += 1;
+  if (poleCheckTimeout.current) {
+    clearTimeout(poleCheckTimeout.current);
+    poleCheckTimeout.current = null;
+  }
+  setCheckingPoleId(false);
+  await poleIdSaveChain.current;
+}
+
 // Save-time identity check. new.tsx calls this before committing an existing
 // inspection. Returns the decision the caller must act on; the rename dialog is
 // only shown for a true identity change WITH photos — never while typing.
 async function checkIdentityBeforeSave(): Promise<IdentityRenameDecision> {
   const effectiveId = inspectionId;
   if (effectiveId == null) return { type: "no-change" };
+
+  await settlePoleDebounce();
+
   const identity = getEffectiveIdentity();
   if (identity == null) return { type: "cancelled" };
 
@@ -646,8 +687,8 @@ async function checkIdentityBeforeSave(): Promise<IdentityRenameDecision> {
             persisted.poleId
           );
         }
-        revertPoleId(persisted.poleId);
       }
+      revertPoleId(persisted.poleId);
       return { type: "duplicate", duplicatePoleId: newPoleId };
     }
   }
@@ -662,6 +703,18 @@ async function checkIdentityBeforeSave(): Promise<IdentityRenameDecision> {
   stageIdentityValues(identity);
   if (InspectionEditSession.isActive(effectiveId)) {
     InspectionEditSession.stagePoleId(identity.poleId);
+  } else if (!existing && identity.poleId !== "") {
+    // NEW inspection (no session): the settled typing save may have been
+    // cancelled by the settle above (save pressed inside the debounce window),
+    // so persist the latest Site ID here — idempotent with the typing save.
+    const poleField = fields.find((f) => f.FieldKey === "pole_id");
+    if (poleField) {
+      await InspectionRepository.updatePoleIdDirectSave(
+        effectiveId,
+        poleField.FieldID,
+        identity.poleId
+      );
+    }
   }
 
   const photos = await PhotoRepository.getByInspection(effectiveId);
@@ -765,17 +818,11 @@ return (
 
             if (currentInspectionId == null) return;
 
-            if (saveTimeout.current) {
-              clearTimeout(saveTimeout.current);
-            }
-
-            saveTimeout.current = setTimeout(async () => {
-              await InspectionRepository.saveFieldValue(
-                currentInspectionId!,
-                field.FieldID,
-                text
-              );
-            }, 500);
+            InspectionRepository.scheduleFieldValueSave(
+              currentInspectionId,
+              field.FieldID,
+              text
+            );
           }}
         />
         {field.FieldKey === "pole_id" && checkingPoleId && (

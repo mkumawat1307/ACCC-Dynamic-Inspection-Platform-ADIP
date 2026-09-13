@@ -553,3 +553,387 @@ describe("Template Import — Device Field/Option Deactivation", () => {
     expect(all.find((o) => o.OptionLabel === "Working")!.IsActive).toBe(0);
   });
 });
+
+function makeField(key: string, displayOrder: number): TemplateExportData["templates"][0]["sections"][0]["fields"][0] {
+  return {
+    FieldName: key,
+    FieldKey: key,
+    FieldType: "text",
+    Placeholder: null,
+    DefaultValue: null,
+    HelpText: null,
+    ValidationRule: null,
+    DisplayOrder: displayOrder,
+    IsRequired: 0,
+    IsVisible: 1,
+    IsReadOnly: 0,
+    IsSystemField: 0,
+    Width: 12,
+    options: [],
+  };
+}
+
+function makeSection(sectionKey: string, fieldKeys: string[]): TemplateExportData["templates"][0]["sections"][0] {
+  return {
+    SectionName: sectionKey,
+    SectionKey: sectionKey,
+    Description: null,
+    Icon: null,
+    DisplayOrder: 1,
+    IsRepeatable: 0,
+    IsVisible: 1,
+    fields: fieldKeys.map((k, i) => makeField(k, i + 1)),
+  };
+}
+
+function makeFieldImport(
+  templateName: string,
+  sections: Array<{ sectionKey: string; fieldKeys: string[] }>,
+  description: string | null = "Test"
+): TemplateExportData {
+  return {
+    version: "2.0",
+    exportedAt: new Date().toISOString(),
+    templates: [
+      {
+        TemplateName: templateName,
+        Description: description,
+        IsDefault: 0,
+        sections: sections.map((s) => makeSection(s.sectionKey, s.fieldKeys)),
+        deviceTypes: [],
+        deviceOptions: [],
+      },
+    ],
+    projectDeviceTypes: [],
+  };
+}
+
+async function seedActiveField(templateName: string, sectionKey: string, fieldKey: string): Promise<number> {
+  const template = await db.getFirstAsync<{ TemplateID: number }>(
+    "SELECT TemplateID FROM InspectionTemplates WHERE TemplateName = ?",
+    [templateName]
+  );
+  expect(template).toBeTruthy();
+  const section = await db.runAsync(
+    `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
+     VALUES (?, ?, ?, 1, 0, 1, 0, 1)`,
+    [template!.TemplateID, sectionKey, sectionKey]
+  );
+  const field = await db.runAsync(
+    `INSERT INTO InspectionFields (SectionID, FieldName, FieldKey, FieldType, DisplayOrder, IsRequired, IsVisible, IsActive)
+     VALUES (?, ?, ?, 'text', 1, 0, 1, 1)`,
+    [section.lastInsertRowId, fieldKey, fieldKey]
+  );
+  return field.lastInsertRowId;
+}
+
+describe("Template import — global field identifier uniqueness", () => {
+  it("rejects an import whose identifier collides with an active field of another template", async () => {
+    await seedActiveField("Default Template", "general_information", "voltage");
+
+    const result = await applyTemplateImport(
+      makeFieldImport("Imported Form", [{ sectionKey: "electrical", fieldKeys: ["Voltage"] }])
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("already exists as an active field");
+
+    const created = await db.getFirstAsync<{ TemplateID: number }>(
+      "SELECT TemplateID FROM InspectionTemplates WHERE TemplateName = ?",
+      ["Imported Form"]
+    );
+    expect(created).toBeNull();
+  });
+
+  it("rejects an identifier that matches an active field ignoring surrounding whitespace", async () => {
+    await seedActiveField("Default Template", "general_information", "voltage");
+
+    const result = await applyTemplateImport(
+      makeFieldImport("Imported Form", [{ sectionKey: "electrical", fieldKeys: ["  VOLTAGE  "] }])
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("already exists as an active field");
+  });
+
+  it("rejects duplicate identifiers within a single import across sections", async () => {
+    const result = await applyTemplateImport(
+      makeFieldImport("Imported Form", [
+        { sectionKey: "first", fieldKeys: ["voltage"] },
+        { sectionKey: "second", fieldKeys: ["Voltage"] },
+      ])
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("Duplicate field identifier");
+
+    const created = await db.getFirstAsync<{ TemplateID: number }>(
+      "SELECT TemplateID FROM InspectionTemplates WHERE TemplateName = ?",
+      ["Imported Form"]
+    );
+    expect(created).toBeNull();
+  });
+
+  it("rejects duplicate identifiers used across two templates of one import", async () => {
+    const data: TemplateExportData = {
+      version: "2.0",
+      exportedAt: new Date().toISOString(),
+      templates: [
+        {
+          TemplateName: "Alpha",
+          Description: "Test",
+          IsDefault: 0,
+          sections: [makeSection("a", ["voltage"])],
+          deviceTypes: [],
+          deviceOptions: [],
+        },
+        {
+          TemplateName: "Beta",
+          Description: "Test",
+          IsDefault: 0,
+          sections: [makeSection("b", ["Voltage"])],
+          deviceTypes: [],
+          deviceOptions: [],
+        },
+      ],
+      projectDeviceTypes: [],
+    };
+
+    const result = await applyTemplateImport(data);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("Duplicate field identifier");
+
+    expect(
+      await db.getFirstAsync<{ TemplateID: number }>(
+        "SELECT TemplateID FROM InspectionTemplates WHERE TemplateName = ?",
+        ["Alpha"]
+      )
+    ).toBeNull();
+    expect(
+      await db.getFirstAsync<{ TemplateID: number }>(
+        "SELECT TemplateID FROM InspectionTemplates WHERE TemplateName = ?",
+        ["Beta"]
+      )
+    ).toBeNull();
+  });
+
+  it("allows an identifier that matches an inactive field of another template", async () => {
+    const fieldId = await seedActiveField("Default Template", "general_information", "voltage");
+    await db.runAsync(`UPDATE InspectionFields SET IsActive = 0 WHERE FieldID = ?`, [fieldId]);
+
+    const result = await applyTemplateImport(
+      makeFieldImport("Imported Form", [{ sectionKey: "electrical", fieldKeys: ["voltage"] }])
+    );
+
+    expect(result.success).toBe(true);
+
+    const active = await db.getAllAsync<{ FieldKey: string }>(
+      "SELECT FieldKey FROM InspectionFields WHERE IsActive = 1 AND FieldKey = ?",
+      ["voltage"]
+    );
+    expect(active).toHaveLength(1);
+  });
+
+  it("allows re-importing a template's own field identifiers", async () => {
+    await seedActiveField("Default Template", "general_information", "voltage");
+
+    const result = await applyTemplateImport(
+      makeFieldImport("Default Template", [{ sectionKey: "general_information", fieldKeys: ["voltage"] }])
+    );
+
+    expect(result.success).toBe(true);
+
+    const active = await db.getAllAsync<{ FieldKey: string }>(
+      "SELECT FieldKey FROM InspectionFields WHERE IsActive = 1 AND FieldKey = ?",
+      ["voltage"]
+    );
+    expect(active).toHaveLength(1);
+  });
+
+  it("rolls back all writes when a mid-transaction failure occurs", async () => {
+    await seedDeviceField("Camera", "Vendor", "Vendor");
+    await seedDeviceOption("Camera", "CameraStatus", "Working", "Working", 1, 1);
+
+    const changingData: TemplateExportData = {
+      version: "2.0",
+      exportedAt: new Date().toISOString(),
+      templates: [
+        {
+          TemplateName: "Default Template",
+          Description: "CHANGED",
+          IsDefault: 0,
+          sections: [],
+          deviceTypes: [],
+          deviceOptions: [
+            { DeviceType: "Camera", FieldName: "CameraStatus", OptionLabel: "X", OptionValue: "X", DisplayOrder: 1, IsDefault: 1 },
+          ],
+        },
+      ],
+      projectDeviceTypes: [],
+    };
+
+    const originalRunAsync = db.runAsync.bind(db);
+    const spy = jest.spyOn(db, "runAsync");
+    spy.mockImplementation((async (sql: string, params: unknown[] = []) => {
+      const s = sql.toUpperCase();
+      if (s.includes("INSERT INTO DEVICEOPTIONS")) {
+        throw new Error("mid-transaction failure");
+      }
+      return originalRunAsync(sql, params as unknown as Parameters<typeof originalRunAsync>[1]);
+    }) as never);
+
+    const result = await applyTemplateImport(changingData);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("mid-transaction failure");
+
+    const template = await db.getFirstAsync<{ Description: string }>(
+      "SELECT Description FROM InspectionTemplates WHERE TemplateName = ?",
+      ["Default Template"]
+    );
+    expect(template?.Description).toBe("Test");
+
+    const vendor = await db.getFirstAsync<{ IsActive: number }>(
+      "SELECT IsActive FROM DeviceFieldDefinitions WHERE TemplateID = ? AND FieldName = ?",
+      [TID, "Vendor"]
+    );
+    expect(vendor?.IsActive).toBe(1);
+
+    const working = await db.getFirstAsync<{ IsActive: number }>(
+      "SELECT IsActive FROM DeviceOptions WHERE TemplateID = ? AND OptionLabel = ?",
+      [TID, "Working"]
+    );
+    expect(working?.IsActive).toBe(1);
+    expect(await DeviceOptionsRepository.getDefaultOption("Camera", "CameraStatus", TID)).toBe("Working");
+    expect(
+      await db.getFirstAsync<{ OptionID: number }>(
+        "SELECT OptionID FROM DeviceOptions WHERE TemplateID = ? AND OptionLabel = ?",
+        [TID, "X"]
+      )
+    ).toBeNull();
+  });
+});
+
+describe("Template import — unconditional device deactivation", () => {
+  it("deactivates stale device fields when deviceTypes is empty", async () => {
+    await seedDeviceField("Camera", "Vendor", "Vendor");
+    await seedDeviceField("Camera", "Resolution", "Resolution");
+
+    await applyTemplateImport(makeDeviceImport([], []));
+
+    const all = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID, true);
+    expect(all).toHaveLength(2);
+    expect(all.every((f) => f.IsActive === 0)).toBe(true);
+  });
+
+  it("deactivates stale device options when deviceOptions is empty", async () => {
+    await seedDeviceOption("Camera", "CameraStatus", "Working", "Working", 1, 1);
+    await seedDeviceOption("Camera", "CameraStatus", "Broken", "Broken", 0, 2);
+
+    await applyTemplateImport(makeDeviceImport([], []));
+
+    const all = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID, true);
+    expect(all).toHaveLength(2);
+    expect(all.every((o) => o.IsActive === 0)).toBe(true);
+  });
+
+  it("deactivates both stale fields and options on a combined empty import", async () => {
+    await seedDeviceField("Camera", "Serial", "Serial");
+    await seedDeviceOption("Camera", "CameraStatus", "Working", "Working", 1, 1);
+
+    await applyTemplateImport(makeDeviceImport([], []));
+
+    const fields = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID, true);
+    expect(fields.find((f) => f.FieldName === "Serial")!.IsActive).toBe(0);
+
+    const options = await DeviceOptionsRepository.getByField("Camera", "CameraStatus", TID, true);
+    expect(options.find((o) => o.OptionLabel === "Working")!.IsActive).toBe(0);
+  });
+
+  it("leaves historical device records untouched when deactivating stale config", async () => {
+    await seedDeviceOption("Camera", "CameraStatus", "Working", "Working", 1, 1);
+    await db.runAsync(
+      `INSERT INTO DeviceRecords (InspectionID, DeviceType, DeviceNo, DeviceData, DisplayOrder, IsActive)
+       VALUES (1, 'Camera', 1, '[]', 1, 1)`
+    );
+
+    await applyTemplateImport(makeDeviceImport([], []));
+
+    const records = await db.getAllAsync<{ InspectionID: number; DeviceType: string; IsActive: number }>(
+      "SELECT InspectionID, DeviceType, IsActive FROM DeviceRecords"
+    );
+    expect(records).toHaveLength(1);
+    expect(records[0].InspectionID).toBe(1);
+    expect(records[0].DeviceType).toBe("Camera");
+    expect(records[0].IsActive).toBe(1);
+  });
+
+  it("rolls back a failed restore of device config", async () => {
+    await seedDeviceField("Camera", "Serial", "Serial");
+    await seedDeviceOption("Camera", "CameraStatus", "Working", "Working", 1, 1);
+
+    const data = makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Remote", Label: "Remote", FieldType: "text", IsRequired: 0, DisplayOrder: 2 },
+      ],
+      []
+    );
+
+    const originalRunAsync = db.runAsync.bind(db);
+    const spy = jest.spyOn(db, "runAsync");
+    spy.mockImplementation((async (sql: string, params: unknown[] = []) => {
+      const s = sql.toUpperCase();
+      if (s.includes("INSERT INTO DEVICEFIELDDEFINITIONS")) {
+        throw new Error("restore failure");
+      }
+      return originalRunAsync(sql, params as unknown as Parameters<typeof originalRunAsync>[1]);
+    }) as never);
+
+    const result = await applyTemplateImport(data);
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("restore failure");
+
+    const serial = await db.getFirstAsync<{ IsActive: number }>(
+      "SELECT IsActive FROM DeviceFieldDefinitions WHERE TemplateID = ? AND FieldName = ?",
+      [TID, "Serial"]
+    );
+    expect(serial?.IsActive).toBe(1);
+
+    const working = await db.getFirstAsync<{ IsActive: number }>(
+      "SELECT IsActive FROM DeviceOptions WHERE TemplateID = ? AND OptionLabel = ?",
+      [TID, "Working"]
+    );
+    expect(working?.IsActive).toBe(1);
+  });
+
+  it("re-activates device fields removed by an empty restore on the next proper import", async () => {
+    await seedDeviceField("Camera", "Serial", "Serial");
+
+    await applyTemplateImport(makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Serial", Label: "Serial", FieldType: "text", IsRequired: 0, DisplayOrder: 1 },
+      ],
+      []
+    ));
+    expect(
+      (await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID)).some((f) => f.FieldName === "Serial")
+    ).toBe(true);
+
+    await applyTemplateImport(makeDeviceImport([], []));
+    expect(
+      (await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID, true))
+        .find((f) => f.FieldName === "Serial")!.IsActive
+    ).toBe(0);
+
+    await applyTemplateImport(makeDeviceImport(
+      [
+        { DeviceType: "Camera", FieldName: "Serial", Label: "Serial", FieldType: "text", IsRequired: 0, DisplayOrder: 1 },
+      ],
+      []
+    ));
+    const active = await DeviceFieldDefinitionsRepository.getByDeviceType("Camera", TID);
+    expect(active.some((f) => f.FieldName === "Serial")).toBe(true);
+    expect(active.find((f) => f.FieldName === "Serial")!.IsActive).toBe(1);
+  });
+});

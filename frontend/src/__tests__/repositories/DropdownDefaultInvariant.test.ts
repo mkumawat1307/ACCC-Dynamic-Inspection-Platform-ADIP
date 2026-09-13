@@ -3,7 +3,7 @@ jest.mock("@/src/database/db");
 import { getDatabase } from "@/src/database/db";
 
 function createMockDb() {
-  let fieldOptions: Array<{ OptionID: number; FieldID: number; OptionLabel: string; OptionValue: string; IsDefault: number; IsActive: number }> = [];
+  let fieldOptions: Array<{ OptionID: number; FieldID: number; OptionLabel: string; OptionValue: string; DisplayOrder: number; IsDefault: number; IsActive: number }> = [];
   let deviceOptions: Array<{ OptionID: number; DeviceType: string; FieldName: string; OptionLabel: string; OptionValue: string; DisplayOrder: number; IsDefault: number; IsActive: number; TemplateID: number }> = [];
   let nextFieldOptionId = 1;
   let nextDeviceOptionId = 1;
@@ -14,7 +14,7 @@ function createMockDb() {
     if (sqlUpper.includes("INSERT INTO FIELDOPTIONS")) {
       const id = nextFieldOptionId++;
       const isDefault = params[4] as number;
-      fieldOptions.push({ OptionID: id, FieldID: params[0] as number, OptionLabel: params[1] as string, OptionValue: params[2] as string, IsDefault: isDefault, IsActive: 1 });
+      fieldOptions.push({ OptionID: id, FieldID: params[0] as number, OptionLabel: params[1] as string, OptionValue: params[2] as string, DisplayOrder: params[3] as number, IsDefault: isDefault, IsActive: 1 });
       return { lastInsertRowId: id, changes: 1 };
     }
 
@@ -105,7 +105,33 @@ function createMockDb() {
 
   return {
     getAllAsync: jest.fn().mockResolvedValue([]),
-    getFirstAsync: jest.fn().mockResolvedValue(null),
+    getFirstAsync: jest.fn().mockImplementation(async (sql: string, params: unknown[]) => {
+      const sqlUpper = sql.toUpperCase();
+
+      if (sqlUpper.includes("COALESCE(MAX(DISPLAYORDER), 0)") && sqlUpper.includes("FROM FIELDOPTIONS")) {
+        const fieldId = params[0] as number;
+        const maxOrder = fieldOptions
+          .filter((o) => o.FieldID === fieldId)
+          .reduce((m, o) => Math.max(m, o.DisplayOrder ?? 0), 0);
+        return { Max: maxOrder };
+      }
+
+      if (sqlUpper.includes("FROM FIELDOPTIONS") && sqlUpper.includes("OPTIONID = ?")) {
+        const id = params[0] as number;
+        const found = fieldOptions.find((o) => o.OptionID === id);
+        return found ? { FieldID: found.FieldID, IsActive: found.IsActive } : null;
+      }
+
+      if (sqlUpper.includes("FROM DEVICEOPTIONS") && sqlUpper.includes("OPTIONID = ?")) {
+        const id = params[0] as number;
+        const found = deviceOptions.find((o) => o.OptionID === id);
+        return found
+          ? { DeviceType: found.DeviceType, FieldName: found.FieldName, TemplateID: found.TemplateID, IsActive: found.IsActive }
+          : null;
+      }
+
+      return null;
+    }),
     runAsync: runAsyncFn,
     withTransactionAsync: jest.fn().mockImplementation(async (fn: () => Promise<void>) => fn()),
     getFieldOptions: () => fieldOptions,
@@ -169,8 +195,6 @@ describe("Dropdown default invariant: COUNT(IsDefault=1) <= 1 per dropdown", () 
     it("produces at most one default per field after single setDefault", async () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
 
-      mockDb.getFirstAsync.mockResolvedValue({ Max: 0 });
-
       const id1 = await FieldOptionRepository.create({ FieldID: 1, OptionLabel: "A", OptionValue: "a", IsDefault: 0 });
       const id2 = await FieldOptionRepository.create({ FieldID: 1, OptionLabel: "B", OptionValue: "b", IsDefault: 0 });
       const id3 = await FieldOptionRepository.create({ FieldID: 1, OptionLabel: "C", OptionValue: "c", IsDefault: 0 });
@@ -186,8 +210,6 @@ describe("Dropdown default invariant: COUNT(IsDefault=1) <= 1 per dropdown", () 
 
     it("produces at most one default per field after rapid succession", async () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
-
-      mockDb.getFirstAsync.mockResolvedValue({ Max: 0 });
 
       const id1 = await FieldOptionRepository.create({ FieldID: 1, OptionLabel: "A", OptionValue: "a", IsDefault: 0 });
       const id2 = await FieldOptionRepository.create({ FieldID: 1, OptionLabel: "B", OptionValue: "b", IsDefault: 0 });
@@ -206,8 +228,6 @@ describe("Dropdown default invariant: COUNT(IsDefault=1) <= 1 per dropdown", () 
 
     it("changing Field A does not affect Field B defaults", async () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
-
-      mockDb.getFirstAsync.mockResolvedValue({ Max: 0 });
 
       const f1a = await FieldOptionRepository.create({ FieldID: 1, OptionLabel: "A", OptionValue: "a", IsDefault: 0 });
       const f1b = await FieldOptionRepository.create({ FieldID: 1, OptionLabel: "B", OptionValue: "b", IsDefault: 0 });

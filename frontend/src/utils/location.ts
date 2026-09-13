@@ -6,6 +6,8 @@ export interface CurrentLocation {
   longitude: number;
 }
 
+export const LOCATION_TIMEOUT_MS = 20000;
+
 export async function getCurrentLocation(): Promise<CurrentLocation | null> {
   try {
     const { status } =
@@ -16,14 +18,29 @@ export async function getCurrentLocation(): Promise<CurrentLocation | null> {
       return null;
     }
 
-    const location = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const location = await Promise.race([
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        }),
+        new Promise<null>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Location request timed out")),
+            LOCATION_TIMEOUT_MS
+          );
+        }),
+      ]);
 
-    return {
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-    };
+      if (!location) return null;
+
+      return {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   } catch (error) {
     logger.error("Location Error:", error);
     alert("Unable to get current location.");

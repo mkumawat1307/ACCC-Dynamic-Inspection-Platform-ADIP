@@ -88,6 +88,22 @@ function nodesByType(tree: ReturnType<typeof TestRenderer.create>, type: string)
   return tree.root.findAll((n) => (n as TestNode).type === type);
 }
 
+function nodeByText(tree: ReturnType<typeof TestRenderer.create>, type: string, text: string) {
+  const node = tree.root.findAll((n) => {
+    const inst = n as TestNode;
+    return inst.type === type && inst.props.children === text;
+  })[0];
+  return node?.props as Record<string, unknown> | undefined;
+}
+
+function textInputByLabel(tree: ReturnType<typeof TestRenderer.create>, label: string) {
+  const node = tree.root.findAll((n) => {
+    const inst = n as TestNode;
+    return inst.type === "TextInput" && inst.props.label === label;
+  })[0];
+  return node?.props as { label: string; value?: string } | undefined;
+}
+
 async function renderScreen(options: unknown[] = [], sectionRow: unknown = null) {
   (repo.getByField as jest.Mock).mockResolvedValue(options);
   (getDatabase as jest.Mock).mockResolvedValue({
@@ -171,5 +187,63 @@ describe("OptionsScreen (Fields -> Dropdown values)", () => {
     expect((repo.delete as jest.Mock).mock.calls[0][0]).toBe(1);
     expect(repo.delete).toHaveBeenCalledTimes(1);
     expect(repo.hardDelete).not.toHaveBeenCalled();
+  });
+
+  it("types into the label without a separate value input and derives OptionValue at Save (create)", async () => {
+    (repo.create as jest.Mock).mockResolvedValue(1);
+    const tree = await renderScreen();
+    act(() => {
+      (nodeByText(tree, "Button", "Add Option")?.onPress as () => void)();
+    });
+    expect(textInputByLabel(tree, "Value *")).toBeUndefined();
+    act(() => {
+      (textInputByLabel(tree, "Label *") as unknown as {
+        onChangeText: (t: string) => void;
+      }).onChangeText("Load Factor");
+    });
+    expect(textInputByLabel(tree, "Label *")?.value).toBe("Load Factor");
+    act(() => {
+      (nodeByText(tree, "Button", "Save")?.onPress as () => void)();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ OptionLabel: "Load Factor", OptionValue: "Load Factor" })
+    );
+  });
+
+  it("renaming an option edits only the label and preserves the original OptionValue", async () => {
+    (repo.update as jest.Mock).mockResolvedValue(undefined);
+    const tree = await renderScreen([SAMPLE_OPTION()]);
+    const editButton = nodesByType(tree, "IconButton").find(
+      (n) => (n as TestNode).props.icon === "pencil"
+    );
+    expect(editButton).toBeDefined();
+    act(() => {
+      ((editButton as unknown as TestNode).props as { onPress: () => void }).onPress();
+    });
+    act(() => {
+      (textInputByLabel(tree, "Label *") as unknown as {
+        onChangeText: (t: string) => void;
+      }).onChangeText("No");
+    });
+    expect(textInputByLabel(tree, "Label *")?.value).toBe("No");
+    act(() => {
+      (nodeByText(tree, "Button", "Save")?.onPress as () => void)();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(repo.update).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ OptionLabel: "No", OptionValue: "Yes" })
+    );
   });
 });

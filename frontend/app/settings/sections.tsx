@@ -88,16 +88,25 @@ export default function SectionsScreen() {
 
       const db = await getDatabase();
 
+      const editingTemplateId = editing ? editing.TemplateID : null;
+      const template = editingTemplateId
+        ? null
+        : await db.getFirstAsync<{ TemplateID: number }>(
+            `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
+          );
+      const templateId = editingTemplateId ?? template?.TemplateID ?? 1;
+
+      if (await SectionRepository.keyExists(key, templateId, editing?.SectionID)) {
+        Alert.alert("Duplicate", `A section with identifier "${key}" already exists in this template.`);
+        return;
+      }
+
       if (editing) {
         await db.runAsync(
           `UPDATE InspectionSections SET SectionName = ?, SectionKey = ?, Description = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionID = ?`,
           [sectionName.trim(), key, description.trim() || null, editing.SectionID]
         );
       } else {
-        const template = await db.getFirstAsync<{ TemplateID: number }>(
-          `SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1`
-        );
-        const templateId = template?.TemplateID ?? 1;
         const remarks = await db.getFirstAsync<{ DisplayOrder: number }>(
           `SELECT DisplayOrder FROM InspectionSections WHERE SectionKey = 'remarks' AND TemplateID = ? AND IsActive = 1 LIMIT 1`,
           [templateId]
@@ -329,10 +338,7 @@ export default function SectionsScreen() {
             <TextInput
               label="Section Name *"
               value={sectionName}
-              onChangeText={(text) => {
-                setSectionName(text);
-                if (!editing) setSectionKey(generateKey(text));
-              }}
+              onChangeText={setSectionName}
               mode="outlined"
               style={styles.input}
             />

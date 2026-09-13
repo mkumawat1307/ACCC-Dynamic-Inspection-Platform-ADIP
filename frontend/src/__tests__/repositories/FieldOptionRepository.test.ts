@@ -22,6 +22,10 @@ describe("FieldOptionRepository", () => {
   });
 
   describe("setDefault", () => {
+    beforeEach(() => {
+      mockDb.getFirstAsync.mockResolvedValue({ FieldID: 1, IsActive: 1 });
+    });
+
     it("1. makes exactly one option default", async () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
       await FieldOptionRepository.setDefault(1, 10);
@@ -69,6 +73,30 @@ describe("FieldOptionRepository", () => {
 
       expect(clearCall).toBeTruthy();
       expect(setCall).toBeTruthy();
+    });
+
+    it("4. rejects a non-existent option and never writes", async () => {
+      mockDb.getFirstAsync.mockResolvedValue(null);
+      const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
+
+      await expect(FieldOptionRepository.setDefault(1, 999)).rejects.toThrow("Option ID 999 does not exist.");
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
+    });
+
+    it("5. rejects an option that belongs to another field and never writes", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ FieldID: 2, IsActive: 1 });
+      const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
+
+      await expect(FieldOptionRepository.setDefault(1, 10)).rejects.toThrow("Option ID 10 does not belong to field 1.");
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
+    });
+
+    it("6. rejects an inactive option and never writes", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ FieldID: 1, IsActive: 0 });
+      const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
+
+      await expect(FieldOptionRepository.setDefault(1, 10)).rejects.toThrow("Option ID 10 is inactive and cannot be set as default.");
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
     });
   });
 
@@ -163,6 +191,10 @@ describe("FieldOptionRepository", () => {
   });
 
   describe("isolation", () => {
+    beforeEach(() => {
+      mockDb.getFirstAsync.mockResolvedValue({ FieldID: 1, IsActive: 1 });
+    });
+
     it("8. unrelated dropdown is unaffected", async () => {
       const { FieldOptionRepository } = require("@/src/database/repositories/FieldOptionRepository");
 

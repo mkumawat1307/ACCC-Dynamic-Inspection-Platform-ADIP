@@ -16,7 +16,7 @@ import { openProjectDb, deleteProjectDb } from "@/src/database/helpers/ProjectDB
 import { clearActiveProject } from "@/src/database/db";
 import { WatermarkState } from "@/src/components/inspection/photoUtils";
 
-type SetStates = React.Dispatch<React.SetStateAction<Record<number, WatermarkState>>>;
+type SetStates = React.Dispatch<React.SetStateAction<Record<string, WatermarkState>>>;
 
 function renderHookInProvider<T>(hookFn: () => T) {
   const result: { current: T } = { current: undefined as unknown as T };
@@ -58,7 +58,7 @@ describe("PhotoStatesContext", () => {
   });
 
   it("exposes a ref-based getter that reflects the latest photoStates", () => {
-    let getStates: (() => Record<number, WatermarkState>) | null = null;
+    let getStates: (() => Record<string, WatermarkState>) | null = null;
     let setStates: SetStates | null = null;
     function Probe() {
       getStates = usePhotoStates().getPhotoStates;
@@ -78,7 +78,7 @@ describe("PhotoStatesContext", () => {
   });
 
   it("exposes the getter through the meta context for save-time reads", async () => {
-    let metaGetter: (() => Record<number, WatermarkState>) | null = null;
+    let metaGetter: (() => Record<string, WatermarkState>) | null = null;
     let setStates: SetStates | null = null;
     function Probe() {
       metaGetter = useInspection().getPhotoStates;
@@ -99,7 +99,7 @@ describe("PhotoStatesContext", () => {
   });
 
   it("clears photoStates when closing the project", async () => {
-    let photoStatesValue: Record<number, WatermarkState> = {};
+    let photoStatesValue: Record<string, WatermarkState> = {};
     let setStates: SetStates | null = null;
     let closeProject: (() => Promise<void>) | null = null;
     function Probe() {

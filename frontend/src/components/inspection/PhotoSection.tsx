@@ -24,6 +24,7 @@ import { composeWatermarkLines } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import { usePhotoStates } from "@/src/context/PhotoStatesContext";
+import { makePhotoStateKey } from "./photoUtils";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "./useWatermarkProcessor";
 import PhotoCard from "./PhotoCard";
@@ -70,13 +71,15 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
       let changed = false;
       for (const photo of data) {
         const id = photo.PhotoID;
-        if (id == null || next[id] !== undefined) continue;
-        next[id] = photo.ProcessingStatus === "completed" ? "completed" : "failed";
+        if (id == null) continue;
+        const key = makePhotoStateKey(project?.DBPath, id);
+        if (next[key] !== undefined) continue;
+        next[key] = photo.ProcessingStatus === "completed" ? "completed" : "failed";
         changed = true;
       }
       return changed ? next : prev;
     });
-  }, [setPhotoStates]);
+  }, [setPhotoStates, project?.DBPath]);
 
   const loadPhotos = useCallback(async () => {
     try {
@@ -142,7 +145,7 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
   }, [locked, inspectionId, router]);
 
   async function deletePhoto(photoId: number) {
-    const state = watermarkState[photoId];
+    const state = watermarkState[makePhotoStateKey(project?.DBPath, photoId)];
     if (state === "processing") {
       Alert.alert("Please Wait", "Cannot delete a photo while it is being watermarked.");
       return;
@@ -176,7 +179,7 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
 
   const hasMinPhotos = photos.length >= 1;
   const allComplete = photos.length > 0 && photos.every(
-    p => watermarkState[p.PhotoID!] === "completed"
+    p => watermarkState[makePhotoStateKey(project?.DBPath, p.PhotoID!)] === "completed"
   );
 
   if (loading) {
@@ -226,7 +229,7 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
           key={photo.PhotoID}
           photo={photo}
           index={index}
-          state={watermarkState[photo.PhotoID!]}
+          state={watermarkState[makePhotoStateKey(project?.DBPath, photo.PhotoID!)]}
           onPreview={setPreviewPhoto}
           onDelete={deletePhoto}
           onRetry={handleRetry}

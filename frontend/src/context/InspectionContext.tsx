@@ -30,7 +30,7 @@ export interface InspectionContextType {
   poleId: string;
   setPoleId: (poleId: string) => void;
 
-  getPhotoStates: () => Record<number, WatermarkState>;
+  getPhotoStates: () => Record<string, WatermarkState>;
 }
 
 const InspectionContext = createContext<InspectionContextType | undefined>(

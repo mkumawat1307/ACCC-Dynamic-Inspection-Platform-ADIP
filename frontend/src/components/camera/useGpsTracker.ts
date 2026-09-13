@@ -2,24 +2,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
 import { isLocationFresh } from "@/src/utils/geo";
 import {
+  isFixUsable,
+  needsGpsRefresh,
+  type GpsFix,
+} from "./gpsPolicy";
+import {
   MAX_GPS_ACCURACY_M,
   GPS_STALE_MS,
   GPS_MOVE_THRESHOLD_M,
-  GPS_GRACE_MS,
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
   GPS_ONE_SHOT_TIMEOUT_COLD_MS,
   GPS_REFRESH_AGE_MS,
-  GPS_ACCURACY_REFRESH_M,
 } from "./captureConfig";
 
-export interface GpsFix {
-  latitude: number;
-  longitude: number;
-  accuracyM: number;
-  timestamp: number;
-}
+export type { GpsFix } from "./gpsPolicy";
 
-export type GpsStatus = "loading" | "acquiring" | "fixed" | "denied";
+export type GpsStatus = "loading" | "acquiring" | "fixed" | "stale" | "denied";
+
+export const GPS_STATUS_TICK_MS = 1000;
 
 interface LocationLike {
   coords: {
@@ -28,11 +28,6 @@ interface LocationLike {
     accuracy: number | null | undefined;
   };
   timestamp?: number | null;
-}
-
-interface WaitEntry {
-  resolve: (fix: GpsFix | null) => void;
-  timer: ReturnType<typeof setTimeout>;
 }
 
 function toFix(loc: LocationLike): GpsFix {
@@ -58,71 +53,107 @@ export function useGpsTracker() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fixRef = useRef<GpsFix | null>(null);
-  const waitersRef = useRef<WaitEntry[]>([]);
   const subRef = useRef<{ remove: () => void } | null>(null);
   const cancelledRef = useRef(false);
+  const deniedRef = useRef(false);
+  const statusRef = useRef<GpsStatus>("loading");
+
+  const setStatusBoth = useCallback((next: GpsStatus) => {
+    statusRef.current = next;
+    setStatus(next);
+  }, []);
+
+  const settleStatus = useCallback((duringExplicit: boolean) => {
+    if (cancelledRef.current) return;
+    if (deniedRef.current) {
+      setStatusBoth("denied");
+      return;
+    }
+    const fix = fixRef.current;
+    if (statusRef.current === "acquiring" && !duringExplicit && fix == null) {
+      return;
+    }
+    if (fix != null && isFixUsable(fix)) {
+      setStatusBoth("fixed");
+    } else if (fix != null) {
+      setStatusBoth("stale");
+    } else {
+      setStatusBoth("acquiring");
+    }
+  }, [setStatusBoth]);
 
   const acceptFix = useCallback((fix: GpsFix) => {
+    if (cancelledRef.current) return;
     fixRef.current = fix;
     setCoords({ latitude: fix.latitude, longitude: fix.longitude });
     setAccuracyM(fix.accuracyM);
-    setStatus("fixed");
-    waitersRef.current.forEach((w) => {
-      clearTimeout(w.timer);
-      w.resolve(fix);
-    });
-    waitersRef.current = [];
-  }, []);
+    setStatusBoth(isFixUsable(fix) ? "fixed" : "stale");
+  }, [setStatusBoth]);
 
   const oneShotFix = useCallback(
     async (accuracy?: Location.Accuracy): Promise<GpsFix | null> => {
-      const loc = await Location.getCurrentPositionAsync({
-          accuracy: accuracy ?? Location.Accuracy.Balanced,
-        });
+      const timeoutMs = fixRef.current
+        ? GPS_ONE_SHOT_TIMEOUT_CACHED_MS
+        : GPS_ONE_SHOT_TIMEOUT_COLD_MS;
+      let raceTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const loc = await Promise.race([
+          Location.getCurrentPositionAsync({
+            accuracy: accuracy ?? Location.Accuracy.Balanced,
+          }),
+          new Promise<null>((_, reject) => {
+            raceTimer = setTimeout(() => reject(new Error("GPS timeout")), timeoutMs);
+          }),
+        ]);
         if (loc && isAcceptableFix(loc)) {
           const fix = toFix(loc);
           if (!cancelledRef.current) acceptFix(fix);
           return fix;
         }
         return null;
+      } catch {
+        return null;
+      } finally {
+        if (raceTimer) clearTimeout(raceTimer);
+        if (!cancelledRef.current) settleStatus(false);
+      }
     },
-    [acceptFix]
+    [acceptFix, settleStatus]
   );
 
   const captureGps = useCallback(
-    (graceMs: number = GPS_GRACE_MS): Promise<GpsFix | null> => {
+    async (): Promise<GpsFix | null> => {
+      if (cancelledRef.current || deniedRef.current) return null;
       const current = fixRef.current;
-      if (current) return Promise.resolve(current);
-      return new Promise((resolve) => {
-        const waiter: WaitEntry = {
-          resolve,
-          timer: setTimeout(() => {
-            waitersRef.current = waitersRef.current.filter((w) => w !== waiter);
-            resolve(fixRef.current);
-          }, graceMs),
-        };
-        waitersRef.current.push(waiter);
-      });
+      if (current != null && isFixUsable(current)) {
+        return { ...current };
+      }
+      setStatusBoth("acquiring");
+      const fix = await oneShotFix();
+      if (cancelledRef.current) return null;
+      if (!fix) settleStatus(true);
+      return fix;
     },
-    []
+    [oneShotFix, settleStatus, setStatusBoth]
   );
 
   const refreshNow = useCallback(
     async (): Promise<GpsFix | null> => {
+      if (cancelledRef.current || deniedRef.current) return null;
       setRefreshing(true);
       try {
+        setStatusBoth("acquiring");
         const f = await oneShotFix(Location.Accuracy.Highest);
-        if (f) {
-          return f;
-        }
-        return fixRef.current;
+        if (cancelledRef.current) return null;
+        if (!f) settleStatus(true);
+        return f;
       } catch {
-        return fixRef.current;
+        return null;
       } finally {
         setRefreshing(false);
       }
     },
-    [oneShotFix]
+    [oneShotFix, settleStatus, setStatusBoth]
   );
 
   useEffect(() => {
@@ -135,15 +166,17 @@ export function useGpsTracker() {
         const perm = await Location.requestForegroundPermissionsAsync();
         permStatus = perm.status;
       } catch {
-        setStatus("denied");
+        deniedRef.current = true;
+        setStatusBoth("denied");
         return;
       }
       if (cancelled) return;
       if (permStatus !== "granted") {
-        setStatus("denied");
+        deniedRef.current = true;
+        setStatusBoth("denied");
         return;
       }
-      setStatus("acquiring");
+      setStatusBoth("acquiring");
 
       try {
         const lastKnown = await Location.getLastKnownPositionAsync();
@@ -175,7 +208,7 @@ export function useGpsTracker() {
       if (raceTimer) clearTimeout(raceTimer);
       if (cancelled) return;
       if (!fixRef.current) {
-        setStatus("acquiring");
+        settleStatus(true);
       }
 
       try {
@@ -195,12 +228,7 @@ export function useGpsTracker() {
       } catch {}
 
       interval = setInterval(() => {
-        const current = fixRef.current;
-        if (
-          current &&
-          (!isLocationFresh(current.timestamp, Date.now(), GPS_REFRESH_AGE_MS) ||
-            current.accuracyM > GPS_ACCURACY_REFRESH_M)
-        ) {
+        if (needsGpsRefresh(fixRef.current)) {
           oneShotFix().catch(() => {});
         }
       }, GPS_REFRESH_AGE_MS);
@@ -210,9 +238,17 @@ export function useGpsTracker() {
       cancelled = true;
       cancelledRef.current = true;
       subRef.current?.remove();
+      subRef.current = null;
       if (interval) clearInterval(interval);
     };
-  }, [acceptFix, oneShotFix]);
+  }, [acceptFix, oneShotFix, settleStatus, setStatusBoth]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      settleStatus(false);
+    }, GPS_STATUS_TICK_MS);
+    return () => clearInterval(t);
+  }, [settleStatus]);
 
   const ageMs = fixRef.current ? Date.now() - fixRef.current.timestamp : null;
 

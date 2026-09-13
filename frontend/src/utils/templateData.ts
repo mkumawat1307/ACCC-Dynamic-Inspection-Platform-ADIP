@@ -399,6 +399,71 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
 
   try {
     await db.withTransactionAsync(async () => {
+      const importTemplateNames = Array.from(new Set(data.templates.map((t) => t.TemplateName)));
+
+      let retainedFieldKeys = new Set<string>();
+      if (importTemplateNames.length > 0) {
+        const placeholders = importTemplateNames.map(() => "?").join(", ");
+        const templateMatches = await db.getAllAsync<{ TemplateID: number }>(
+          `SELECT TemplateID FROM InspectionTemplates WHERE TemplateName IN (${placeholders})`,
+          importTemplateNames
+        );
+        const importedTemplateIds = new Set(templateMatches.map((t) => t.TemplateID));
+
+        const activeSections = await db.getAllAsync<{ SectionID: number; TemplateID: number }>(
+          `SELECT SectionID, TemplateID FROM InspectionSections WHERE IsActive = 1`
+        );
+        const activeFields = await db.getAllAsync<{ SectionID: number; FieldKey: string }>(
+          `SELECT SectionID, FieldKey FROM InspectionFields WHERE IsActive = 1`
+        );
+        const retainedSectionIds = new Set(
+          activeSections
+            .filter((s) => !importedTemplateIds.has(s.TemplateID))
+            .map((s) => s.SectionID)
+        );
+        retainedFieldKeys = new Set(
+          activeFields
+            .filter((f) => retainedSectionIds.has(f.SectionID))
+            .map((f) => f.FieldKey.trim().toLowerCase())
+        );
+      }
+
+      const importedFieldKeys = new Map<string, string>();
+      for (const template of data.templates) {
+        for (const section of template.sections) {
+          for (const field of section.fields) {
+            const normalizedKey = field.FieldKey.trim().toLowerCase();
+            if (!normalizedKey) continue;
+            if (importedFieldKeys.has(normalizedKey)) {
+              throw new Error(
+                `Duplicate field identifier "${field.FieldKey.trim()}" within the import (also used as "${importedFieldKeys.get(normalizedKey)}") — field identifiers must be unique across all active sections.`
+              );
+            }
+            if (retainedFieldKeys.has(normalizedKey)) {
+              throw new Error(
+                `Field identifier "${field.FieldKey.trim()}" already exists as an active field in another section — field identifiers must be unique across all active sections.`
+              );
+            }
+            importedFieldKeys.set(normalizedKey, field.FieldKey.trim());
+          }
+        }
+      }
+
+      const importedSectionKeys = new Map<string, string>();
+      for (const template of data.templates) {
+        for (const section of template.sections) {
+          const normalizedKey = section.SectionKey.trim().toLowerCase();
+          if (!normalizedKey) continue;
+          const lookupKey = `${template.TemplateName}::${normalizedKey}`;
+          if (importedSectionKeys.has(lookupKey)) {
+            throw new Error(
+              `Duplicate section identifier "${section.SectionKey.trim()}" within template "${template.TemplateName}" — section identifiers must be unique within a template.`
+            );
+          }
+          importedSectionKeys.set(lookupKey, section.SectionKey.trim());
+        }
+      }
+
       const templateIdByName = new Map<string, number>();
 
       for (const template of data.templates) {
@@ -424,18 +489,14 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
         }
         templateIdByName.set(template.TemplateName, templateId);
 
-        if ((template.deviceTypes?.length ?? 0) > 0) {
-          await db.runAsync(
-            `UPDATE DeviceFieldDefinitions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE TemplateID = ?`,
-            [templateId]
-          );
-        }
-        if ((template.deviceOptions?.length ?? 0) > 0) {
-          await db.runAsync(
-            `UPDATE DeviceOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE TemplateID = ?`,
-            [templateId]
-          );
-        }
+        await db.runAsync(
+          `UPDATE DeviceFieldDefinitions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE TemplateID = ?`,
+          [templateId]
+        );
+        await db.runAsync(
+          `UPDATE DeviceOptions SET IsActive = 0, UpdatedAt = CURRENT_TIMESTAMP WHERE TemplateID = ?`,
+          [templateId]
+        );
 
         for (const section of template.sections) {
           const existingSection = await db.getFirstAsync<{ SectionID: number }>(

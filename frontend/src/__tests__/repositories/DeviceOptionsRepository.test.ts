@@ -18,10 +18,11 @@ describe("DeviceOptionsRepository", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDb = createMockDb();
+    mockDb.getFirstAsync.mockResolvedValue({ DeviceType: "Camera", FieldName: "CameraType", TemplateID: 1, IsActive: 1 });
     (getDatabase as jest.Mock).mockResolvedValue(mockDb);
   });
 
-  describe("setDefault (existing behavior)", () => {
+  describe("setDefault", () => {
     it("10. clears all defaults then sets target", async () => {
       const { default: DeviceOptionsRepository } = require("@/src/database/repositories/DeviceOptionsRepository");
       await DeviceOptionsRepository.setDefault("Camera", "CameraType", 10, 1);
@@ -43,6 +44,32 @@ describe("DeviceOptionsRepository", () => {
       expect(clearCall!.params).toContain("Camera");
       expect(clearCall!.params).toContain("CameraType");
       expect(setCall!.params).toContain(10);
+    });
+
+    it("10a. rejects a non-existent option and never writes", async () => {
+      mockDb.getFirstAsync.mockResolvedValue(null);
+      const { default: DeviceOptionsRepository } = require("@/src/database/repositories/DeviceOptionsRepository");
+
+      await expect(DeviceOptionsRepository.setDefault("Camera", "CameraType", 999, 1)).rejects.toThrow("Option ID 999 does not exist.");
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
+    });
+
+    it("10b. rejects an option that belongs to another device group and never writes", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ DeviceType: "Switch", FieldName: "SwitchType", TemplateID: 1, IsActive: 1 });
+      const { default: DeviceOptionsRepository } = require("@/src/database/repositories/DeviceOptionsRepository");
+
+      await expect(DeviceOptionsRepository.setDefault("Camera", "CameraType", 10, 1))
+        .rejects.toThrow("Option ID 10 does not belong to Camera:CameraType for template 1.");
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
+    });
+
+    it("10c. rejects an inactive option and never writes", async () => {
+      mockDb.getFirstAsync.mockResolvedValue({ DeviceType: "Camera", FieldName: "CameraType", TemplateID: 1, IsActive: 0 });
+      const { default: DeviceOptionsRepository } = require("@/src/database/repositories/DeviceOptionsRepository");
+
+      await expect(DeviceOptionsRepository.setDefault("Camera", "CameraType", 10, 1))
+        .rejects.toThrow("Option ID 10 is inactive and cannot be set as default.");
+      expect(mockDb.runAsync).not.toHaveBeenCalled();
     });
   });
 

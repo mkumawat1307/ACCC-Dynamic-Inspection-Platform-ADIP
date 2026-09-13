@@ -16,7 +16,7 @@ import { usePhotoStates } from "@/src/context/PhotoStatesContext";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Photo } from "@/src/models/Photo";
-import { generateFileName } from "@/src/components/inspection/photoUtils";
+import { generateFileName, makePhotoStateKey } from "@/src/components/inspection/photoUtils";
 import { useGpsTracker } from "@/src/components/camera/useGpsTracker";
 import WatermarkOverlay from "@/src/components/camera/WatermarkOverlay";
 import { useCaptureFlow } from "@/src/components/camera/useCaptureFlow";
@@ -41,7 +41,7 @@ import {
   nextRatio,
   zoomToMagnification,
 } from "@/src/components/camera/cameraControls";
-import { PHOTO_QUALITY, GPS_GRACE_MS } from "@/src/components/camera/captureConfig";
+import { PHOTO_QUALITY } from "@/src/components/camera/captureConfig";
 import { logger } from "@/src/utils/logger";
 import { perfNow, perfLog, uiPerfReset, uiPerfStage, uiPerfProbeSummary, uiPerfStageIfProbe } from "@/src/utils/perf";
 
@@ -55,7 +55,23 @@ export default function CaptureScreen() {
 
   const cameraRef = useRef<React.ElementRef<typeof CameraView>>(null);
   const gps = useGpsTracker();
-  const { lines: addressLines, fullAddress } = useAddressLookup(gps.coords);
+  const { lines: addressLines, fullAddress, getAddressFor, resolveAddress } = useAddressLookup(gps.coords);
+
+  const sessionIdRef = useRef(0);
+  const isActiveRef = useRef(true);
+
+  const isSessionActive = useCallback(
+    (sessionId: number) => isActiveRef.current && sessionId === sessionIdRef.current,
+    []
+  );
+
+  useEffect(() => {
+    isActiveRef.current = true;
+    return () => {
+      isActiveRef.current = false;
+      sessionIdRef.current += 1;
+    };
+  }, []);
 
   const [cameraSize, setCameraSize] = useState({ width: 0, height: 0 });
   const [values, setValues] = useState<{ pole_id: string; block: string }>({
@@ -138,14 +154,19 @@ export default function CaptureScreen() {
 
   useEffect(() => {
     if (!inspectionId) return;
+    let cancelled = false;
     InspectionRepository.getInspectionValues(inspectionId)
-      .then((v) =>
+      .then((v) => {
+        if (cancelled) return;
         setValues({
           pole_id: v.pole_id || contextPoleId || "",
           block: v.block || "",
-        })
-      )
+        });
+      })
       .catch((e) => logger.error("Load values error:", e));
+    return () => {
+      cancelled = true;
+    };
   }, [inspectionId, contextPoleId]);
 
   useEffect(() => {
@@ -181,7 +202,7 @@ export default function CaptureScreen() {
 
   useEffect(() => {
     if (flow.phase !== "merging" || flow.pending == null) return;
-    const s = photoStates[flow.pending.photoId];
+    const s = photoStates[makePhotoStateKey(project?.DBPath, flow.pending.photoId)];
     if (s === "completed") {
       uiPerfStage("reactRenderEnd", `photo=${flow.pending.photoId}`, uiPerfProbeSummary());
       uiPerfStageIfProbe("imageDecodeStart", "thumbnailRendering", `photo=${flow.pending.photoId}`);
@@ -223,6 +244,7 @@ export default function CaptureScreen() {
             style: "destructive",
             onPress: async () => {
               await cleanupPending();
+              sessionIdRef.current += 1;
               router.back();
             },
           },
@@ -230,8 +252,9 @@ export default function CaptureScreen() {
       );
       return;
     }
+    sessionIdRef.current += 1;
     router.back();
-  }, [flow.phase, flow.pending, cleanupPending, router]);
+  }, [flow.phase, flow.pending, cleanupPending, router, sessionIdRef]);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -278,29 +301,42 @@ export default function CaptureScreen() {
     uiPerfReset();
     uiPerfStage("shutterTap", `phase=${flow.phase} gps=${gps.status} previewFrozen=false`);
 
+    const sessionId = sessionIdRef.current;
     const tShutter = perfNow();
-    let coords = gps.coords;
-    let accuracyM = gps.accuracyM;
-    if (!coords) {
-      const fix = await gps.captureGps(GPS_GRACE_MS);
-      if (!fix) {
-        Alert.alert(
-          "GPS is still being acquired",
-          "Wait a moment and try again.",
-          [{ text: "Wait" }, { text: "Cancel", style: "cancel" }]
-        );
-        setShutterBusy(false);
-        return;
-      }
-      coords = { latitude: fix.latitude, longitude: fix.longitude };
-      accuracyM = fix.accuracyM;
+    const fix = await gps.captureGps();
+    if (!isSessionActive(sessionId)) {
+      setShutterBusy(false);
+      return;
     }
+    if (!fix) {
+      Alert.alert(
+        "GPS is still being acquired",
+        "Wait a moment and try again.",
+        [{ text: "Wait" }, { text: "Cancel", style: "cancel" }]
+      );
+      setShutterBusy(false);
+      return;
+    }
+
+    const captureLocation = {
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      accuracyM: fix.accuracyM,
+      timestamp: fix.timestamp,
+    };
 
     const tCapture = perfNow();
     const result = await cameraRef.current?.takePictureAsync({
       quality: PHOTO_QUALITY,
       skipProcessing: false,
     });
+    if (!isSessionActive(sessionId)) {
+      if (result?.uri) {
+        FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+      }
+      setShutterBusy(false);
+      return;
+    }
     if (!result?.uri) {
       Alert.alert("Error", "Failed to capture photo.");
       setShutterBusy(false);
@@ -345,26 +381,39 @@ export default function CaptureScreen() {
         PhotoType: "Pole",
         FileName: fileName,
         FilePath: result.uri,
-        Latitude: coords.latitude,
-        Longitude: coords.longitude,
+        Latitude: captureLocation.latitude,
+        Longitude: captureLocation.longitude,
         CapturedAt: timestamp,
         Remarks: null,
       };
 
       const tDbInsert = perfNow();
       const photoId = await PhotoRepository.create(photo);
+      if (!isSessionActive(sessionId)) {
+        await PhotoRepository.delete(photoId).catch(() => {});
+        FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+        setShutterBusy(false);
+        return;
+      }
       perfLog("capture", `photo=${photoId} sqliteCreate`, tDbInsert);
       perfLog("capture", "shutterToDbInsert", tShutter);
+
+      const snapshotAddress = getAddressFor(
+        captureLocation.latitude,
+        captureLocation.longitude
+      );
+      const capturedAddressLines = snapshotAddress?.lines ?? [];
+      const capturedFullAddress = snapshotAddress?.fullAddress ?? "";
 
       const lines = composeWatermarkLines({
         siteId: poleId,
         district: project?.DistrictName || "",
         block,
         timestampIso: timestamp,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        accuracyM,
-        addressLines,
+        latitude: captureLocation.latitude,
+        longitude: captureLocation.longitude,
+        accuracyM: captureLocation.accuracyM,
+        addressLines: capturedAddressLines,
         settings,
       });
 
@@ -379,11 +428,27 @@ export default function CaptureScreen() {
         { width: result.width, height: result.height }
       );
 
-      // Save full formatted address to InspectionValues (field key: "location") - fire and forget
-      if (fullAddress) {
-        saveLocationAddress(inspectionId, fullAddress).catch((e) => {
+      if (!isSessionActive(sessionId)) return;
+
+      // Persist the address captured at the moment of capture. Use the cache
+      // when hit; otherwise resolve async (session-guarded) so a late result
+      // can never write a stale/foreign address.
+      if (capturedFullAddress) {
+        saveLocationAddress(inspectionId, capturedFullAddress).catch((e) => {
           logger.warn("[Capture] Failed to save full address:", e);
         });
+      } else {
+        resolveAddress(captureLocation.latitude, captureLocation.longitude)
+          .then((addr) => {
+            if (addr && isSessionActive(sessionId)) {
+              saveLocationAddress(inspectionId, addr).catch((e) => {
+                logger.warn("[Capture] Failed to save full address:", e);
+              });
+            }
+          })
+          .catch((e) => {
+            logger.warn("[Capture] Failed to resolve address:", e);
+          });
       }
     } catch (error) {
       logger.error("Capture Error:", error);
@@ -428,6 +493,8 @@ export default function CaptureScreen() {
       ? "#FFEB3B"
       : gps.status === "fixed" && gps.accuracyM != null
       ? GPS_CATEGORY_COLORS[gpsAccuracyCategory(gps.accuracyM)]
+      : gps.status === "stale"
+      ? "#FF9800"
       : gps.status === "denied"
       ? "#FF5252"
       : "#FFEB3B";
@@ -585,7 +652,11 @@ export default function CaptureScreen() {
             mode="contained"
             icon="camera"
             loading={shutterBusy}
-            disabled={shutterBusy || gps.status !== "fixed" || flow.phase !== "preview"}
+            disabled={
+              shutterBusy ||
+              (gps.status !== "fixed" && gps.status !== "stale") ||
+              flow.phase !== "preview"
+            }
             onPress={handleShutter}
           >
             Capture

@@ -205,6 +205,7 @@ export class InspectionEditSession {
    * Discard every staged edit without writing anything to the database.
    */
   static async discard(): Promise<void> {
+    InspectionRepository.cancelPendingFieldValueSaves();
     if (InspectionEditSessionState.hasActiveSession()) {
       DeviceRecordsRepository.cancelPendingSaves();
     }

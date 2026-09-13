@@ -230,10 +230,7 @@ export default function OptionsScreen() {
             <TextInput
               label="Label *"
               value={optionLabel}
-              onChangeText={(text) => {
-                setOptionLabel(text);
-                if (!editing) setOptionValue(text);
-              }}
+              onChangeText={setOptionLabel}
               mode="outlined"
               style={styles.input}
             />

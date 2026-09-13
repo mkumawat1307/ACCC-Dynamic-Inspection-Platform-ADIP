@@ -66,4 +66,28 @@ export default class SectionRepository {
     const target = name.trim().toLowerCase();
     return rows.some((r) => r.SectionName.trim().toLowerCase() === target);
   }
+
+  /**
+   * Whether another active section within the same template already uses this
+   * key, compared case-insensitively after trimming whitespace. SectionKey
+   * uniqueness is scoped per template — different templates may reuse the same
+   * key. Pass excludeSectionId when editing so the section keeps its own key.
+   */
+  static async keyExists(
+    key: string,
+    templateId: number,
+    excludeSectionId?: number
+  ): Promise<boolean> {
+    const db = await getDatabase();
+    let query = `SELECT SectionKey FROM InspectionSections WHERE TemplateID = ? AND IsActive = 1`;
+    const params: (number | string)[] = [templateId];
+    if (excludeSectionId !== undefined) {
+      query += ` AND SectionID != ?`;
+      params.push(excludeSectionId);
+    }
+    const rows =
+      (await db.getAllAsync<{ SectionKey: string }>(query, params)) ?? [];
+    const target = key.trim().toLowerCase();
+    return rows.some((r) => r.SectionKey.trim().toLowerCase() === target);
+  }
 }

@@ -48,7 +48,7 @@ import { Image } from "react-native";
 import { InspectionProvider } from "@/src/context/InspectionContext";
 import { PhotoStatesProvider, usePhotoStates } from "@/src/context/PhotoStatesContext";
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
-import { WatermarkState } from "@/src/components/inspection/photoUtils";
+import { WatermarkState, makePhotoStateKey } from "@/src/components/inspection/photoUtils";
 import { logger } from "@/src/utils/logger";
 import { Project } from "@/src/models/Project";
 import { writePhotoUnique, deletePhoto } from "@/src/utils/storageManager";
@@ -71,6 +71,8 @@ const project = {
   DBPath: "/mock/db.db",
   SAFPath: null,
 } as unknown as Project;
+
+const keyOf = (photoId: number) => makePhotoStateKey(project.DBPath, photoId);
 
 beforeEach(() => {
   (getActiveProjectPath as jest.Mock).mockReturnValue(project.DBPath);
@@ -100,7 +102,7 @@ function renderHook<T>(hookFn: () => T) {
 
 function renderHookWithStates<T>(
   hookFn: () => T,
-  states: Record<number, WatermarkState>
+  states: Record<string, WatermarkState>
 ) {
   const result: { current: T } = { current: undefined as unknown as T };
   let tree!: ReturnType<typeof TestRenderer.create>;
@@ -1128,13 +1130,13 @@ describe("useWatermarkProcessor remount safety", () => {
   it("reconciles orphaned pending/processing states to failed on mount", () => {
     const { result, unmount } = renderHookWithStates(
       () => useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() }),
-      { 1: "processing", 2: "pending", 3: "completed" }
+      { [keyOf(1)]: "processing", [keyOf(2)]: "pending", [keyOf(3)]: "completed" }
     );
 
     expect(result.current.watermarkState).toEqual({
-      1: "failed",
-      2: "failed",
-      3: "completed",
+      [keyOf(1)]: "failed",
+      [keyOf(2)]: "failed",
+      [keyOf(3)]: "completed",
     });
     unmount();
   });
@@ -1276,7 +1278,7 @@ describe("useWatermarkProcessor unique filename persistence", () => {
 
     expect(PhotoRepository.updateFinalPath).not.toHaveBeenCalled();
     expect(writePhotoUnique).toHaveBeenCalledTimes(2);
-    expect(result.current.watermarkState[1]).toBe("failed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("failed");
 
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 100));
@@ -1325,7 +1327,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
     expect(result.current.webViewReady).toBe(false);
     expect(reload).toHaveBeenCalledTimes(1);
     expect(PhotoRepository.setProcessingStatus).toHaveBeenCalledWith(1, "captured");
-    expect(result.current.watermarkState[1]).toBe("pending");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("pending");
 
     TestRenderer.act(() => {
       result.current.handleWebViewMessage({
@@ -1354,7 +1356,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
       "content://media/x/photo.jpg",
       "Download/ACCC Dynamic Inspection/New Delhi_Project Alpha/"
     );
-    expect(result.current.watermarkState[1]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("completed");
 
     await TestRenderer.act(async () => {
       await jest.advanceTimersByTimeAsync(100);
@@ -1405,7 +1407,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
       await jest.advanceTimersByTimeAsync(0);
     });
 
-    expect(result.current.watermarkState[1]).toBe("failed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("failed");
     expect(PhotoRepository.setProcessingStatus).toHaveBeenCalledWith(1, "failed");
 
     await TestRenderer.act(async () => {
@@ -1512,7 +1514,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
       await new Promise(r => setTimeout(r, 50));
     });
 
-    expect(result.current.watermarkState[1]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(1)]).toBeUndefined();
 
     (writePhotoUnique as jest.Mock).mockResolvedValue({
       contentUri: "content://media/x/u.jpg",
@@ -1533,7 +1535,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
       await new Promise(r => setTimeout(r, 150));
     });
 
-    expect(result.current.watermarkState[2]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(2)]).toBe("completed");
     unmount();
   });
 
@@ -1570,7 +1572,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
     expect(PhotoRepository.updateFinalPath).not.toHaveBeenCalled();
     expect(deletePhoto).not.toHaveBeenCalled();
     expect(PhotoRepository.setProcessingStatus).not.toHaveBeenCalledWith(1, "captured");
-    expect(result.current.watermarkState[1]).toBe("failed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("failed");
     unmount();
   });
 
@@ -1617,7 +1619,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
     expect(PhotoRepository.updateFinalPath).not.toHaveBeenCalled();
     expect(deletePhoto).not.toHaveBeenCalled();
     expect(PhotoRepository.setProcessingStatus).not.toHaveBeenCalledWith(1, "captured");
-    expect(result.current.watermarkState[1]).toBe("failed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("failed");
     unmount();
   });
 
@@ -1677,7 +1679,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
 
     expect(writePhotoUnique).toHaveBeenCalledTimes(1);
     expect(PhotoRepository.updateFinalPath).toHaveBeenCalledTimes(1);
-    expect(result.current.watermarkState[1]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("completed");
     unmount();
   });
 
@@ -1740,7 +1742,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 150));
     });
-    expect(result.current.watermarkState[1]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("completed");
 
     (writePhotoUnique as jest.Mock).mockRejectedValue(new Error("E_WRITE_FAILED"));
     TestRenderer.act(() => {
@@ -1755,7 +1757,7 @@ describe("useWatermarkProcessor crash recovery and discard safety", () => {
       await new Promise(r => setTimeout(r, 150));
     });
 
-    expect(result.current.watermarkState[1]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("completed");
     unmount();
   });
 });
@@ -1793,7 +1795,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 0));
     });
     expect(injectJavaScript).toHaveBeenCalledTimes(1);
-    expect(result.current.watermarkState[1]).toBe("processing");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("processing");
 
     TestRenderer.act(() => {
       result.current.handleWebViewMessage({
@@ -1808,7 +1810,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
     TestRenderer.act(() => {
       result.current.clearWatermarkState(1);
     });
-    expect(result.current.watermarkState[1]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(1)]).toBeUndefined();
 
     TestRenderer.act(() => {
       resolveWrite({ contentUri: "content://media/x/photo.jpg", fileName: "photo.jpg" });
@@ -1850,8 +1852,8 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 150));
     });
 
-    expect(result.current.watermarkState[2]).toBe("completed");
-    expect(result.current.watermarkState[1]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(2)]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBeUndefined();
     unmount();
   });
 
@@ -1880,12 +1882,12 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 0));
     });
     expect(injectJavaScript).toHaveBeenCalledTimes(1);
-    expect(result.current.watermarkState[1]).toBe("processing");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("processing");
 
     TestRenderer.act(() => {
       result.current.clearWatermarkState(1);
     });
-    expect(result.current.watermarkState[1]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(1)]).toBeUndefined();
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 0));
     });
@@ -1912,8 +1914,8 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 150));
     });
 
-    expect(result.current.watermarkState[2]).toBe("completed");
-    expect(result.current.watermarkState[1]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(2)]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBeUndefined();
     unmount();
   });
 
@@ -1964,7 +1966,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 0));
     });
-    expect(result.current.watermarkState[2]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(2)]).toBeUndefined();
 
     TestRenderer.act(() => {
       resolveWrite({ contentUri: "content://media/x/photo.jpg", fileName: "photo.jpg" });
@@ -1975,7 +1977,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
     await TestRenderer.act(async () => {
       await new Promise(r => setTimeout(r, 150));
     });
-    expect(result.current.watermarkState[1]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("completed");
     expect(PhotoRepository.updateFinalPath).toHaveBeenCalledWith(
       1,
       "photo.jpg",
@@ -2009,7 +2011,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 150));
     });
 
-    expect(result.current.watermarkState[3]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(3)]).toBe("completed");
     unmount();
   });
 
@@ -2038,7 +2040,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 0));
     });
     expect(injectJavaScript).toHaveBeenCalledTimes(1);
-    expect(result.current.watermarkState[1]).toBe("processing");
+    expect(result.current.watermarkState[keyOf(1)]).toBe("processing");
 
     TestRenderer.act(() => {
       result.current.clearWatermarkState(1);
@@ -2050,7 +2052,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 0));
     });
     expect(injectJavaScript).toHaveBeenCalledTimes(2);
-    expect(result.current.watermarkState[2]).toBe("processing");
+    expect(result.current.watermarkState[keyOf(2)]).toBe("processing");
 
     TestRenderer.act(() => {
       result.current.handleWebViewMessage({
@@ -2074,8 +2076,8 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await new Promise(r => setTimeout(r, 150));
     });
 
-    expect(result.current.watermarkState[2]).toBe("completed");
-    expect(result.current.watermarkState[1]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(2)]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(1)]).toBeUndefined();
     unmount();
   });
 
@@ -2115,7 +2117,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
     await TestRenderer.act(async () => {
       await jest.advanceTimersByTimeAsync(8000);
     });
-    expect(result.current.watermarkState[1]).toBeUndefined();
+    expect(result.current.watermarkState[keyOf(1)]).toBeUndefined();
 
     TestRenderer.act(() => {
       result.current.enqueueWatermark(2, "file:///tmp/u.jpg", "u.jpg", ["line"]);
@@ -2139,7 +2141,7 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
       await jest.advanceTimersByTimeAsync(150);
     });
 
-    expect(result.current.watermarkState[2]).toBe("completed");
+    expect(result.current.watermarkState[keyOf(2)]).toBe("completed");
     unmount();
   });
 });

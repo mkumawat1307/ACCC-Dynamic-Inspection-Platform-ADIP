@@ -183,16 +183,32 @@ export class FieldOptionRepository {
 
   static async setDefault(fieldId: number, optionId: number): Promise<void> {
     const db = await getDatabase();
-    await db.runAsync(
-      `UPDATE FieldOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
-       WHERE FieldID = ? AND IsActive = 1`,
-      [fieldId]
-    );
-    await db.runAsync(
-      `UPDATE FieldOptions SET IsDefault = 1, UpdatedAt = CURRENT_TIMESTAMP
-       WHERE OptionID = ?`,
-      [optionId]
-    );
+    await db.withTransactionAsync(async () => {
+      const option = await db.getFirstAsync<{ FieldID: number; IsActive: number }>(
+        `SELECT FieldID, IsActive FROM FieldOptions WHERE OptionID = ?`,
+        [optionId]
+      );
+      if (!option) {
+        throw new Error(`Option ID ${optionId} does not exist.`);
+      }
+      if (option.FieldID !== fieldId) {
+        throw new Error(`Option ID ${optionId} does not belong to field ${fieldId}.`);
+      }
+      if (option.IsActive !== 1) {
+        throw new Error(`Option ID ${optionId} is inactive and cannot be set as default.`);
+      }
+
+      await db.runAsync(
+        `UPDATE FieldOptions SET IsDefault = 0, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE FieldID = ? AND IsActive = 1`,
+        [fieldId]
+      );
+      await db.runAsync(
+        `UPDATE FieldOptions SET IsDefault = 1, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE OptionID = ?`,
+        [optionId]
+      );
+    });
   }
 
   static async deleteByField(fieldId: number): Promise<void> {

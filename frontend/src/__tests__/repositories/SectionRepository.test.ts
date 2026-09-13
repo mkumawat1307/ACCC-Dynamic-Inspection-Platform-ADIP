@@ -6,6 +6,7 @@ import SectionRepository, { SectionDeletionError } from "@/src/database/reposito
 function createMockDb() {
   return {
     getFirstAsync: jest.fn().mockResolvedValue(null),
+    getAllAsync: jest.fn().mockResolvedValue([]),
     runAsync: jest.fn().mockResolvedValue({ lastInsertRowId: 0, changes: 1 }),
   };
 }
@@ -71,5 +72,61 @@ describe("SectionRepository.softDeleteSection", () => {
     await expect(SectionRepository.softDeleteSection(999)).rejects.toThrow(SectionDeletionError);
     await expect(SectionRepository.softDeleteSection(999)).rejects.toMatchObject({ reason: "not_found" });
     expect(mockDb.runAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("SectionRepository.keyExists", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("returns true when another active section in the same template uses the exact key", async () => {
+    mockDb.getAllAsync.mockResolvedValue([{ SectionKey: "pole_structure" }]);
+
+    await expect(SectionRepository.keyExists("pole_structure", 1)).resolves.toBe(true);
+  });
+
+  it("returns true for a case-insensitive match after trimming whitespace", async () => {
+    mockDb.getAllAsync.mockResolvedValue([{ SectionKey: "  Pole_Structure  " }]);
+
+    await expect(SectionRepository.keyExists("POLE_STRUCTURE", 1)).resolves.toBe(true);
+  });
+
+  it("returns false when the row returned for this template uses a different key", async () => {
+    mockDb.getAllAsync.mockResolvedValue([{ SectionKey: "other_section" }]);
+
+    await expect(SectionRepository.keyExists("pole_structure", 2)).resolves.toBe(false);
+  });
+
+  it("returns false when only inactive sections use the key", async () => {
+    mockDb.getAllAsync.mockResolvedValue([]);
+
+    await expect(SectionRepository.keyExists("pole_structure", 1)).resolves.toBe(false);
+  });
+
+  it("excludes the edited section's own key (self-edit is allowed)", async () => {
+    mockDb.getAllAsync.mockResolvedValue([]);
+
+    await expect(SectionRepository.keyExists("pole_structure", 1, 7)).resolves.toBe(false);
+  });
+
+  it("scopes the query to the template and excludes the edited section", async () => {
+    mockDb.getAllAsync.mockResolvedValue([]);
+
+    await SectionRepository.keyExists("pole_structure", 3, 7);
+
+    const [sql, params] = mockDb.getAllAsync.mock.calls[0];
+    expect(String(sql)).toContain("WHERE TemplateID = ? AND IsActive = 1 AND SectionID != ?");
+    expect(params).toEqual([3, 7]);
+  });
+
+  it("compares keys in JS (trim + lowercase) regardless of what the DB returns", async () => {
+    mockDb.getAllAsync.mockResolvedValue([{ SectionKey: "pole_structure" }]);
+
+    await expect(SectionRepository.keyExists("  Pole_Structure  ", 1)).resolves.toBe(true);
   });
 });
