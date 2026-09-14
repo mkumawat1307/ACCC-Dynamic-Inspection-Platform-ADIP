@@ -502,6 +502,16 @@ onFieldChange(prev => ({ ...prev, deviceRecords: { ...prev.deviceRecords, [type]
   - Grow (standalone): `restorePendingDeactivatedRecords()` + create new with empty data
 - **React keys**: `dev-${record.DeviceNo}` — stable per DeviceNo
 
+### Scroll and reveal behavior
+
+`InspectionScrollContext` owns inspection-form reveal behavior for both focused fields and expanding device cards:
+
+- `effectiveKeyboardViewport()` derives the Android fold from the ScrollView frame and the keyboard's measured top edge in window coordinates. It does not subtract `keyboardHeight` from an already `adjustResize`-shrunk height, avoiding the previous double-count edge case; iOS behavior is unchanged.
+- `scrollFocusedFieldIntoView()` measures the ScrollView with `measureInWindow()` (with its ref-based fallback) and keeps focused numeric, text, and multiline inputs above the keyboard.
+- `computeRevealScrollTarget()` is a pure, window-coordinate calculation. With `REVEAL_PADDING = 48`, it returns no movement when an item is fully visible, performs minimal reveal for a short item below the fold, anchors oversized or top-clipped items near the top padding, and clamps to valid scroll bounds.
+- `scrollElementIntoView()` measures an element after layout and scrolls it into the keyboard-adjusted viewport. `DeviceSection.toggleDevice()` arms a pending reveal for expansion; the expanded body `onLayout` consumes it for the matching device number. The body exists only while expanded, so collapse does not trigger scrolling, and the behavior remains generic for configured device types/counts.
+- A next-tick re-assert handles stale `maxScroll` values while newly expanded content or bottom insets are still laying out. It uses a relative movement guard to avoid duplicate or overshoot scrolling and clears pending timers on re-invocation/unmount; focused-field scrolling also has a 150 ms late-layout/inset retry.
+
 ---
 
 ## 17. Save / Autosave
@@ -611,12 +621,13 @@ poleCheckTimeout.current = setTimeout(async () => {
 
 ## 22. Tests
 
-### Test Structure (69 suites, 1303 tests)
+### Test Structure (185 suites, 2296 passed, 0 skipped)
 | Category | Files | Coverage |
 |----------|-------|----------|
 | Database Isolation | `isolation.test.ts` | Cross-project DB isolation |
 | Device Records | `DeviceRecordsRepository*.test.ts` | CRUD, initialize, deactivate, restore |
 | Device Section | `DeviceSection*.test.tsx` | Rendering, count changes, defaults, persistence |
+| Inspection scroll | `InspectionScrollContext.test.tsx` | Keyboard-aware focused-field scrolling and device expansion reveal targets |
 | SectionRenderer | `SectionRenderer.*.test.tsx` | Count input, default persistence |
 | GeneralInformation | `GeneralInformation.test.tsx` | Pole ID, duplicate, GPS, rename |
 | InspectionRepository | `InspectionRepository.test.ts` | CRUD, validation, Pole ID |
@@ -630,6 +641,12 @@ poleCheckTimeout.current = setTimeout(async () => {
 - **Isolation tests**: Use distinct DB paths per project
 - **Per-project seeding**: Each test opens fresh project DB
 
+### Recent inspection-scroll validation (2026-09-14)
+
+- **Automated validation**: `InspectionScrollContext` has 42 tests, including 10 pure `computeRevealScrollTarget` cases and 7 provider `scrollElementIntoView` cases. `DeviceSection` has 38 tests, including 6 expansion-reveal cases. Seven DeviceSection-related suites (80 tests) passed; the full Jest run passed 185 suites / 2,295 tests with 1 skipped. TypeScript reported 0 errors and lint reported 0 errors (pre-existing warnings only).
+- **Physical Android validation**: Camera Count and other numeric, text, and multiline inputs stayed fully visible above the keyboard. Device 2 and Device 3 expansion, larger counts, sequential expand/collapse/re-expand, keyboard-visible expansion, and keyboard-hidden expansion were verified without double/overshoot scrolling or typing interruption.
+- These physical-device results are separate from the automated Jest, typecheck, and lint results; no emulator/device claim is implied by the automated checks.
+
 ---
 
 ## 23. Known Resolved Bugs
@@ -641,6 +658,8 @@ poleCheckTimeout.current = setTimeout(async () => {
 | SectionRenderer hooks-order crash | `useMemo` moved before early returns |
 | Device count excluded from progress | `field.FieldKey.endsWith("_count")` skip in `countCompletedFields` |
 | Device 3→0→3 data loss | `deactivateBeyond` (IsActive=0) + `restorePendingDeactivatedRecords` |
+| Android keyboard auto-scroll double-count/race | `effectiveKeyboardViewport()` uses the measured keyboard edge; `scrollFocusedFieldIntoView()` measures the ScrollView in window coordinates and re-asserts after late layout/inset changes |
+| Device 2/3+ expansion did not reveal new content | `DeviceSection` triggers generic `scrollElementIntoView()` from expanded-body layout; keyboard-aware minimal reveal and stale-`maxScroll` next-tick re-assert are preserved |
 | Dropdown Pressable crash | Reverted to TouchableWithoutFeedback (patch preserved) |
 | Device default auto-selection | Removed auto-population; fields start empty |
 | `getGlobalDatabase()` during inspection | Removed; project data passed via navigation params + context |

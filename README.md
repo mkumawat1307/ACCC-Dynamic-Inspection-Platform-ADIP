@@ -37,7 +37,7 @@ The app uses a **dynamic form engine**: inspection forms are rendered entirely f
 1. **Project list (Home)** — search across name/district/division/client/inspector, 8 sort orders, and per-project actions: Open, Edit, Clone (custom name), Delete (with confirmation).
 2. **Open a project** — opens (or first-time creates) that project's own SQLite database and lands on the project dashboard.
 3. **New Inspection** — each row in the "General Information" section (site/pole ID, inspection date, division/district, inspector name, GPS) seeds a draft inspection.
-4. **Complete the form** — expandable sections rendered from DB config; device sections render one row per recorded device; capture photo evidence with the watermark overlay.
+4. **Complete the form** — expandable sections rendered from DB config; device sections render one row per recorded device and automatically reveal newly expanded device content; capture photo evidence with the watermark overlay.
 5. **Save / validate** — the save gate checks mandatory form fields, mandatory device fields, a minimum of one fully processed photo, and duplicate Site ID detection.
 6. **List & export** — completed inspections appear under the **Final** tab, drafts under **Drafts**. Search, multi-select, bulk export, bulk delete, and single-export or edit from the list.
 
@@ -145,7 +145,8 @@ Per-project settings (reached from the dashboard):
 - **Expo Router** file-based routing: screens live in `app/**/*.tsx`.
 - **Repository pattern** — all database access goes through `src/database/repositories/`; UI code never queries SQLite directly.
 - **React Context** — `InspectionContext` holds the active project and inspection state; `PhotoStatesContext` tracks photo watermark states.
-- **Dynamic form engine** — templates → sections → fields → options rendered by `SectionRenderer` / `FieldRenderer` / `renderFieldInput`; device rows by `DeviceSection`; scroll orchestration via `sectionScrollCoordinator`.
+- **Dynamic form engine** — templates → sections → fields → options rendered by `SectionRenderer` / `FieldRenderer` / `renderFieldInput`; device rows by `DeviceSection`; scroll orchestration via `InspectionScrollContext` and `sectionScrollCoordinator`.
+- **Inspection scroll behavior** — `InspectionScrollContext` uses window-coordinate measurements to keep focused fields above the Android keyboard and to reveal newly expanded device bodies. `effectiveKeyboardViewport()` derives the keyboard fold from the measured keyboard edge, avoiding double-counting under Android `adjustResize`; `scrollFocusedFieldIntoView()` handles focused inputs. `computeRevealScrollTarget()` applies minimal reveal padding for short below-fold content, while `scrollElementIntoView()` handles layout-triggered device expansion reveals with the same keyboard-aware viewport. A next-tick re-assert recovers late content growth or bottom-inset changes without double-scrolling.
 - **Camera & watermark pipeline** —
   1. `expo-camera` captures the original JPEG.
   2. `useWatermarkProcessor` queues each photo (`pending` → `processing` → `completed` / `failed`).
@@ -198,11 +199,17 @@ yarn bundle:measure     # Node scripts/measure-bundle.js
 
 - **Framework**: Jest (`jest-expo` preset) — `yarn test`.
 - **Coverage**: per-glob coverage thresholds (80% lines/statements/functions, 70% branches) enforced for the core database, repository, and watermark files via `jest.config.js` (`collectCoverageFrom` excludes table/seed definitions).
-- **Current status**: 154 suites, 1,836 passed, 0 failed, 1 skipped — verified via a local `yarn test` run (no GitHub CI run/status for the release commit).
+- **Current status**: 185 suites, 2,296 passed, 0 failed, 0 skipped — verified via a local `yarn test` run (no GitHub CI run/status for the release commit).
 - **Key patterns**:
   - In-memory SQLite mock (`__mocks__/expo-sqlite.ts`), path-aware: tests use distinct DB paths/names and assert isolation.
   - **Isolation tests** — data created in Project A must not appear when Project B is opened (`src/__tests__/database/isolation.test.ts`).
   - Repository, state-machine, and export pipeline tests.
+
+### Recent inspection-scroll validation (2026-09-14)
+
+- **Automated validation**: `InspectionScrollContext` tests cover the pure reveal-target calculation and provider scrolling (42 tests total); `DeviceSection` tests cover expansion reveal triggers (38 tests total). Seven DeviceSection-related suites (80 tests) passed. `npx tsc --noEmit` completed with 0 errors and `yarn lint` completed with 0 errors (pre-existing warnings only).
+- **Physical Android validation**: Numeric, text, and multiline focused inputs remain fully visible above the keyboard, including the Camera Count input. Device 2 and Device 3 expansion, larger counts, sequential expand/collapse/re-expand, and expansion with the keyboard both visible and hidden were verified without double/overshoot scrolling or typing interruption.
+- **Implementation boundary**: Device reveal is generic and database-driven. `DeviceSection` requests `scrollElementIntoView()` from the expanded body's `onLayout`; it does not hard-code Device 2 or Device 3 behavior. The keyboard-aware viewport is preserved during expansion.
 
 ```bash
 yarn test               # Run all tests

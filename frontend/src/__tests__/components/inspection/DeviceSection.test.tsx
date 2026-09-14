@@ -108,6 +108,7 @@ jest.mock("react-native-element-dropdown", () => ({
 const mockScrollTo = jest.fn();
 const mockScrollRef = { current: { scrollTo: mockScrollTo } };
 let mockScrollFocusedFieldIntoView: jest.Mock;
+let mockScrollElementIntoView: jest.Mock;
 
 jest.mock("@/src/context/InspectionScrollContext", () => ({
   useInspectionScroll: () => ({
@@ -115,6 +116,7 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
     scrollOffsetRef: { current: 0 },
     setDropdownOpen: jest.fn(),
     scrollFocusedFieldIntoView: mockScrollFocusedFieldIntoView,
+    scrollElementIntoView: mockScrollElementIntoView,
   }),
   InspectionScrollProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -1134,5 +1136,144 @@ describe("DeviceSection keyboard scroll wiring", () => {
     const arg = mockScrollFocusedFieldIntoView.mock.calls[0][0];
     expect(arg).toMatchObject({ current: expect.anything() });
     expect(arg.current).not.toBeNull();
+  });
+});
+
+describe("DeviceSection device expand reveal scroll", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockScrollElementIntoView = jest.fn();
+  });
+
+  async function renderWithThreeDevices() {
+    fieldDefsRepo.getByDeviceType.mockResolvedValue([numberField, textField, dropdownField]);
+    optionsRepo.getDropdownData.mockResolvedValue([
+      { label: "PTZ", value: "PTZ", isDefault: 0 },
+      { label: "Fixed", value: "Fixed", isDefault: 0 },
+    ]);
+    recordsRepo.getByInspection.mockResolvedValue([]);
+    recordsRepo.getByInspectionAll.mockResolvedValue([]);
+    recordsRepo.scheduleDeviceRecordSave.mockResolvedValue(undefined);
+    recordsRepo.flushPendingDeviceSaves.mockResolvedValue(undefined);
+    recordsRepo.cancelPendingSaves.mockImplementation(() => undefined);
+    recordsRepo.deactivateBeyond.mockResolvedValue(undefined);
+    recordsRepo.restorePendingDeactivatedRecords.mockResolvedValue([]);
+    recordsRepo.save.mockResolvedValue(1);
+
+    let tree!: ReturnType<typeof TestRenderer.create>;
+    await act(async () => {
+      tree = TestRenderer.create(
+        <DeviceSection inspectionId={42} deviceType="Camera" count={3} />
+      );
+    });
+    return tree;
+  }
+
+  function revealToggle(
+    tree: ReturnType<typeof TestRenderer.create>,
+    deviceNo: number
+  ): { props: { onPress: () => void } } {
+    return tree.root.find(
+      (n) => (n.props as { testID?: string } | undefined)?.testID === `dev-toggle-${deviceNo}`
+    ) as unknown as { props: { onPress: () => void } };
+  }
+
+  function bodyOf(
+    tree: ReturnType<typeof TestRenderer.create>,
+    deviceNo: number
+  ): { props: { onLayout: () => void } } | null {
+    const found = tree.root.findAll(
+      (n) => (n.props as { testID?: string } | undefined)?.testID === `dev-body-${deviceNo}`
+    )[0];
+    if (!found) return null;
+    return found as unknown as { props: { onLayout: () => void } };
+  }
+
+  it("reveals a newly expanded device body with its measured node", async () => {
+    const tree = await renderWithThreeDevices();
+    expect(bodyOf(tree, 1)).toBeTruthy();
+    expect(bodyOf(tree, 2)).toBeNull();
+
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    const body2 = bodyOf(tree, 2);
+    expect(body2).toBeTruthy();
+    body2!.props.onLayout();
+
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(1);
+    const arg = mockScrollElementIntoView.mock.calls[0][0];
+    expect(arg.current).toBeTruthy();
+  });
+
+  it("reveals device 3 after device 2 is already expanded", async () => {
+    const tree = await renderWithThreeDevices();
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    bodyOf(tree, 2)!.props.onLayout();
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      revealToggle(tree, 3).props.onPress();
+    });
+    bodyOf(tree, 3)!.props.onLayout();
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(2);
+    const arg = mockScrollElementIntoView.mock.calls[1][0];
+    expect(arg.current).toBeTruthy();
+  });
+
+  it("does not scroll when a device is collapsed", async () => {
+    const tree = await renderWithThreeDevices();
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    bodyOf(tree, 2)!.props.onLayout();
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    expect(bodyOf(tree, 2)).toBeNull();
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("reveals again when a device is collapsed and then re-expanded", async () => {
+    const tree = await renderWithThreeDevices();
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    bodyOf(tree, 2)!.props.onLayout();
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    bodyOf(tree, 2)!.props.onLayout();
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not re-scroll when an already-expanded body re-layouts (pending consumed)", async () => {
+    const tree = await renderWithThreeDevices();
+    act(() => {
+      revealToggle(tree, 2).props.onPress();
+    });
+    bodyOf(tree, 2)!.props.onLayout();
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      bodyOf(tree, 2)!.props.onLayout();
+    });
+    expect(mockScrollElementIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves collapsed devices without a reveal body", async () => {
+    const tree = await renderWithThreeDevices();
+    expect(bodyOf(tree, 2)).toBeNull();
+    expect(bodyOf(tree, 3)).toBeNull();
+    expect(mockScrollElementIntoView).not.toHaveBeenCalled();
   });
 });

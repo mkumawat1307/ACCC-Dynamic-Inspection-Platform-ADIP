@@ -65,7 +65,9 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   const fullyResetRef = useRef(false);
   const dropdownRefs = useRef<Record<string, View | null>>({});
   const textInputRefs = useRef<Record<string, View | null>>({});
-  const { setDropdownOpen, scrollFocusedFieldIntoView } = useInspectionScroll();
+  const expandedBodyRefs = useRef<Record<number, View | null>>({});
+  const pendingRevealNoRef = useRef<number | null>(null);
+  const { setDropdownOpen, scrollFocusedFieldIntoView, scrollElementIntoView } = useInspectionScroll();
 
   useEffect(() => {
     (async () => {
@@ -161,11 +163,15 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
   }, [inspectionId, deviceType, templateId, existing]);
 
   function toggleDevice(deviceNo: number): void {
-    setCollapsedNos((prev) =>
-      prev.includes(deviceNo)
+    setCollapsedNos((prev) => {
+      const isCollapsed = prev.includes(deviceNo);
+      // Remember which device just expanded so its newly mounted body can
+      // trigger the one-shot reveal scroll once its layout is settled.
+      pendingRevealNoRef.current = isCollapsed ? deviceNo : null;
+      return isCollapsed
         ? prev.filter((no) => no !== deviceNo)
-        : [...prev, deviceNo]
-    );
+        : [...prev, deviceNo];
+    });
   }
 
   useEffect(() => {
@@ -557,11 +563,27 @@ export default function DeviceSection({ inspectionId, deviceType, count, templat
             </Pressable>
             {expanded && (
               <Card.Content>
-                {halfFieldsFor(record).map((pair, pairIdx) => (
-                  <View key={pairIdx} style={styles.row}>
-                    {pair.map((field) => renderField(field, index, record))}
-                  </View>
-                ))}
+                <View
+                  testID={`dev-body-${record.DeviceNo}`}
+                  ref={(node) => {
+                    expandedBodyRefs.current[record.DeviceNo] = node;
+                  }}
+                  onLayout={() => {
+                    const pendingNo = pendingRevealNoRef.current;
+                    if (pendingNo == null || pendingNo !== record.DeviceNo) return;
+                    pendingRevealNoRef.current = null;
+                    const bodyNode = expandedBodyRefs.current[record.DeviceNo];
+                    if (typeof scrollElementIntoView === "function" && bodyNode) {
+                      scrollElementIntoView({ current: bodyNode });
+                    }
+                  }}
+                >
+                  {halfFieldsFor(record).map((pair, pairIdx) => (
+                    <View key={pairIdx} style={styles.row}>
+                      {pair.map((field) => renderField(field, index, record))}
+                    </View>
+                  ))}
+                </View>
               </Card.Content>
             )}
           </Card>
