@@ -41,7 +41,7 @@ describe("reverseGeocode", () => {
     __resetLocationState();
   });
 
-  it.skip("returns null when no results are available", async () => {
+  it("returns null when no results are available", async () => {
     __setMockReverseGeocode(null);
     const { reverseGeocode } = require("@/src/utils/geo");
     expect(await reverseGeocode(1, 2)).toBeNull();
