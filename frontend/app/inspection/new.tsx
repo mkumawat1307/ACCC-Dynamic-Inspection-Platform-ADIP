@@ -7,21 +7,10 @@ import React, {
   useState,
 } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  ScrollView,
-  Alert,
-  BackHandler,
-  View,
-} from "react-native";
+import { ScrollView, Alert, BackHandler, View } from "react-native";
 import { styles } from "@/src/components/app/inspection/new.styles";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  Card,
-  Text,
-  List,
-  Appbar,
-  Button,
-} from "react-native-paper";
+import { Card, Text, List, Appbar, Button } from "react-native-paper";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { Project } from "@/src/models/Project";
 import { useInspection } from "@/src/context/InspectionContext";
@@ -34,10 +23,10 @@ import {
 } from "@/src/context/InspectionScrollContext";
 import { getCurrentInspectionDate } from "@/src/utils/date";
 import SectionRenderer from "@/src/components/inspection/SectionRenderer";
-import GeneralInformation, { type GeneralInformationHandle } from "@/src/components/inspection/GeneralInformation";
-import {
-  measureSectionInWindow,
-} from "@/src/components/inspection/sectionAutoScroll";
+import GeneralInformation, {
+  type GeneralInformationHandle,
+} from "@/src/components/inspection/GeneralInformation";
+import { measureSectionInWindow } from "@/src/components/inspection/sectionAutoScroll";
 import { SectionScrollCoordinator } from "@/src/components/inspection/sectionScrollCoordinator";
 import {
   handleScrollEvent,
@@ -59,7 +48,10 @@ import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecor
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
 import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import { InspectionSection } from "@/src/database/repositories/InspectionTypes";
-import { validatePhotosForSave, extractProjectPhotoStates } from "@/src/components/inspection/photoUtils";
+import {
+  validatePhotosForSave,
+  extractProjectPhotoStates,
+} from "@/src/components/inspection/photoUtils";
 import { useProjectActivation } from "@/src/hooks/useProjectActivation";
 import useInspectionProgress from "@/src/hooks/useInspectionProgress";
 import InspectionSectionProgress from "@/src/components/inspection/InspectionSectionProgress";
@@ -98,14 +90,17 @@ export default function NewInspectionScreen({
   const scrollContentHeightRef = useRef(0);
   const sectionRefs = useRef<Map<number, View>>(new Map());
   const expandedSectionsRef = useRef<number[]>([1]);
-  const sectionScrollCoordinatorRef = useRef<SectionScrollCoordinator | null>(null);
+  const sectionScrollCoordinatorRef = useRef<SectionScrollCoordinator | null>(
+    null,
+  );
   const createdDraftIdRef = useRef<number | null>(null);
   const creatingDraftRef = useRef<Promise<number | null> | null>(null);
   const inspectionIdRef = useRef<number | null>(null);
   const hydratedInspectionIdRef = useRef<number | null>(null);
   if (!sectionScrollCoordinatorRef.current) {
     sectionScrollCoordinatorRef.current = new SectionScrollCoordinator({
-      isExpanded: (sectionId) => expandedSectionsRef.current.includes(sectionId),
+      isExpanded: (sectionId) =>
+        expandedSectionsRef.current.includes(sectionId),
       measureSection: (sectionId, generation, onMeasured) => {
         const ref = sectionRefs.current.get(sectionId);
         if (!ref || !scrollViewRef.current) {
@@ -118,7 +113,7 @@ export default function NewInspectionScreen({
           scrollViewHeightRef.current,
           scrollOffsetRef.current,
           undefined,
-          onMeasured
+          onMeasured,
         );
       },
       scrollToSection: (sectionId, target) => {
@@ -126,7 +121,9 @@ export default function NewInspectionScreen({
       },
     });
   }
-  const scrollOrchestrationRef = useRef<ScrollOrchestrationHandlers | null>(null);
+  const scrollOrchestrationRef = useRef<ScrollOrchestrationHandlers | null>(
+    null,
+  );
   const generalInfoRef = useRef<GeneralInformationHandle>(null);
   if (!scrollOrchestrationRef.current) {
     scrollOrchestrationRef.current = {
@@ -136,8 +133,11 @@ export default function NewInspectionScreen({
       tolerance: SCROLL_TOLERANCE,
     };
   }
-  const { projectId, inspectionId: routeInspectionId, projectData: projectDataJson } =
-  useLocalSearchParams<{
+  const {
+    projectId,
+    inspectionId: routeInspectionId,
+    projectData: projectDataJson,
+  } = useLocalSearchParams<{
     projectId: string;
     inspectionId?: string;
     projectData?: string;
@@ -166,19 +166,16 @@ export default function NewInspectionScreen({
         ) {
           return parsed as Project;
         }
-      } catch {
-      }
+      } catch {}
     }
-    if (
-      contextProject &&
-      contextProject.ProjectID === Number(projectId)
-    ) {
+    if (contextProject && contextProject.ProjectID === Number(projectId)) {
       return contextProject;
     }
     return null;
   }, [projectDataJson, contextProject, projectId]);
 
-  const { ready, error: activationError } = useProjectActivation(resolvedProject);
+  const { ready, error: activationError } =
+    useProjectActivation(resolvedProject);
 
   const photosProcessing = usePhotosProcessing();
 
@@ -194,7 +191,7 @@ export default function NewInspectionScreen({
   const inspectionProgress = useInspectionProgress(
     inspectionId,
     defaultTemplateId,
-    progressRefreshKey
+    progressRefreshKey,
   );
 
   const progressByKey = useMemo(() => {
@@ -227,15 +224,10 @@ export default function NewInspectionScreen({
     hydratedInspectionIdRef.current = inspectionId;
     InspectionFieldRepository.applyDefaultSelections(
       inspectionId,
-      Boolean(routeInspectionId)
-    ).catch(
-      (error) => {
-        logger.error(
-          "[new.tsx] applyDefaultSelections failed:",
-          error
-        );
-      }
-    );
+      Boolean(routeInspectionId),
+    ).catch((error) => {
+      logger.error("[new.tsx] applyDefaultSelections failed:", error);
+    });
   }, [inspectionId]);
 
   useEffect(() => {
@@ -281,553 +273,549 @@ export default function NewInspectionScreen({
     setExpandedSections(next);
   }
 
-const validateSectionsAndDevices = async (): Promise<{
-  valid: boolean;
-  missingFields: string[];
-}> => {
-  if (!inspectionId) return { valid: true, missingFields: [] };
+  const validateSectionsAndDevices = async (): Promise<{
+    valid: boolean;
+    missingFields: string[];
+  }> => {
+    if (!inspectionId) return { valid: true, missingFields: [] };
 
-  // 1. Flush pending device + field-value saves (cancel timers, write latest rows) -- no timer wait
-  await DeviceRecordsRepository.flushPendingDeviceSaves();
-  await InspectionRepository.flushPendingFieldValueSaves();
+    // 1. Flush pending device + field-value saves (cancel timers, write latest rows) -- no timer wait
+    await DeviceRecordsRepository.flushPendingDeviceSaves();
+    await InspectionRepository.flushPendingFieldValueSaves();
 
-  // 2. Validate sections, then devices against the flushed rows
-  const sectionResult =
-    await InspectionRepository.validateInspection(inspectionId);
-  const deviceResult =
-    await InspectionRepository.validateDeviceMandatory(inspectionId);
-  const deviceTypeResult =
-    await InspectionRepository.validateDeviceTypeMandatory(inspectionId);
+    // 2. Validate sections, then devices against the flushed rows. For a CREATE
+    // inspection the Site ID deliberately stays OUT of the database until the Save
+    // boundary commits it (Option-B), so required-field validation must see the
+    // live typed value instead of the intentionally empty SQLite pole_id. The
+    // module-scoped live overlay (InspectionLiveValues, written on every
+    // keystroke / reset on screen entry, unmount, or "Create New") carries the
+    // exact on-screen value. Only CREATE (no edit session) uses it; EDIT keeps its
+    // existing session-staged overlay untouched. The Site ID is never persisted
+    // here just to satisfy validation.
+    const sectionResult = await InspectionRepository.validateInspection(
+      inspectionId,
+      routeInspectionId ? undefined : InspectionLiveValues.getLiveFieldValues(),
+    );
+    const deviceResult =
+      await InspectionRepository.validateDeviceMandatory(inspectionId);
+    const deviceTypeResult =
+      await InspectionRepository.validateDeviceTypeMandatory(inspectionId);
 
-  return {
-    valid: sectionResult.valid && deviceResult.valid && deviceTypeResult.valid,
-    missingFields: [...sectionResult.missingFields, ...deviceResult.missingFields, ...deviceTypeResult.missingFields],
+    return {
+      valid:
+        sectionResult.valid && deviceResult.valid && deviceTypeResult.valid,
+      missingFields: [
+        ...sectionResult.missingFields,
+        ...deviceResult.missingFields,
+        ...deviceTypeResult.missingFields,
+      ],
+    };
   };
-};
 
-const validateBeforeExit = async (): Promise<boolean> => {
-  if (!inspectionId) return true;
+  const validateBeforeExit = async (): Promise<boolean> => {
+    if (!inspectionId) return true;
 
-  const result = await validateSectionsAndDevices();
+    const result = await validateSectionsAndDevices();
 
-  if (!result.valid) {
-    Alert.alert(
-      "Inspection Incomplete",
-      "Please complete the following:\n\n• " +
-        result.missingFields.join("\n• ")
-    );
-    return false;
-  }
-
-  const photos =
-    await PhotoRepository.getByInspection(
-      inspectionId
-    );
-
-  if (photos.length < 1) {
-    Alert.alert(
-      "Inspection Incomplete",
-      "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section."
-    );
-    return false;
-  }
-
-  // Check for duplicate Pole ID
-  const currentPoleId = poleId?.trim();
-  if (currentPoleId) {
-    const existing = await InspectionRepository.getInspectionByPoleId(currentPoleId);
-    if (existing && existing.InspectionID !== inspectionId) {
+    if (!result.valid) {
       Alert.alert(
-        "Duplicate Site ID",
-        `Site ID ${currentPoleId} already exists in another inspection. Please enter a unique Site ID.`
+        "Inspection Incomplete",
+        "Please complete the following:\n\n• " +
+          result.missingFields.join("\n• "),
       );
       return false;
     }
-  }
 
-  return true;
-};
+    const photos = await PhotoRepository.getByInspection(inspectionId);
 
-useEffect(() => {
-  if (initDoneRef.current) return;
-  if (!ready) return;
-  initDoneRef.current = true;
-  initialize();
-  return () => {
-    initDoneRef.current = false;
-  };
-}, [projectId, routeInspectionId, ready]);
-
-useEffect(() => {
-  const subscription = BackHandler.addEventListener(
-    "hardwareBackPress",
-    () => {
-      if (backInFlightRef.current) return true;
-      backInFlightRef.current = true;
-      validateBeforeExit()
-        .then((ok) => {
-          if (ok) {
-            router.back();
-          }
-        })
-        .finally(() => {
-          backInFlightRef.current = false;
-        });
-
-      return true;
+    if (photos.length < 1) {
+      Alert.alert(
+        "Inspection Incomplete",
+        "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section.",
+      );
+      return false;
     }
-  );
 
-  return () => subscription.remove();
-}, [inspectionId, router]);
-
-async function initialize() {
-  // The live overlay is a module-level singleton; start this screen with a
-  // clean slate so progress can never be computed from a previous inspection.
-  InspectionLiveValues.reset();
-  await loadProject();
-
-  const db = await getDatabase();
-  const tpl = await db.getFirstAsync<{ TemplateID: number }>(
-    "SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1"
-  );
-  if (tpl) setDefaultTemplateId(tpl.TemplateID);
-
-  const data = await InspectionRepository.getSections(
-    undefined,
-    routeInspectionId ? Number(routeInspectionId) : undefined
-  );
-  if (data.length > 0) {
-    setSections(data);
-  }
-}
-
-async function loadProject(): Promise<Project | null> {
-  if (!projectId) return null;
-
-  let data: Project | null = null;
-
-  // 1. Use projectData passed via navigation params (most reliable -- no DB call needed)
-  if (projectDataJson) {
-    try {
-      const parsed = JSON.parse(projectDataJson);
-      if (parsed && typeof parsed.ProjectID === "number" && typeof parsed.ProjectName === "string") {
-        data = parsed as Project;
+    // Check for duplicate Pole ID
+    const currentPoleId = poleId?.trim();
+    if (currentPoleId) {
+      const existing =
+        await InspectionRepository.getInspectionByPoleId(currentPoleId);
+      if (existing && existing.InspectionID !== inspectionId) {
+        Alert.alert(
+          "Duplicate Site ID",
+          `Site ID ${currentPoleId} already exists in another inspection. Please enter a unique Site ID.`,
+        );
+        return false;
       }
-    } catch {
-      // fall through
+    }
+
+    return true;
+  };
+
+  useEffect(() => {
+    if (initDoneRef.current) return;
+    if (!ready) return;
+    initDoneRef.current = true;
+    initialize();
+    return () => {
+      initDoneRef.current = false;
+    };
+  }, [projectId, routeInspectionId, ready]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (backInFlightRef.current) return true;
+        backInFlightRef.current = true;
+        validateBeforeExit()
+          .then((ok) => {
+            if (ok) {
+              router.back();
+            }
+          })
+          .finally(() => {
+            backInFlightRef.current = false;
+          });
+
+        return true;
+      },
+    );
+
+    return () => subscription.remove();
+  }, [inspectionId, router]);
+
+  async function initialize() {
+    // The live overlay is a module-level singleton; start this screen with a
+    // clean slate so progress can never be computed from a previous inspection.
+    InspectionLiveValues.reset();
+    await loadProject();
+
+    const db = await getDatabase();
+    const tpl = await db.getFirstAsync<{ TemplateID: number }>(
+      "SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1",
+    );
+    if (tpl) setDefaultTemplateId(tpl.TemplateID);
+
+    const data = await InspectionRepository.getSections(
+      undefined,
+      routeInspectionId ? Number(routeInspectionId) : undefined,
+    );
+    if (data.length > 0) {
+      setSections(data);
     }
   }
 
-  // 2. Use context (may not have propagated yet due to React batching)
-  if (!data && contextProject && contextProject.ProjectID === Number(projectId)) {
-    data = contextProject;
-  }
+  async function loadProject(): Promise<Project | null> {
+    if (!projectId) return null;
 
-  // 3. NEVER call getProjectById() -- it calls getGlobalDatabase() which corrupts
-  //    the native handle on Android when the project DB is active.
+    let data: Project | null = null;
 
-  if (!data) {
-    logger.error("[new.tsx] No project data available -- check navigation params");
-    return null;
-  }
+    // 1. Use projectData passed via navigation params (most reliable -- no DB call needed)
+    if (projectDataJson) {
+      try {
+        const parsed = JSON.parse(projectDataJson);
+        if (
+          parsed &&
+          typeof parsed.ProjectID === "number" &&
+          typeof parsed.ProjectName === "string"
+        ) {
+          data = parsed as Project;
+        }
+      } catch {
+        // fall through
+      }
+    }
 
-setProject(data);
+    // 2. Use context (may not have propagated yet due to React batching)
+    if (
+      !data &&
+      contextProject &&
+      contextProject.ProjectID === Number(projectId)
+    ) {
+      data = contextProject;
+    }
 
-const inspectionDate = getCurrentInspectionDate();
+    // 3. NEVER call getProjectById() -- it calls getGlobalDatabase() which corrupts
+    //    the native handle on Android when the project DB is active.
 
-setInspectionDate(inspectionDate);
-
-if (routeInspectionId) {
-
-  // Editing existing inspection
-  setInspectionId(Number(routeInspectionId));
-
-} else {
-
-  // Creating new inspection — do NOT create a Draft row yet.
-  // Lazy draft creation happens only once the entered Site ID passes
-  // duplicate validation (see createDraftInspection). Until then
-  // inspectionId stays null so no orphan draft is left behind if the
-  // user backs out or jumps to an existing inspection.
-  setPoleId("");
-  setInspectionId(null);
-  createdDraftIdRef.current = null;
-}
-
-return data;
-}
-
-const createDraftInspection = async (): Promise<number | null> => {
-  // Editing an existing inspection — its row already exists.
-  if (routeInspectionId) return Number(routeInspectionId);
-
-  // Reuse an already-created session draft.
-  if (createdDraftIdRef.current != null) return createdDraftIdRef.current;
-
-  // Guard against concurrent creation (debounced saves can overlap).
-  if (creatingDraftRef.current) return creatingDraftRef.current;
-
-  const create = (async () => {
-    const data = projectDataJson
-      ? (JSON.parse(projectDataJson) as Project)
-      : contextProject;
     if (!data) {
-      logger.error("[new.tsx] createDraftInspection — no project data");
+      logger.error(
+        "[new.tsx] No project data available -- check navigation params",
+      );
       return null;
     }
-    const newId = await InspectionRepository.createInspection(
-      data.ProjectID,
-      data.DistrictID,
-      getCurrentInspectionDate()
-    );
-    createdDraftIdRef.current = newId;
-    setInspectionId(newId);
-    return newId;
-  })();
 
-  creatingDraftRef.current = create;
-  try {
-    return (await create) ?? createdDraftIdRef.current;
-  } finally {
-    creatingDraftRef.current = null;
-  }
-};
+    setProject(data);
 
-const releaseAbandonedDraft = async (): Promise<void> => {
-  // Editing an existing inspection — never delete the existing row.
-  if (routeInspectionId) return;
+    const inspectionDate = getCurrentInspectionDate();
 
-  const draftId = createdDraftIdRef.current;
-  createdDraftIdRef.current = null;
-  if (draftId == null) return;
+    setInspectionDate(inspectionDate);
 
-  try {
-    await InspectionRepository.deleteInspection(draftId);
-  } catch (error) {
-    logger.error("[new.tsx] releaseAbandonedDraft — delete failed:", error);
-  }
-};
+    if (routeInspectionId) {
+      // Editing existing inspection
+      setInspectionId(Number(routeInspectionId));
+    } else {
+      // Creating new inspection — do NOT create a Draft row yet.
+      // Lazy draft creation happens only once the entered Site ID passes
+      // duplicate validation (see createDraftInspection). Until then
+      // inspectionId stays null so no orphan draft is left behind if the
+      // user backs out or jumps to an existing inspection.
+      setPoleId("");
+      setInspectionId(null);
+      createdDraftIdRef.current = null;
+    }
 
-const handleBack = async () => {
-  const ok = await validateBeforeExit();
-
-  if (ok) {
-    router.back();
-  }
-};
-
-const handleSave = async () => {
-  if (!inspectionId) return;
-
-  const isExisting = Boolean(routeInspectionId);
-
-  const result = await validateSectionsAndDevices();
-
-  if (!result.valid) {
-    Alert.alert(
-      "Inspection Incomplete",
-      "Please complete the following:\n\n• " +
-        result.missingFields.join("\n• ")
-    );
-    return;
+    return data;
   }
 
-  const photos =
-    await PhotoRepository.getByInspection(
-      inspectionId
-    );
+  const createDraftInspection = async (): Promise<number | null> => {
+    // Editing an existing inspection — its row already exists.
+    if (routeInspectionId) return Number(routeInspectionId);
 
-  const photoValidation = validatePhotosForSave(
-    photos,
-    extractProjectPhotoStates(contextProject?.DBPath, getPhotoStates())
-  );
+    // Reuse an already-created session draft.
+    if (createdDraftIdRef.current != null) return createdDraftIdRef.current;
 
-  if (!photoValidation.canSave) {
-    const message = getPhotoBlockMessage(photoValidation.reason);
-    Alert.alert("Inspection Incomplete", message);
-    return;
-  }
+    // Guard against concurrent creation (debounced saves can overlap).
+    if (creatingDraftRef.current) return creatingDraftRef.current;
 
-  // Persist all staged edits (field values, Pole ID, device records) for an
-  // existing inspection. This is the explicit Save boundary — nothing is
-  // written to the database until this point, and only a fully valid Save
-  // deactivates the edit session.
-  const decision = await generalInfoRef.current?.confirmIdentityRename();
-  if (decision?.type === "duplicate") {
-    Alert.alert(
-      "Duplicate Site ID",
-      `Site ID ${decision.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`
-    );
-    return;
-  }
-  if (decision?.type === "cancelled") {
-    return;
-  }
+    const create = (async () => {
+      const data = projectDataJson
+        ? (JSON.parse(projectDataJson) as Project)
+        : contextProject;
+      if (!data) {
+        logger.error("[new.tsx] createDraftInspection — no project data");
+        return null;
+      }
+      const newId = await InspectionRepository.createInspection(
+        data.ProjectID,
+        data.DistrictID,
+        getCurrentInspectionDate(),
+      );
+      createdDraftIdRef.current = newId;
+      setInspectionId(newId);
+      return newId;
+    })();
 
-  if (isExisting) {
-    const committed = await InspectionEditSession.commit();
-    if (!committed) {
+    creatingDraftRef.current = create;
+    try {
+      return (await create) ?? createdDraftIdRef.current;
+    } finally {
+      creatingDraftRef.current = null;
+    }
+  };
+
+  const releaseAbandonedDraft = async (): Promise<void> => {
+    // Editing an existing inspection — never delete the existing row.
+    if (routeInspectionId) return;
+
+    const draftId = createdDraftIdRef.current;
+    createdDraftIdRef.current = null;
+    if (draftId == null) return;
+
+    try {
+      await InspectionRepository.deleteInspection(draftId);
+    } catch (error) {
+      logger.error("[new.tsx] releaseAbandonedDraft — delete failed:", error);
+    }
+  };
+
+  const handleBack = async () => {
+    const ok = await validateBeforeExit();
+
+    if (ok) {
+      router.back();
+    }
+  };
+
+  const handleSave = async () => {
+    if (!inspectionId) return;
+
+    const isExisting = Boolean(routeInspectionId);
+
+    const result = await validateSectionsAndDevices();
+
+    if (!result.valid) {
       Alert.alert(
-        "Duplicate Site ID",
-        "Site ID already exists in another inspection. Please enter a unique Site ID."
+        "Inspection Incomplete",
+        "Please complete the following:\n\n• " +
+          result.missingFields.join("\n• "),
       );
       return;
     }
-  }
 
-  await InspectionRepository.updateInspectionStatus(
-    inspectionId,
-    "Completed"
-  );
+    const photos = await PhotoRepository.getByInspection(inspectionId);
 
-  Alert.alert(
-    "Success",
-    "Inspection saved successfully.",
-    [
+    const photoValidation = validatePhotosForSave(
+      photos,
+      extractProjectPhotoStates(contextProject?.DBPath, getPhotoStates()),
+    );
+
+    if (!photoValidation.canSave) {
+      const message = getPhotoBlockMessage(photoValidation.reason);
+      Alert.alert("Inspection Incomplete", message);
+      return;
+    }
+
+    // Persist all staged edits (field values, Pole ID, device records) for an
+    // existing inspection. This is the explicit Save boundary — nothing is
+    // written to the database until this point, and only a fully valid Save
+    // deactivates the edit session.
+    const decision = await generalInfoRef.current?.confirmIdentityRename();
+    if (decision?.type === "duplicate") {
+      Alert.alert(
+        "Duplicate Site ID",
+        `Site ID ${decision.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`,
+      );
+      return;
+    }
+    if (decision?.type === "cancelled") {
+      return;
+    }
+
+    if (isExisting) {
+      const committed = await InspectionEditSession.commit();
+      if (!committed) {
+        Alert.alert(
+          "Duplicate Site ID",
+          "Site ID already exists in another inspection. Please enter a unique Site ID.",
+        );
+        return;
+      }
+    }
+
+    await InspectionRepository.updateInspectionStatus(
+      inspectionId,
+      "Completed",
+    );
+
+    Alert.alert("Success", "Inspection saved successfully.", [
       {
         text: "OK",
         onPress: () => router.back(),
       },
-    ]
-  );
-};
+    ]);
+  };
 
-function getPhotoBlockMessage(reason: string | null): string {
-  switch (reason) {
-    case "processing":
-    case "pending":
-    case "unprocessed":
-      return "Photos are still being processed.\n\nPlease wait for watermarking to complete before saving.";
-    case "failed":
-      return "One or more photos failed to process.\n\nPlease retry or remove the failed photos before saving.";
-    default:
-      return "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section.";
+  function getPhotoBlockMessage(reason: string | null): string {
+    switch (reason) {
+      case "processing":
+      case "pending":
+      case "unprocessed":
+        return "Photos are still being processed.\n\nPlease wait for watermarking to complete before saving.";
+      case "failed":
+        return "One or more photos failed to process.\n\nPlease retry or remove the failed photos before saving.";
+      default:
+        return "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section.";
+    }
   }
-}
 
-const handleCancel = () => {
-
-  Alert.alert(
-    "Cancel Inspection",
-    "Are you sure you want to cancel this inspection?",
-    [
-      {
-        text: "No",
-        style: "cancel",
-      },
-      {
-        text: "Yes",
-        style: "destructive",
-        onPress: async () => {
-
-          try {
-
-            // Drop pending debounced saves before the inspection row goes away,
-            // so no delayed write can resurrect data for a deleted inspection.
-            InspectionRepository.cancelPendingFieldValueSaves();
-
-            // Only delete if this is a NEW inspection
-            if (!routeInspectionId && inspectionId) {
-
-              await InspectionRepository.deleteInspection(
-                inspectionId
-              );
-              createdDraftIdRef.current = null;
-            }
-
-            router.back();
-
-          } catch (error) {
-
-            logger.error(
-              "Cancel Error:",
-              error
-            );
-
-            Alert.alert(
-              "Error",
-              "Unable to cancel inspection."
-            );
-
-          }
-
+  const handleCancel = () => {
+    Alert.alert(
+      "Cancel Inspection",
+      "Are you sure you want to cancel this inspection?",
+      [
+        {
+          text: "No",
+          style: "cancel",
         },
-      },
-    ]
-  );
+        {
+          text: "Yes",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // Drop pending debounced saves before the inspection row goes away,
+              // so no delayed write can resurrect data for a deleted inspection.
+              InspectionRepository.cancelPendingFieldValueSaves();
 
-};
+              // Only delete if this is a NEW inspection
+              if (!routeInspectionId && inspectionId) {
+                await InspectionRepository.deleteInspection(inspectionId);
+                createdDraftIdRef.current = null;
+              }
 
-if (activationError) {
+              router.back();
+            } catch (error) {
+              logger.error("Cancel Error:", error);
+
+              Alert.alert("Error", "Unable to cancel inspection.");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  if (activationError) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+        <Appbar.Header>
+          <Appbar.BackAction onPress={handleBack} />
+          <Appbar.Content title={title} />
+        </Appbar.Header>
+        <Text
+          variant="bodyMedium"
+          style={{ textAlign: "center", marginTop: 40, color: "#666" }}
+        >
+          Project not found.
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={["left", "right", "bottom"]}
-    >
+    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
       <Appbar.Header>
         <Appbar.BackAction onPress={handleBack} />
         <Appbar.Content title={title} />
       </Appbar.Header>
-      <Text variant="bodyMedium" style={{ textAlign: "center", marginTop: 40, color: "#666" }}>
-        Project not found.
-      </Text>
+      <InspectionScrollProvider
+        scrollViewRef={scrollViewRef}
+        scrollOffsetRef={scrollOffsetRef}
+        scrollViewTopRef={scrollViewTopRef}
+        scrollViewHeightRef={scrollViewHeightRef}
+        scrollContentHeightRef={scrollContentHeightRef}
+        setDropdownOpen={setDropdownOpen}
+      >
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets
+          scrollEnabled={!dropdownOpen}
+          onLayout={(event) => {
+            scrollViewTopRef.current = event.nativeEvent.layout.y;
+            scrollViewHeightRef.current = event.nativeEvent.layout.height;
+          }}
+          onContentSizeChange={(width, height) => {
+            scrollContentHeightRef.current = height;
+          }}
+          onScroll={(event) => {
+            const offset = event.nativeEvent.contentOffset.y;
+            scrollOffsetRef.current = offset;
+            const orchestration = scrollOrchestrationRef.current;
+            if (orchestration) {
+              handleScrollEvent(orchestration, offset);
+            }
+          }}
+          onScrollBeginDrag={(event) => {
+            const orchestration = scrollOrchestrationRef.current;
+            if (orchestration) {
+              handleScrollBeginDrag(
+                orchestration,
+                event.nativeEvent.contentOffset.y,
+              );
+            }
+          }}
+          scrollEventThrottle={16}
+        >
+          <ScrollContents>
+            <Text variant="headlineMedium" style={styles.title}>
+              {title}
+            </Text>
+
+            {inspectionProgress != null && (
+              <OverallProgressCard progress={inspectionProgress} />
+            )}
+
+            {sections.map((section) => (
+              <Card key={section.SectionID} style={styles.card}>
+                <View
+                  ref={(ref) => {
+                    if (ref) sectionRefs.current.set(section.SectionID, ref);
+                  }}
+                  onLayout={(event) => {
+                    const coordinator = sectionScrollCoordinatorRef.current;
+                    coordinator?.notifyLayout(section.SectionID);
+                  }}
+                >
+                  <List.Accordion
+                    title={
+                      section.IsActive === 0
+                        ? `Deleted ${section.SectionName}`
+                        : section.SectionName
+                    }
+                    titleNumberOfLines={2}
+                    expanded={expandedSections.includes(section.SectionID)}
+                    onPress={() => handleSectionPress(section.SectionID)}
+                    titleStyle={styles.sectionTitle}
+                    style={styles.accordionHeader}
+                    right={({ isExpanded }) => (
+                      <InspectionSectionProgress
+                        progress={progressByKey.get(section.SectionKey ?? "")}
+                        expanded={isExpanded}
+                      />
+                    )}
+                  >
+                    <Card.Content>
+                      {section.SectionKey === "general_information" ? (
+                        <GeneralInformation
+                          ref={generalInfoRef}
+                          ensureDraft={createDraftInspection}
+                          releaseAbandonedDraft={releaseAbandonedDraft}
+                          existing={Boolean(routeInspectionId)}
+                          onDataChanged={bumpProgress}
+                        />
+                      ) : inspectionId ? (
+                        <SectionRenderer
+                          sectionId={section.SectionID}
+                          inspectionId={inspectionId}
+                          sectionKey={section.SectionKey}
+                          templateId={defaultTemplateId}
+                          existing={Boolean(routeInspectionId)}
+                          onDataChanged={bumpProgress}
+                          progress={
+                            progressByKey.get(section.SectionKey ?? "") ?? null
+                          }
+                        />
+                      ) : (
+                        <Text variant="bodyMedium" style={styles.lockedNotice}>
+                          Enter a unique Site ID above to enable this section.
+                        </Text>
+                      )}
+                    </Card.Content>
+                  </List.Accordion>
+                </View>
+              </Card>
+            ))}
+
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginTop: 20,
+                marginBottom: 30,
+              }}
+            >
+              <Button
+                mode="outlined"
+                icon="close"
+                onPress={handleCancel}
+                style={{
+                  flex: 1,
+                  marginRight: 8,
+                }}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                mode="contained"
+                icon="content-save"
+                onPress={handleSave}
+                disabled={photosProcessing}
+                style={{
+                  flex: 1,
+                  marginLeft: 8,
+                }}
+              >
+                {photosProcessing ? "Processing Photos..." : "Save"}
+              </Button>
+            </View>
+          </ScrollContents>
+        </ScrollView>
+      </InspectionScrollProvider>
     </SafeAreaView>
   );
 }
-
-return (
-  <SafeAreaView
-    style={styles.safeArea}
-    edges={["left", "right", "bottom"]}
-  >
-  <Appbar.Header>
-    <Appbar.BackAction onPress={handleBack} />
-    <Appbar.Content title={title} />
-  </Appbar.Header>
-  <InspectionScrollProvider
-    scrollViewRef={scrollViewRef}
-    scrollOffsetRef={scrollOffsetRef}
-    scrollViewTopRef={scrollViewTopRef}
-    scrollViewHeightRef={scrollViewHeightRef}
-    scrollContentHeightRef={scrollContentHeightRef}
-    setDropdownOpen={setDropdownOpen}
-  >
-    <ScrollView
-      ref={scrollViewRef}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      automaticallyAdjustKeyboardInsets
-      scrollEnabled={!dropdownOpen}
-      onLayout={(event) => {
-        scrollViewTopRef.current = event.nativeEvent.layout.y;
-        scrollViewHeightRef.current = event.nativeEvent.layout.height;
-      }}
-      onContentSizeChange={(width, height) => {
-        scrollContentHeightRef.current = height;
-      }}
-      onScroll={(event) => {
-        const offset = event.nativeEvent.contentOffset.y;
-        scrollOffsetRef.current = offset;
-        const orchestration = scrollOrchestrationRef.current;
-        if (orchestration) {
-          handleScrollEvent(orchestration, offset);
-        }
-      }}
-      onScrollBeginDrag={(event) => {
-        const orchestration = scrollOrchestrationRef.current;
-        if (orchestration) {
-          handleScrollBeginDrag(orchestration, event.nativeEvent.contentOffset.y);
-        }
-      }}
-      scrollEventThrottle={16}
-    >
-      <ScrollContents>
-      <Text variant="headlineMedium" style={styles.title}>
-        {title}
-      </Text>
-
-{inspectionProgress != null && (
-  <OverallProgressCard progress={inspectionProgress} />
-)}
-
-{sections.map((section) => (
-  <Card
-    key={section.SectionID}
-    style={styles.card}
-  >
-    <View
-      ref={(ref) => { if (ref) sectionRefs.current.set(section.SectionID, ref); }}
-      onLayout={(event) => {
-        const coordinator = sectionScrollCoordinatorRef.current;
-        coordinator?.notifyLayout(section.SectionID);
-      }}
-    >
-      <List.Accordion
-        title={section.IsActive === 0 ? `Deleted ${section.SectionName}` : section.SectionName}
-        titleNumberOfLines={2}
-        expanded={expandedSections.includes(section.SectionID)}
-        onPress={() => handleSectionPress(section.SectionID)}
-        titleStyle={styles.sectionTitle}
-        style={styles.accordionHeader}
-        right={({ isExpanded }) => (
-          <InspectionSectionProgress
-            progress={progressByKey.get(section.SectionKey ?? "")}
-            expanded={isExpanded}
-          />
-        )}
-      >
-        <Card.Content>
-    {section.SectionKey === "general_information" ? (
-      <GeneralInformation
-        ref={generalInfoRef}
-        ensureDraft={createDraftInspection}
-        releaseAbandonedDraft={releaseAbandonedDraft}
-        existing={Boolean(routeInspectionId)}
-        onDataChanged={bumpProgress}
-      />
-    ) : inspectionId ? (
-      <SectionRenderer
-        sectionId={section.SectionID}
-        inspectionId={inspectionId}
-        sectionKey={section.SectionKey}
-        templateId={defaultTemplateId}
-        existing={Boolean(routeInspectionId)}
-        onDataChanged={bumpProgress}
-        progress={progressByKey.get(section.SectionKey ?? "") ?? null}
-      />
-    ) : (
-      <Text variant="bodyMedium" style={styles.lockedNotice}>
-        Enter a unique Site ID above to enable this section.
-      </Text>
-    )}
-        </Card.Content>
-      </List.Accordion>
-    </View>
-  </Card>
-))}
-
-<View
-  style={{
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
-    marginBottom: 30,
-  }}
->
-
-  <Button
-    mode="outlined"
-    icon="close"
-    onPress={handleCancel}
-    style={{
-      flex: 1,
-      marginRight: 8,
-    }}
-  >
-    Cancel
-  </Button>
-
-  <Button
-    mode="contained"
-    icon="content-save"
-    onPress={handleSave}
-    disabled={photosProcessing}
-    style={{
-      flex: 1,
-      marginLeft: 8,
-    }}
-  >
-    {photosProcessing ? "Processing Photos..." : "Save"}
-  </Button>
-
-</View>
-      </ScrollContents>
-      </ScrollView>
-    </InspectionScrollProvider>
-  </SafeAreaView>
-);
-
-}
-
-

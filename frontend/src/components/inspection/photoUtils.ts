@@ -1,22 +1,27 @@
 import { Photo } from "@/src/models/Photo";
-import type { WatermarkDateFormat, WatermarkTimeFormat } from "@/src/utils/watermarkSettings";
+import type {
+  WatermarkDateFormat,
+  WatermarkTimeFormat,
+} from "@/src/utils/watermarkSettings";
 
 export type WatermarkState = "pending" | "processing" | "completed" | "failed";
 
-export function normalizePhotoStateScope(projectDbPath?: string | null): string {
+export function normalizePhotoStateScope(
+  projectDbPath?: string | null,
+): string {
   return (projectDbPath ?? "").replace(/^file:\/\//, "");
 }
 
 export function makePhotoStateKey(
   projectDbPath: string | null | undefined,
-  photoId: number
+  photoId: number,
 ): string {
   return `${normalizePhotoStateScope(projectDbPath)}::${photoId}`;
 }
 
 export function extractProjectPhotoStates(
   projectDbPath: string | null | undefined,
-  allStates: Record<string, WatermarkState>
+  allStates: Record<string, WatermarkState>,
 ): Record<number, WatermarkState> {
   const prefix = `${normalizePhotoStateScope(projectDbPath)}::`;
   const result: Record<number, WatermarkState> = {};
@@ -30,15 +35,13 @@ export function extractProjectPhotoStates(
 }
 
 export function uniqueFileNameSuffix(): string {
-  return Math.floor(Math.random() * 0xffffff).toString(36).padStart(6, "0");
+  return Math.floor(Math.random() * 0xffffff)
+    .toString(36)
+    .padStart(6, "0");
 }
 
 export type PhotoSaveBlockReason =
-  | "no_photos"
-  | "processing"
-  | "pending"
-  | "failed"
-  | "unprocessed";
+  "no_photos" | "processing" | "pending" | "failed" | "unprocessed";
 
 export interface PhotoSaveValidation {
   canSave: boolean;
@@ -47,7 +50,7 @@ export interface PhotoSaveValidation {
 
 export function validatePhotosForSave(
   photos: Photo[],
-  states: Record<number, WatermarkState>
+  states: Record<number, WatermarkState>,
 ): PhotoSaveValidation {
   if (photos.length === 0) {
     return { canSave: false, reason: "no_photos" };
@@ -94,7 +97,10 @@ export function getFileUri(filePath: string): string {
   return filePath;
 }
 
-export function formatDatePart(iso: string, dateFormat: WatermarkDateFormat): string {
+export function formatDatePart(
+  iso: string,
+  dateFormat: WatermarkDateFormat,
+): string {
   const d = new Date(iso);
   const day = d.getDate().toString().padStart(2, "0");
   const month = (d.getMonth() + 1).toString().padStart(2, "0");
@@ -104,11 +110,27 @@ export function formatDatePart(iso: string, dateFormat: WatermarkDateFormat): st
   if (dateFormat === "yyyy-MM-dd") {
     return `${d.getFullYear()}-${month}-${day}`;
   }
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   return `${day}-${months[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-export function formatTimePart(iso: string, timeFormat: WatermarkTimeFormat): string {
+export function formatTimePart(
+  iso: string,
+  timeFormat: WatermarkTimeFormat,
+): string {
   const d = new Date(iso);
   const min = d.getMinutes().toString().padStart(2, "0");
   if (timeFormat === "24h") {
@@ -124,7 +146,7 @@ export function formatTimePart(iso: string, timeFormat: WatermarkTimeFormat): st
 export function formatWatermarkDate(
   iso: string,
   dateFormat: WatermarkDateFormat = "dd-MMM-yyyy",
-  timeFormat: WatermarkTimeFormat = "12h"
+  timeFormat: WatermarkTimeFormat = "12h",
 ): string {
   return `${formatDatePart(iso, dateFormat)} ${formatTimePart(iso, timeFormat)}`;
 }
@@ -139,13 +161,23 @@ export function generateFileName(
   district: string,
   blockName: string,
   pole: string,
-  timestamp: string
+  timestamp: string,
 ): string {
   const d = new Date(timestamp);
   const day = d.getDate().toString().padStart(2, "0");
   const monthNames = [
-    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
   ];
   const month = monthNames[d.getMonth()];
   const year = d.getFullYear().toString();
@@ -178,7 +210,7 @@ export type PoleIdChangeDecision =
 
 export function decidePoleIdChange(
   photos: Photo[],
-  states: Record<number, WatermarkState>
+  states: Record<number, WatermarkState>,
 ): PoleIdChangeDecision {
   for (const photo of photos) {
     const state = photo.PhotoID != null ? states[photo.PhotoID] : undefined;
@@ -194,10 +226,23 @@ export function decidePoleIdChange(
   return { type: "dialog", photoCount: photos.length };
 }
 
+export function extractIdentityFromFileName(
+  fileName: string,
+): InspectionIdentity | null {
+  if (!fileName) return null;
+  const parts = fileName.split("_");
+  // Require the date segment produced by generateFileName(). This avoids
+  // treating arbitrary underscore-delimited names as captured identities.
+  if (parts.length < 4 || !/^\d{2}[A-Z]{3}\d{4}$/.test(parts[3])) return null;
+  const [district, block, poleId] = parts.slice(0, 3).map(cleanPoleToken);
+  if ([district, block, poleId].some((token) => token === "NA")) return null;
+  return { district, block, poleId };
+}
+
 export function renamePoleTokenInFileName(
   fileName: string,
   oldPoleId: string,
-  newPoleId: string
+  newPoleId: string,
 ): string | null {
   const oldToken = cleanPoleToken(oldPoleId);
   if (!oldToken || oldToken === "NA") return null;
@@ -222,7 +267,7 @@ export function renameIdentityInFileName(
   oldPoleId: string,
   newDistrict: string,
   newBlock: string,
-  newPoleId: string
+  newPoleId: string,
 ): string | null {
   const parts = fileName.split("_");
   if (parts.length < 3) return null;

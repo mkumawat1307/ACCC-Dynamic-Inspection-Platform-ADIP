@@ -1,6 +1,6 @@
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
-import { ScrollView } from "react-native";
+import { Alert, ScrollView } from "react-native";
 import type { SQLiteDatabase } from "expo-sqlite";
 import type { Project } from "@/src/models/Project";
 
@@ -22,7 +22,8 @@ jest.mock("react-native-safe-area-context", () => {
   const View = (props: any) => R.createElement(RN.View, props);
   return {
     SafeAreaView: View,
-    SafeAreaProvider: ({ children }: any) => R.createElement(RN.View, null, children),
+    SafeAreaProvider: ({ children }: any) =>
+      R.createElement(RN.View, null, children),
     useSafeAreaInsets: () => ({ top: 0, left: 0, right: 0, bottom: 0 }),
   };
 });
@@ -30,7 +31,8 @@ jest.mock("react-native-safe-area-context", () => {
 jest.mock("react-native-paper", () => {
   const R = require("react");
   const RN = require("react-native");
-  const El = (name: string) =>
+  const El =
+    (name: string) =>
     ({ children, ...props }: any) =>
       R.createElement(RN.Text, { ...props, key: undefined }, children);
   const Button = ({ children, icon, onPress, mode, disabled, ...props }: any) =>
@@ -59,10 +61,16 @@ jest.mock("react-native-paper", () => {
       Header: El("AppbarHeader"),
       Content: El("AppbarContent"),
       BackAction: (props: any) =>
-        R.createElement(RN.Text, { testID: "back-action", onPress: props.onPress }),
+        R.createElement(RN.Text, {
+          testID: "back-action",
+          onPress: props.onPress,
+        }),
     },
     IconButton: (props: any) =>
-      R.createElement(RN.Text, { testID: `icon-${props.icon ?? "unknown"}`, onPress: props.onPress }),
+      R.createElement(RN.Text, {
+        testID: `icon-${props.icon ?? "unknown"}`,
+        onPress: props.onPress,
+      }),
     Checkbox: Object.assign(El("Checkbox"), { Item: El("CheckboxItem") }),
     RadioButton: Object.assign(El("RadioButton"), {
       Group: El("RadioGroup"),
@@ -82,7 +90,10 @@ jest.mock("react-native-element-dropdown", () => ({
   Dropdown: (props: any) => {
     const R = require("react");
     const RN = require("react-native");
-    return R.createElement(RN.Text, { ...props, children: String(props.value ?? "") });
+    return R.createElement(RN.Text, {
+      ...props,
+      children: String(props.value ?? ""),
+    });
   },
 }));
 
@@ -137,7 +148,7 @@ jest.mock("@/src/context/InspectionContext", () => {
           mockCtxListeners.delete(cb);
         };
       },
-      () => mockCtxVersion.v
+      () => mockCtxVersion.v,
     );
     return {
       project: mockCtxStore.project,
@@ -171,7 +182,11 @@ jest.mock("@/src/context/InspectionScrollContext", () => ({
 
 jest.mock("@/src/context/PhotoStatesContext", () => ({
   usePhotosProcessing: () => false,
-  usePhotoStates: () => ({ photoStates: {}, setPhotoStates: jest.fn(), getPhotoStates: () => ({}) }),
+  usePhotoStates: () => ({
+    photoStates: {},
+    setPhotoStates: jest.fn(),
+    getPhotoStates: () => ({}),
+  }),
 }));
 
 jest.mock("@/src/hooks/useProjectActivation", () => ({
@@ -198,10 +213,14 @@ jest.mock("@/src/components/inspection/DeviceSection", () => {
     lastInspectionId = props.inspectionId;
     return R.createElement("DeviceSection", props);
   };
-  (Mock as any).__lastProps = () => ({ existing: lastExisting, inspectionId: lastInspectionId });
+  (Mock as any).__lastProps = () => ({
+    existing: lastExisting,
+    inspectionId: lastInspectionId,
+  });
   return { __esModule: true, default: Mock };
 });
-const mockDeviceSection = require("@/src/components/inspection/DeviceSection").default;
+const mockDeviceSection =
+  require("@/src/components/inspection/DeviceSection").default;
 
 jest.mock("@/src/components/inspection/PhotoSection", () => {
   const R = require("react");
@@ -214,12 +233,16 @@ jest.mock("@/src/components/inspection/FieldRenderer", () => {
   return {
     __esModule: true,
     default: (props: any) =>
-      R.createElement(RN.TextInput, { testID: `field-${props.fieldKey}`, value: props.value }),
+      R.createElement(RN.TextInput, {
+        testID: `field-${props.fieldKey}`,
+        value: props.value,
+      }),
   };
 });
 
 import NewInspectionScreen from "@/app/inspection/new";
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
+import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import InspectionValueRepository from "@/src/database/repositories/InspectionValueRepository";
 import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import { FieldRepository } from "@/src/database/repositories/FieldRepository";
@@ -251,7 +274,7 @@ async function openSeededProject(): Promise<{ db: SQLiteDatabase }> {
   await deviceDefsSeed.seedDeviceFieldDefinitions();
   const db: SQLiteDatabase = await getDatabase();
   await db.runAsync(
-    `UPDATE DeviceFieldDefinitions SET TemplateID = 1, IsActive = 1, IsVisible = 1 WHERE TemplateID IS NULL`
+    `UPDATE DeviceFieldDefinitions SET TemplateID = 1, IsActive = 1, IsVisible = 1 WHERE TemplateID IS NULL`,
   );
   return { db };
 }
@@ -260,7 +283,7 @@ async function findSectionId(key: string): Promise<number> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<{ SectionID: number }>(
     `SELECT SectionID FROM InspectionSections WHERE SectionKey = ? LIMIT 1`,
-    [key]
+    [key],
   );
   return row!.SectionID;
 }
@@ -275,7 +298,7 @@ async function findFieldKeyId(key: string): Promise<number> {
 async function seedDeviceCount(
   inspectionId: number,
   type: string,
-  count: string
+  count: string,
 ): Promise<void> {
   const fieldId = await findFieldKeyId(`${type}_count`);
   await InspectionValueRepository.saveValue(inspectionId, fieldId, count);
@@ -389,7 +412,7 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     const leaked = await InspectionValueRepository.getValue(
       staleInspectionId,
-      statusFieldId
+      statusFieldId,
     );
     expect(leaked).toBeNull();
     await act(async () => {
@@ -410,21 +433,30 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let tree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      tree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(InspectionEditSession.isActive(inspectionId)).toBe(true);
-    expect(InspectionEditSession.getStagedFieldValues().has(statusFieldId)).toBe(false);
+    expect(
+      InspectionEditSession.getStagedFieldValues().has(statusFieldId),
+    ).toBe(false);
     expect(findFieldValue(tree!, "_test_status")).toBe("");
-    expect(await InspectionValueRepository.getValue(inspectionId, statusFieldId)).toBeNull();
+    expect(
+      await InspectionValueRepository.getValue(inspectionId, statusFieldId),
+    ).toBeNull();
 
     // Explicit user selection (session-routed) then Save
     InspectionEditSession.stageFieldValue(statusFieldId, "Yes");
     const committed = await InspectionEditSession.commit();
     expect(committed).toBe(true);
 
-    const persisted = await InspectionValueRepository.getValue(inspectionId, statusFieldId);
+    const persisted = await InspectionValueRepository.getValue(
+      inspectionId,
+      statusFieldId,
+    );
     expect(persisted).not.toBeNull();
     expect(persisted!.FieldValue).toBe("Yes");
 
@@ -435,12 +467,17 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let reopened: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      reopened = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      reopened = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(findFieldValue(reopened!, "_test_status")).toBe("Yes");
-    const stored = await InspectionValueRepository.getValue(inspectionId, statusFieldId);
+    const stored = await InspectionValueRepository.getValue(
+      inspectionId,
+      statusFieldId,
+    );
     expect(stored?.FieldValue).toBe("Yes");
     await act(async () => {
       reopened!.unmount();
@@ -460,13 +497,19 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let tree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      tree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(findFieldValue(tree!, "_test_status")).toBe("");
-    expect(InspectionEditSession.getStagedFieldValues().has(statusFieldId)).toBe(false);
-    expect(await InspectionValueRepository.getValue(inspectionId, statusFieldId)).toBeNull();
+    expect(
+      InspectionEditSession.getStagedFieldValues().has(statusFieldId),
+    ).toBe(false);
+    expect(
+      await InspectionValueRepository.getValue(inspectionId, statusFieldId),
+    ).toBeNull();
 
     // Explicit user selection, then Cancel/Back (discard) — nothing persists
     InspectionEditSession.stageFieldValue(statusFieldId, "Yes");
@@ -475,17 +518,24 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     });
     await InspectionEditSession.discard();
 
-    const afterBack = await InspectionValueRepository.getValue(inspectionId, statusFieldId);
+    const afterBack = await InspectionValueRepository.getValue(
+      inspectionId,
+      statusFieldId,
+    );
     expect(afterBack).toBeNull();
 
     let reopened: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      reopened = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      reopened = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(findFieldValue(reopened!, "_test_status")).toBe("");
-    expect(await InspectionValueRepository.getValue(inspectionId, statusFieldId)).toBeNull();
+    expect(
+      await InspectionValueRepository.getValue(inspectionId, statusFieldId),
+    ).toBeNull();
     await act(async () => {
       reopened!.unmount();
     });
@@ -495,7 +545,11 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     await openSeededProject();
     const statusFieldId = await addTestStatusDropdown();
     const inspectionId = await createInspection("2026-09-03");
-    await InspectionValueRepository.saveValue(inspectionId, statusFieldId, "No");
+    await InspectionValueRepository.saveValue(
+      inspectionId,
+      statusFieldId,
+      "No",
+    );
 
     mockParamsState.current = {
       projectId: "1",
@@ -505,17 +559,24 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let tree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      tree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(findFieldValue(tree!, "_test_status")).toBe("No");
-    expect(InspectionEditSession.getStagedFieldValues().has(statusFieldId)).toBe(false);
+    expect(
+      InspectionEditSession.getStagedFieldValues().has(statusFieldId),
+    ).toBe(false);
 
     const committed = await InspectionEditSession.commit();
     expect(committed).toBe(true);
 
-    const saved = await InspectionValueRepository.getValue(inspectionId, statusFieldId);
+    const saved = await InspectionValueRepository.getValue(
+      inspectionId,
+      statusFieldId,
+    );
     expect(saved?.FieldValue).toBe("No");
     await act(async () => {
       tree!.unmount();
@@ -536,17 +597,24 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let tree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      tree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(findFieldValue(tree!, "_test_status")).toBe("");
-    expect(InspectionEditSession.getStagedFieldValues().has(statusFieldId)).toBe(false);
+    expect(
+      InspectionEditSession.getStagedFieldValues().has(statusFieldId),
+    ).toBe(false);
 
     const committed = await InspectionEditSession.commit();
     expect(committed).toBe(true);
 
-    const saved = await InspectionValueRepository.getValue(inspectionId, statusFieldId);
+    const saved = await InspectionValueRepository.getValue(
+      inspectionId,
+      statusFieldId,
+    );
     expect(saved).not.toBeNull();
     expect(saved!.FieldValue).toBe("");
     await act(async () => {
@@ -567,7 +635,9 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let tree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      tree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
@@ -593,12 +663,16 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let tree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      tree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(InspectionEditSession.isActive(firstId)).toBe(true);
-    expect(InspectionEditSession.getStagedFieldValues().has(statusFieldId)).toBe(false);
+    expect(
+      InspectionEditSession.getStagedFieldValues().has(statusFieldId),
+    ).toBe(false);
 
     await act(async () => {
       tree!.unmount();
@@ -614,22 +688,32 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let secondTree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      secondTree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      secondTree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
     expect(InspectionEditSession.isActive(secondId)).toBe(true);
     expect(InspectionEditSession.isActive(firstId)).toBe(false);
-    expect(InspectionEditSession.getStagedFieldValues().has(statusFieldId)).toBe(false);
+    expect(
+      InspectionEditSession.getStagedFieldValues().has(statusFieldId),
+    ).toBe(false);
 
     // Explicit selection for the active (second) inspection only
     InspectionEditSession.stageFieldValue(statusFieldId, "Yes");
     const committed = await InspectionEditSession.commit();
     expect(committed).toBe(true);
 
-    const secondSaved = await InspectionValueRepository.getValue(secondId, statusFieldId);
+    const secondSaved = await InspectionValueRepository.getValue(
+      secondId,
+      statusFieldId,
+    );
     expect(secondSaved?.FieldValue).toBe("Yes");
-    const firstSaved = await InspectionValueRepository.getValue(firstId, statusFieldId);
+    const firstSaved = await InspectionValueRepository.getValue(
+      firstId,
+      statusFieldId,
+    );
     expect(firstSaved).toBeNull();
     await act(async () => {
       secondTree!.unmount();
@@ -653,7 +737,7 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     // (rendered in the arrow/right slot, which keeps the chevron) and long
     // section names wrap via titleNumberOfLines.
     const accordions = tree!.root.findAll(
-      (node) => node.props && typeof node.props.right === "function"
+      (node) => node.props && typeof node.props.right === "function",
     );
     expect(accordions.length).toBeGreaterThanOrEqual(3);
     for (const accordion of accordions) {
@@ -686,7 +770,9 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
 
     let tree: ReturnType<typeof TestRenderer.create> | undefined;
     await act(async () => {
-      tree = TestRenderer.create(<NewInspectionScreen title="Edit Inspection" />);
+      tree = TestRenderer.create(
+        <NewInspectionScreen title="Edit Inspection" />,
+      );
     });
     await settle();
 
@@ -718,7 +804,7 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     await settle();
 
     const scrollViews = tree!.root.findAll(
-      (n) => (n as { type?: unknown }).type === ScrollView
+      (n) => (n as { type?: unknown }).type === ScrollView,
     );
     expect(scrollViews.length).toBe(1);
     // The top-level inspection form ScrollView must let the OS move content
@@ -727,5 +813,143 @@ describe("NewInspectionScreen — real lifecycle: existing inspections show save
     await act(async () => {
       tree!.unmount();
     });
+  });
+});
+
+describe("NewInspectionScreen — CREATE Save validation consumes the live Site ID overlay (F1 wiring)", () => {
+  beforeEach(() => {
+    InspectionEditSession.discard();
+    InspectionLiveValues.reset();
+    mockCtxStore.project = null;
+    mockCtxStore.inspectionDate = "";
+    mockCtxStore.inspectionId = null;
+    mockCtxStore.poleId = "";
+    mockCtxNotify();
+    mockParamsState.current = {};
+  });
+
+  afterEach(() => {
+    InspectionEditSession.discard();
+    InspectionLiveValues.reset();
+  });
+
+  async function pressSaveButton(
+    tree: ReturnType<typeof TestRenderer.create>,
+  ): Promise<void> {
+    const saveButton = tree.root.findAll(
+      (n) =>
+        (n as { props?: unknown }).props != null &&
+        typeof (n as { props: { onPress?: unknown } }).props.onPress ===
+          "function" &&
+        collectText(n).includes("Save"),
+    )[0];
+    expect(saveButton).toBeDefined();
+    await act(async () => {
+      await (saveButton.props as { onPress: () => Promise<void> }).onPress();
+    });
+    await settle();
+  }
+
+  it("CREATE Save validates using the live typed Site ID overlay (not the empty DB pole_id)", async () => {
+    const validateSpy = jest.spyOn(InspectionRepository, "validateInspection");
+    try {
+      await openSeededProject();
+      const poleId = await findFieldKeyId("pole_id");
+      // Draft row the screen's lazy draft creation would have produced once a
+      // Site ID passed duplicate validation.
+      const draftId = await createInspection("2026-09-16");
+
+      mockParamsState.current = {
+        projectId: "1",
+        projectData: JSON.stringify(testProject()),
+      };
+
+      let tree: ReturnType<typeof TestRenderer.create> | undefined;
+      await act(async () => {
+        tree = TestRenderer.create(<NewInspectionScreen />);
+      });
+      await settle();
+
+      // CREATE (no inspectionId param): the screen resets to a fresh form.
+      // Register the typed Site ID exactly as GI typing would into the live
+      // overlay (Option-B buffer), then assign the draft the screen created.
+      InspectionLiveValues.setFieldValue(poleId, "SIK098/076sik/09845/123");
+      await act(async () => {
+        mockCtxSet.setInspectionId(draftId);
+      });
+      await settle();
+
+      // Nothing was persisted before Save — the Site ID is only ever committed
+      // at the authoritative Save boundary (Option-B).
+      expect(
+        await InspectionValueRepository.getValue(draftId, poleId),
+      ).toBeNull();
+
+      // Save → the screen passes the live overlay to section validation so the
+      // required Site ID check sees the typed value, not the empty DB row.
+      await pressSaveButton(tree!);
+
+      const calls = validateSpy.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const [validatedId, staged] = calls[calls.length - 1];
+      expect(validatedId).toBe(draftId);
+      expect(staged).toBeInstanceOf(Map);
+      expect((staged as Map<number, string>).get(poleId)).toBe(
+        "SIK098/076sik/09845/123",
+      );
+      // The overlay is exactly the on-screen typed value.
+      expect(InspectionLiveValues.getLiveFieldValues()?.get(poleId)).toBe(
+        "SIK098/076sik/09845/123",
+      );
+      // At this validation seam the CREATE Site ID must STILL be unpersisted —
+      // F1/F2 never write it during CREATE. (The later authoritative Save commit
+      // is out of scope for this test.)
+      expect(
+        await InspectionValueRepository.getValue(draftId, poleId),
+      ).toBeNull();
+
+      await act(async () => {
+        tree!.unmount();
+      });
+    } finally {
+      validateSpy.mockRestore();
+    }
+  });
+
+  it("EDIT Save validation is untouched: no live overlay is passed (undefined) for existing inspections", async () => {
+    const validateSpy = jest.spyOn(InspectionRepository, "validateInspection");
+    try {
+      await openSeededProject();
+      const existingId = await createInspection("2026-09-16");
+      mockParamsState.current = {
+        projectId: "1",
+        projectData: JSON.stringify(testProject()),
+        inspectionId: String(existingId),
+      };
+
+      let tree: ReturnType<typeof TestRenderer.create> | undefined;
+      await act(async () => {
+        tree = TestRenderer.create(
+          <NewInspectionScreen title="Edit Inspection" />,
+        );
+      });
+      await settle();
+      expect(InspectionEditSession.isActive(existingId)).toBe(true);
+
+      await pressSaveButton(tree!);
+
+      const calls = validateSpy.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const [validatedId, staged] = calls[calls.length - 1];
+      expect(validatedId).toBe(existingId);
+      // EDIT keeps its session-staged overlay path — F1 must not change it.
+      expect(staged).toBeUndefined();
+
+      await act(async () => {
+        tree!.unmount();
+      });
+    } finally {
+      validateSpy.mockRestore();
+    }
   });
 });

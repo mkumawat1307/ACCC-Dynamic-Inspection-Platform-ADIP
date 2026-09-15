@@ -14,6 +14,7 @@ import {
   normalizePhotoStateScope,
   makePhotoStateKey,
   extractProjectPhotoStates,
+  extractIdentityFromFileName,
 } from "@/src/components/inspection/photoUtils";
 import { Photo } from "@/src/models/Photo";
 
@@ -412,6 +413,43 @@ function makePhoto(id: number, filePath: string): Photo {
     Remarks: null,
   };
 }
+
+describe("extractIdentityFromFileName", () => {
+  it("extracts district, block and pole token from the generateFileName structure", () => {
+    expect(
+      extractIdentityFromFileName("Sikar_SIKAR_SIK001_14AUG2026_103000_a1b2c3.jpg"),
+    ).toEqual({ district: "Sikar", block: "SIKAR", poleId: "SIK001" });
+  });
+
+  it("cleans special characters from each captured token", () => {
+    expect(
+      extractIdentityFromFileName(
+        "South/1_Block:A_SIK-001/A_14AUG2026_103000_a1b2c3.jpg",
+      ),
+    ).toEqual({ district: "South1", block: "BlockA", poleId: "SIK001A" });
+  });
+
+  it("returns null for an empty filename", () => {
+    expect(extractIdentityFromFileName("")).toBeNull();
+  });
+
+  it("returns null for a filename without the generateFileName date segment", () => {
+    expect(extractIdentityFromFileName("Sikar_SIKAR_SIK001.jpg")).toBeNull();
+    expect(extractIdentityFromFileName("Sikar_SIKAR_SIK001_103000_photo1.jpg")).toBeNull();
+  });
+
+  it("returns null when any token cleans to NA", () => {
+    expect(
+      extractIdentityFromFileName("NA_B1_P001_14AUG2026_103000_photo1.jpg"),
+    ).toBeNull();
+    expect(
+      extractIdentityFromFileName("Sikar_NA_P001_14AUG2026_103000_photo1.jpg"),
+    ).toBeNull();
+    expect(
+      extractIdentityFromFileName("Sikar_B1_NA_14AUG2026_103000_photo1.jpg"),
+    ).toBeNull();
+  });
+});
 
 describe("validatePhotosForSave", () => {
   it("blocks when no photos exist", () => {
