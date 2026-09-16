@@ -26,7 +26,7 @@ import { useAddressLookup } from "@/src/components/camera/useAddressLookup";
 import { saveLocationAddress } from "@/src/components/camera/saveLocationAddress";
 import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
-import { pickExpectedPhotoSize, alignCapturedSizeToContainer } from "@/src/components/camera/expectedPhotoSize";
+import { pickExpectedPhotoSize, pickLimitedPhotoSize, alignCapturedSizeToContainer } from "@/src/components/camera/expectedPhotoSize";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import {
   FLASH_ICONS,
@@ -82,6 +82,7 @@ export default function CaptureScreen() {
   const [shutterBusy, setShutterBusy] = useState(false);
   const [capturedPhotoSize, setCapturedPhotoSize] = useState<{ width: number; height: number } | null>(null);
   const [expectedPhotoSize, setExpectedPhotoSize] = useState<{ width: number; height: number } | null>(null);
+  const [captureSize, setCaptureSize] = useState<{ width: number; height: number } | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -176,15 +177,24 @@ export default function CaptureScreen() {
 
   // Seed the expected photo size once the camera is ready so the watermark
   // renders at final-photo size from the first frame (no oversized flash
-  // before the first capture).
+  // before the first capture). Also select the largest supported capture size
+  // at or below ~12 MP matching the active ratio to avoid unnecessary
+  // high-resolution capture on high-MP devices.
   useEffect(() => {
     if (!cameraReady || cameraSize.width <= 0 || cameraSize.height <= 0) return;
     setCapturedPhotoSize(null);
+    setCaptureSize(null);
     let cancelled = false;
     cameraRef.current
       ?.getAvailablePictureSizesAsync()
       .then((sizes) => {
         if (cancelled) return;
+        const limited = pickLimitedPhotoSize(sizes, {
+          previewWidth: cameraSize.width,
+          previewHeight: cameraSize.height,
+          ratio,
+        });
+        setCaptureSize(limited);
         const expected = pickExpectedPhotoSize(sizes, {
           previewWidth: cameraSize.width,
           previewHeight: cameraSize.height,
@@ -193,7 +203,10 @@ export default function CaptureScreen() {
         setExpectedPhotoSize(expected);
       })
       .catch(() => {
-        if (!cancelled) setExpectedPhotoSize(null);
+        if (!cancelled) {
+          setCaptureSize(null);
+          setExpectedPhotoSize(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -538,6 +551,9 @@ export default function CaptureScreen() {
               ref={cameraRef}
               facing={facing}
               ratio={ratio}
+              pictureSize={
+                captureSize ? `${captureSize.width}x${captureSize.height}` : undefined
+              }
               flash={flash}
               zoom={zoom}
               style={styles.fill}

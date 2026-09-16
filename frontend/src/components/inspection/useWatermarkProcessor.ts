@@ -105,6 +105,11 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   const cancelledRef = useRef<Set<number>>(new Set());
   const finalizingRef = useRef<Set<number>>(new Set());
   const abandonedOverlayRef = useRef<Set<number>>(new Set());
+  const processorActiveRef = useRef(true);
+
+  function isProcessorActive(): boolean {
+    return processorActiveRef.current;
+  }
 
   useEffect(() => {
     const keyPrefix = `${normalizePhotoStateScope(project?.DBPath)}::`;
@@ -124,7 +129,29 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   }, []);
 
   useEffect(() => {
-    return () => { clearWatchdog(); };
+    return () => {
+      processorActiveRef.current = false;
+      clearWatchdog();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const cancelled = cancelledRef.current;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const failedJobs = failedJobsRef.current;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const abandonedOverlay = abandonedOverlayRef.current;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const finalizing = finalizingRef.current;
+      cancelled.clear();
+      failedJobs.clear();
+      abandonedOverlay.clear();
+      finalizing.clear();
+      queueRef.current = [];
+      processingRef.current = false;
+      activeJobIdRef.current = null;
+      readyRef.current = false;
+      readyWaitStartRef.current = 0;
+      perfRef.current = null;
+      webViewRef.current = null;
+    };
   }, []);
 
   function resetIfActive(job: { photoId: number } | null | undefined): boolean {
@@ -175,6 +202,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
   }
 
 function retryWatermark(photoId: number): boolean {
+    if (!isProcessorActive()) return false;
     cancelledRef.current.delete(photoId);
     const job = failedJobsRef.current.get(photoId);
     if (!job) return false;
@@ -187,6 +215,7 @@ function retryWatermark(photoId: number): boolean {
 }
 
 function persistStatus(photoId: number, status: string, expectedDbPath?: string) {
+    if (!isProcessorActive()) return;
     if (expectedDbPath && getActiveProjectPath() !== expectedDbPath) {
       logger.warn("[Watermark] Project switched before status persist; skipping", {
         photoId,
@@ -202,6 +231,7 @@ function persistStatus(photoId: number, status: string, expectedDbPath?: string)
 }
 
 function handleJobFailure(job: WatermarkJob) {
+    if (!isProcessorActive()) return;
     clearWatchdog();
     if (finalizingRef.current.has(job.photoId)) return;
     const idx = queueRef.current.findIndex(j => j.photoId === job.photoId);
@@ -229,6 +259,7 @@ function handleJobFailure(job: WatermarkJob) {
 }
 
   async function handleJobComplete(photoId: number) {
+    if (!isProcessorActive()) return;
     clearWatchdog();
     const idx = queueRef.current.findIndex(j => j.photoId === photoId);
     if (idx < 0) {
@@ -254,6 +285,8 @@ function handleJobFailure(job: WatermarkJob) {
       }
     }
 
+    if (!isProcessorActive()) return;
+
 setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, photoId)]: "completed" }));
     uiPerfStage("stateUpdated", `photo=${photoId}`, uiPerfProbeSummary());
     uiPerfStage("reactRenderStart", `photo=${photoId}`, uiPerfProbeSummary());
@@ -278,6 +311,7 @@ setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, phot
   }
 
   async function startOverlayStage(job: WatermarkJob) {
+    if (!isProcessorActive()) return;
     if (job.width && job.height) {
       if (__DEV__) {
         try {
@@ -299,6 +333,7 @@ setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, phot
         return;
       }
     }
+    if (!isProcessorActive()) return;
     const style = job.style ?? DEFAULT_OVERLAY_STYLE;
     const metrics = computeWatermarkMetrics(job.width, job.height, style);
     injectJourneyScript(job, buildMeasureOverlayScript(job.photoId, metrics.fSize, job.lines));
@@ -331,6 +366,7 @@ setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, phot
       encoding: FileSystem.EncodingType.Base64,
     })
       .then((base64) => {
+        if (!isProcessorActive()) return;
         injectJourneyScript(
           job,
           buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style, true)
@@ -346,6 +382,7 @@ setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, phot
       encoding: FileSystem.EncodingType.Base64,
     })
       .then((base64) => {
+        if (!isProcessorActive()) return;
         injectJourneyScript(
           job,
           buildRenderWatermarkScript(job.photoId, base64, job.lines, job.style, false)
@@ -357,6 +394,7 @@ setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, phot
   }
 
 function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
+    if (!isProcessorActive()) return;
     clearWatchdog();
     if (!next || next === job.stage) {
       handleJobFailure(job);
@@ -374,6 +412,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
 }
 
   async function processNext() {
+    if (!isProcessorActive()) return;
     if (processingRef.current || queueRef.current.length === 0) return;
     if (!readyRef.current) {
       if (!readyWaitStartRef.current) readyWaitStartRef.current = perfNow();
@@ -404,6 +443,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
   }, []);
 
   const handleRenderProcessGone = useCallback((_event: any) => {
+    if (!isProcessorActive()) return;
     logger.warn("[Watermark] WebView render process gone — attempting recovery");
     clearWatchdog();
     readyRef.current = false;
@@ -432,6 +472,7 @@ function scheduleStage(job: WatermarkJob, next: WatermarkStage | null) {
 
 function saveAndComplete(job: WatermarkJob, base64: string) {
     return (async () => {
+      if (!isProcessorActive()) return;
       if (cancelledRef.current.has(job.photoId)) {
         resetIfActive(job);
         processNext();
@@ -470,6 +511,16 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
         uiPerfStage("safWriteDone", `photo=${job.photoId}`);
         if (perfRef.current) perfStage(perfRef.current, "safWrite");
 
+        if (!isProcessorActive()) {
+          try {
+            await deletePhoto(contentUri);
+          } catch {}
+          try {
+            await FileSystem.deleteAsync(job.inputPath, { idempotent: true });
+          } catch {}
+          return;
+        }
+
         if (cancelledRef.current.has(job.photoId)) {
           try {
             await deletePhoto(contentUri);
@@ -499,6 +550,7 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
         }
         await PhotoRepository.updateFinalPath(job.photoId, storedFileName, contentUri, displayPath);
         if (perfRef.current) perfStage(perfRef.current, "sqliteUpdate");
+        if (!isProcessorActive()) return;
         persistStatus(job.photoId, "completed", job.projectDbPath);
 
         onPhotosUpdated();
@@ -514,6 +566,7 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
   }
 
   const handleWebViewMessage = useCallback((event: any) => {
+    if (!isProcessorActive()) return;
     try {
       const data = JSON.parse(event.nativeEvent.data);
 
@@ -559,6 +612,7 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
                 uiPerfSetProbe("setTimeoutActive", true);
                 setTimeout(() => {
                   uiPerfSetProbe("setTimeoutActive", false);
+                  if (!isProcessorActive()) return;
                   if (wv) {
                     wv.injectJavaScript(
                       `window.renderWatermarkFromJson(${JSON.stringify({
@@ -617,6 +671,12 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
               95,
               outputPath
             );
+            if (!isProcessorActive()) {
+              try {
+                await FileSystem.deleteAsync(outputPath, { idempotent: true });
+              } catch {}
+              return;
+            }
             if (abandonedOverlayRef.current.has(job.photoId)) {
               try {
                 await FileSystem.deleteAsync(outputPath, { idempotent: true });
@@ -666,6 +726,12 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
           const outputPath = `${job.inputPath}.wm.jpg`;
           try {
             await encodeWatermarkJpeg(data.width, data.height, data.rgba, 95, outputPath);
+            if (!isProcessorActive()) {
+              try {
+                await FileSystem.deleteAsync(outputPath, { idempotent: true });
+              } catch {}
+              return;
+            }
             if (perf) perfStage(perf, "nativeEncode");
 
             const fileBase64 = await FileSystem.readAsStringAsync(outputPath, {
@@ -717,6 +783,7 @@ function enqueueWatermark(
     useNativeOverride?: boolean | "rgba",
     size?: { width: number; height: number }
 ) {
+    if (!isProcessorActive()) return;
     let stage: WatermarkStage;
     if (useNativeOverride === "rgba") stage = "rgba";
     else if (useNativeOverride === false) stage = "toblob";

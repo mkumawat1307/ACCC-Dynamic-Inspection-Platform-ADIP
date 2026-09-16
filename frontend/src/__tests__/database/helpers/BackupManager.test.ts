@@ -4,6 +4,7 @@ jest.mock("@/src/database/db", () => ({
   getGlobalDatabase: jest.fn().mockResolvedValue(undefined),
   getActiveProjectPath: jest.fn().mockReturnValue(null),
   setActiveProject: jest.fn().mockResolvedValue(undefined),
+  clearActiveProject: jest.fn().mockResolvedValue(undefined),
   getDatabase: jest.fn().mockResolvedValue(undefined),
   openProjectDbForBackup: jest.fn().mockResolvedValue(undefined),
 }));
@@ -252,6 +253,9 @@ describe("BackupManager backupNow", () => {
       if (!handle) throw new Error(`No handle for ${activeProjectPath}`);
       return handle;
     });
+    (dbModule.closeAllDatabases as jest.Mock).mockImplementation(async () => {
+      activeProjectPath = null;
+    });
 
     (listProjectFolders as jest.Mock).mockImplementation(mockListProjectFolders);
     BackupManager = require("@/src/database/helpers/BackupManager");
@@ -272,7 +276,7 @@ describe("BackupManager backupNow", () => {
 
     expect(result.ok).toBe(true);
     expect(result.message).toContain("Backup created");
-    expect(closeAllDatabases).not.toHaveBeenCalled();
+    expect(closeAllDatabases).toHaveBeenCalledTimes(1);
 
     const entries = await unzipBase64(storedBackupB64());
     expect(Object.keys(entries).sort()).toEqual([
@@ -355,17 +359,18 @@ describe("BackupManager backupNow", () => {
     }
   });
 
-  it("keeps the user's active project active across a full backup", async () => {
+  it("clears an active project and restores the global DB after a full backup", async () => {
     const activePath = `${DOC}Projects/Alpha/inspection.db`;
     activeProjectPath = activePath;
 
     const result = await BackupManager.backupNow();
 
     expect(result.ok).toBe(true);
-    expect(activeProjectPath).toBe(activePath);
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
     const dbModule = require("@/src/database/db");
     const activeDb = await (dbModule.getDatabase as jest.Mock)();
-    expect(activeDb).toBe(projectHandles.get(activePath));
+    expect(activeDb).toBe(globalHandle);
   });
 
   it("iterates every project DB while the active project stays active", async () => {
@@ -394,7 +399,7 @@ describe("BackupManager backupNow", () => {
     expect(dbModule.openProjectDbForBackup).toHaveBeenCalledWith(
       `${DOC}Projects/Charlie/inspection.db`
     );
-    expect(activeProjectPath).toBe(activePath);
+    expect(activeProjectPath).toBeNull();
 
     const entries = await unzipBase64(storedBackupB64());
     expect(Object.keys(entries).sort()).toEqual([
@@ -405,7 +410,7 @@ describe("BackupManager backupNow", () => {
     ]);
 
     const activeDb = await (dbModule.getDatabase as jest.Mock)();
-    expect(activeDb).toBe(projectHandles.get(activePath));
+    expect(activeDb).toBe(globalHandle);
   });
 
   it("leaves no active project after a backup that started with none", async () => {
@@ -414,13 +419,14 @@ describe("BackupManager backupNow", () => {
     const result = await BackupManager.backupNow();
 
     expect(result.ok).toBe(true);
+    expect(closeAllDatabases).toHaveBeenCalled();
     expect(activeProjectPath).toBeNull();
     const dbModule = require("@/src/database/db");
     const restoredDb = await (dbModule.getDatabase as jest.Mock)();
     expect(restoredDb).toBe(globalHandle);
   });
 
-  it("preserves the active project when a project snapshot fails midway", async () => {
+  it("clears the active project and restores the global DB when a project snapshot fails midway", async () => {
     const activePath = `${DOC}Projects/Alpha/inspection.db`;
     activeProjectPath = activePath;
     const betaHandle = projectHandles.get(`${DOC}Projects/Beta/inspection.db`);
@@ -431,10 +437,11 @@ describe("BackupManager backupNow", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toContain("disk I/O error");
     expect(storedBackupAbsent()).toBe(true);
-    expect(activeProjectPath).toBe(activePath);
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
     const dbModule = require("@/src/database/db");
     const activeDb = await (dbModule.getDatabase as jest.Mock)();
-    expect(activeDb).toBe(projectHandles.get(activePath));
+    expect(activeDb).toBe(globalHandle);
   });
 
   it("rejects a second backup while one is in progress and preserves state", async () => {
@@ -459,7 +466,10 @@ describe("BackupManager backupNow", () => {
     releaseGlobal?.();
     const firstResult = await first;
     expect(firstResult.ok).toBe(true);
-    expect(activeProjectPath).toBe(activePath);
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
+    const restoredDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(restoredDb).toBe(globalHandle);
   });
 
   it("takes the global snapshot from its live handle, not from the file on disk", async () => {
@@ -488,7 +498,8 @@ describe("BackupManager backupNow", () => {
     const dbModule = require("@/src/database/db");
     expect(dbModule.setActiveProject).not.toHaveBeenCalled();
     expect(dbModule.openProjectDbForBackup).not.toHaveBeenCalled();
-    expect(activeProjectPath).toBe(activePath);
+    expect(dbModule.closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
   });
 
   it("fails atomically when a snapshot fails — no backup and no temp files left behind", async () => {
@@ -500,7 +511,7 @@ describe("BackupManager backupNow", () => {
     expect(result.message).toContain("disk I/O error");
     expect(storedBackupAbsent()).toBe(true);
     expect(listProjectFolders).not.toHaveBeenCalled();
-    expect(closeAllDatabases).not.toHaveBeenCalled();
+    expect(closeAllDatabases).toHaveBeenCalled();
     for (const key of mockFsEntries.keys()) {
       expect(key).not.toContain("accc_backup_");
     }
@@ -555,6 +566,84 @@ describe("BackupManager backupNow", () => {
     expect(result.ok).toBe(true);
     expect(mockDownloadStore.has(BACKUP_STORE_KEY)).toBe(true);
     expect(mockDownloadStore.get(BACKUP_STORE_KEY)).not.toBe("OLD");
+  });
+
+  it("leaves the app DB-context clean (no active project) after a backup begun with no active project", async () => {
+    activeProjectPath = null;
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(true);
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
+    const dbModule = require("@/src/database/db");
+    const restoredDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(restoredDb).toBe(globalHandle);
+  });
+
+  it("closes the active project DB and reopens the global DB after a successful backup", async () => {
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(true);
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
+    const dbModule = require("@/src/database/db");
+    const activeDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(activeDb).toBe(globalHandle);
+    expect(activeDb).not.toBe(projectHandles.get(activePath));
+  });
+
+  it("still cleans up (closes DBs, clears active project, restores global) when the backup fails", async () => {
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
+    const betaHandle = projectHandles.get(`${DOC}Projects/Beta/inspection.db`);
+    betaHandle?.execAsync.mockRejectedValueOnce(new Error("VACUUM failed: disk I/O error"));
+
+    const result = await BackupManager.backupNow();
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("disk I/O error");
+    expect(storedBackupAbsent()).toBe(true);
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
+    const dbModule = require("@/src/database/db");
+    const activeDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(activeDb).toBe(globalHandle);
+  });
+
+  it("restores the global DB handle after cleanup, proving every project handle was left closed", async () => {
+    const activePath = `${DOC}Projects/Alpha/inspection.db`;
+    activeProjectPath = activePath;
+    projectHandles.set(
+      `${DOC}Projects/Charlie/inspection.db`,
+      makeDbHandle("CHARLIE-CONTENT")
+    );
+    mockFsEntries.set(`${DOC}Projects/Charlie/inspection.db`, {
+      type: "file",
+      content: "DUMMY",
+    });
+    (listProjectFolders as jest.Mock).mockResolvedValue(["Alpha", "Beta", "Charlie"]);
+
+    await BackupManager.backupNow();
+
+    const dbModule = require("@/src/database/db");
+    expect(dbModule.openProjectDbForBackup).toHaveBeenCalledWith(
+      `${DOC}Projects/Alpha/inspection.db`
+    );
+    expect(dbModule.openProjectDbForBackup).toHaveBeenCalledWith(
+      `${DOC}Projects/Beta/inspection.db`
+    );
+    expect(dbModule.openProjectDbForBackup).toHaveBeenCalledWith(
+      `${DOC}Projects/Charlie/inspection.db`
+    );
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
+    const restoredDb = await (dbModule.getDatabase as jest.Mock)();
+    expect(restoredDb).toBe(globalHandle);
+    expect(restoredDb).not.toBe(projectHandles.get(activePath));
   });
 });
 
@@ -1191,7 +1280,7 @@ describe("BackupManager restore atomicity", () => {
     }
   });
 
-  it("backs up successfully after a failed restore with the active project intact", async () => {
+  it("backs up successfully after a failed restore and leaves the app DB-context clean", async () => {
     await seedThreeWayBackup();
     seedThreeWayLive();
     activeProjectPath = ACTIVE_PATH;
@@ -1202,7 +1291,8 @@ describe("BackupManager restore atomicity", () => {
 
     const backup = await BackupManager.backupNow();
     expect(backup.ok).toBe(true);
-    expect(activeProjectPath).toBe(ACTIVE_PATH);
+    expect(closeAllDatabases).toHaveBeenCalled();
+    expect(activeProjectPath).toBeNull();
     const entries = await unzipBase64(storedBackupB64());
     expect(Object.keys(entries).sort()).toEqual([
       "Projects/Alpha/inspection.db",

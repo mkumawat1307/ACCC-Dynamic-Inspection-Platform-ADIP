@@ -67,10 +67,6 @@ let snapshotCounter = 0;
 
 let backupInProgress = false;
 
-async function restoreActiveDatabase(): Promise<void> {
-  await getDatabase();
-}
-
 function nextSnapshotUri(): string {
   const cache = FileSystem.cacheDirectory ?? "";
   const cacheDir = cache.endsWith("/") ? cache : `${cache}/`;
@@ -145,7 +141,8 @@ export async function backupNow(): Promise<BackupResult> {
     return { ok: false, message: String(e) };
   } finally {
     backupInProgress = false;
-    await restoreActiveDatabase().catch(() => {});
+    await closeAllDatabases().catch(() => {});
+    await getDatabase().catch(() => {});
   }
 }
 

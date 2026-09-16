@@ -1,5 +1,6 @@
 jest.mock("expo-sqlite");
 
+import * as dbModule from "@/src/database/db";
 import { clearActiveProject, getDatabase, setActiveProject } from "@/src/database/db";
 import {
   DeviceRecord,
@@ -101,5 +102,76 @@ describe("DeviceRecordsRepository cross-project persist isolation", () => {
     expect(rowsB).toHaveLength(0);
     expect(rowsA).toHaveLength(0);
     expect(onPersisted).not.toHaveBeenCalled();
+  });
+
+  it("aborts instead of updating an existing device record in another project when the project switches during a debounced save", async () => {
+    const pathA = "/mock/documents/Projects/IsolE/inspection.db";
+    const pathB = "/mock/documents/Projects/IsolF/inspection.db";
+
+    await setActiveProject(pathA);
+    const dbA = await getDatabase();
+
+    const existing: DeviceRecord = {
+      InspectionID: 1,
+      DeviceType: "Camera",
+      DeviceNo: 1,
+      DeviceData: JSON.stringify({ Voltage: "12" }),
+      DisplayOrder: 1,
+      IsActive: 1,
+    };
+    const recordId = await DeviceRecordsRepository.create(existing);
+
+    let resolveDbGate!: () => void;
+    const dbGate = new Promise<void>((resolve) => {
+      resolveDbGate = resolve;
+    });
+    const originalGetDatabase = dbModule.getDatabase;
+    jest.spyOn(dbModule, "getDatabase").mockImplementationOnce(async () => {
+      await dbGate;
+      return originalGetDatabase();
+    });
+
+    const updated: DeviceRecord = {
+      RecordID: recordId,
+      InspectionID: 1,
+      DeviceType: "Camera",
+      DeviceNo: 1,
+      DeviceData: JSON.stringify({ Voltage: "220" }),
+      DisplayOrder: 1,
+      IsActive: 1,
+    };
+    await DeviceRecordsRepository.scheduleDeviceRecordSave(updated, 500);
+
+    await new Promise((r) => setTimeout(r, 550));
+    await new Promise((r) => setTimeout(r, 0));
+
+    await clearActiveProject();
+    await setActiveProject(pathB);
+    const dbB = await getDatabase();
+
+    const existingB: DeviceRecord = {
+      InspectionID: 10,
+      DeviceType: "Camera",
+      DeviceNo: 1,
+      DeviceData: JSON.stringify({ Voltage: "999" }),
+      DisplayOrder: 1,
+      IsActive: 1,
+    };
+    await DeviceRecordsRepository.create(existingB);
+
+    resolveDbGate();
+    await new Promise((r) => setTimeout(r, 30));
+
+    const rowB = await dbB.getFirstAsync<DeviceRecord>(
+      "SELECT * FROM DeviceRecords WHERE RecordID = ?",
+      [recordId]
+    );
+    expect(rowB?.DeviceData).toBe(JSON.stringify({ Voltage: "999" }));
+
+    const rowA = await dbA.getFirstAsync<DeviceRecord>(
+      "SELECT * FROM DeviceRecords WHERE RecordID = ?",
+      [recordId]
+    );
+    expect(rowA?.DeviceData).toBe(JSON.stringify({ Voltage: "12" }));
   });
 });

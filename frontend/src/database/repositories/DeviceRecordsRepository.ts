@@ -94,6 +94,17 @@ export class DeviceRecordsRepository {
   ): Promise<void> {
     const startDbPath = getActiveProjectPath();
     if (record.RecordID != null) {
+      await getDatabase();
+      if (getActiveProjectPath() !== startDbPath) {
+        logger.warn("[DeviceRecords] Project switched during device save; skipping update", {
+          inspectionId: record.InspectionID,
+          deviceType: record.DeviceType,
+          deviceNo: record.DeviceNo,
+          active: getActiveProjectPath(),
+          expected: startDbPath,
+        });
+        return;
+      }
       await this.update(record);
       return;
     }

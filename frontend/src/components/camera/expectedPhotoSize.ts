@@ -13,6 +13,9 @@ const SIZE_PATTERN = /^(\d+)[xX](\d+)$/;
 const RATIO_PATTERN = /^(\d+):(\d+)$/;
 const ASPECT_TOLERANCE = 0.03;
 
+/** Bucket for all picture sizes at or below approximately 12 megapixels. */
+export const MAX_CAPTURE_PIXELS = 12_000_000;
+
 export function parsePictureSize(size: string): PhotoSize | null {
   const match = SIZE_PATTERN.exec(size.trim());
   if (!match) return null;
@@ -61,6 +64,53 @@ export function pickExpectedPhotoSize(
   return portrait
     ? { width: best.height, height: best.width }
     : { width: best.width, height: best.height };
+}
+
+export interface LimitedPhotoSizeOptions {
+  previewWidth: number;
+  previewHeight: number;
+  ratio: string;
+}
+
+/**
+ * Selects the largest device-supported JPEG picture size at or below
+ * `maxPixels` whose aspect ratio matches the active camera ratio within the
+ * standard tolerance. Returns the raw sensor-listed orientation (landscape) so
+ * the caller can pass it directly to the `pictureSize` prop.
+ *
+ * - Devices that already capture at or below the cap are left unchanged.
+ * - When no <= maxPixels size matches the ratio, falls back to the largest
+ *   ratio-matching device-supported size so an unsupported size is never
+ *   requested.
+ * - Returns null for empty, malformed, or non-ratio-matching lists.
+ */
+export function pickLimitedPhotoSize(
+  sizes: readonly string[] | undefined,
+  options: LimitedPhotoSizeOptions,
+  maxPixels: number = MAX_CAPTURE_PIXELS
+): PhotoSize | null {
+  if (!sizes || sizes.length === 0) return null;
+  const target = parseAspectRatio(options.ratio);
+  if (target === null) return null;
+
+  let best: PhotoSize | null = null;
+  let bestArea = 0;
+  let fallback: PhotoSize | null = null;
+  let fallbackArea = 0;
+  for (const raw of sizes) {
+    const size = parsePictureSize(raw);
+    if (!size || !matchesAspect(size, target)) continue;
+    const area = size.width * size.height;
+    if (area <= maxPixels && area > bestArea) {
+      best = size;
+      bestArea = area;
+    }
+    if (area > fallbackArea) {
+      fallback = size;
+      fallbackArea = area;
+    }
+  }
+  return best ?? fallback;
 }
 
 /**

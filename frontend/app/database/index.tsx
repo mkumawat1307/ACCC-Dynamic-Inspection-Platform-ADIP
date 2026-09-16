@@ -10,19 +10,24 @@ import type { ProjectDuplicateGroup } from "@/src/database/projectIdentity";
 import { buildProjectFolderLabel } from "@/src/utils/folderNaming";
 import { ensureRootFolder } from "@/src/utils/storageManager";
 import { logger } from "@/src/utils/logger";
+import { useInspection } from "@/src/context/InspectionContext";
 
 export default function DatabaseScreen() {
   const router = useRouter();
+  const { closeProject } = useInspection();
   const [busy, setBusy] = useState<"backup" | "restore" | null>(null);
   const [duplicates, setDuplicates] = useState<ProjectDuplicateGroup[]>([]);
 
   useFocusEffect(
     useCallback(() => {
-      ensureRootFolder().catch((e) =>
-        logger.error("[Storage] databaseScreen ensureRootFolder failed:", e)
-      );
-      setDuplicates(getProjectDuplicates());
-    }, [])
+      (async () => {
+        await closeProject();
+        ensureRootFolder().catch((e) =>
+          logger.error("[Storage] databaseScreen ensureRootFolder failed:", e)
+        );
+        setDuplicates(getProjectDuplicates());
+      })();
+    }, [closeProject])
   );
 
   const handleBackup = async () => {
