@@ -189,11 +189,84 @@ describe("pickLimitedPhotoSize", () => {
     ).toEqual({ width: 3000, height: 3000 });
   });
 
-  it("falls back to a device-supported size when every matching size exceeds ~12 MP", () => {
+  it("returns null when every matching size exceeds ~12 MP instead of falling back", () => {
     const sizes = ["8000x6000", "9216x6912"];
     expect(
       pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
-    ).toEqual({ width: 9216, height: 6912 });
+    ).toBeNull();
+  });
+
+  it("picks a compliant 12 MP size when a 48 MP device also exposes one", () => {
+    const sizes = ["8000x6000", "4000x3000"];
+    expect(
+      pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
+    ).toEqual({ width: 4000, height: 3000 });
+  });
+
+  it("returns null on a 48 MP device with only above-12 MP matching sizes", () => {
+    const sizes = ["8000x6000", "5000x3750"];
+    expect(
+      pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
+    ).toBeNull();
+  });
+
+  it("selects the largest compliant size when several are available", () => {
+    const sizes = ["8000x6000", "5000x3750", "4000x3000", "3264x2448"];
+    expect(
+      pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
+    ).toEqual({ width: 4000, height: 3000 });
+  });
+
+  it("applies the same hard cap for a 1:1 ratio", () => {
+    const sizes = ["4000x4000", "3000x3000", "2000x2000"];
+    expect(
+      pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "1:1" })
+    ).toEqual({ width: 3000, height: 3000 });
+    expect(
+      pickLimitedPhotoSize(["4000x4000"], { previewWidth: 390, previewHeight: 520, ratio: "1:1" })
+    ).toBeNull();
+  });
+
+  it("applies the same hard cap to a front camera with only high-MP sizes", () => {
+    const frontSizes = ["6528x4896", "3264x2448", "1920x1440"];
+    expect(
+      pickLimitedPhotoSize(frontSizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
+    ).toEqual({ width: 3264, height: 2448 });
+    expect(
+      pickLimitedPhotoSize(["6528x4896", "5000x3750"], {
+        previewWidth: 390,
+        previewHeight: 520,
+        ratio: "4:3",
+      })
+    ).toBeNull();
+  });
+
+  it("skips malformed entries and still selects a compliant size", () => {
+    const sizes = ["garbage", "8000x6000", "4000x3000", "no-separator"];
+    expect(
+      pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
+    ).toEqual({ width: 4000, height: 3000 });
+  });
+
+  it("never selects malformed or above-12 MP entries", () => {
+    const sizes = ["garbage", "8000x6000", "5000x3750", "no-separator"];
+    expect(
+      pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
+    ).toBeNull();
+  });
+
+  it("does not reuse a compliant size for a ratio with no compliant size", () => {
+    const sizes = ["8000x6000", "4000x3000"];
+    expect(
+      pickLimitedPhotoSize(sizes, { previewWidth: 390, previewHeight: 520, ratio: "4:3" })
+    ).toEqual({ width: 4000, height: 3000 });
+    expect(
+      pickLimitedPhotoSize(["7680x4320", "5120x2880"], {
+        previewWidth: 520,
+        previewHeight: 390,
+        ratio: "16:9",
+      })
+    ).toBeNull();
   });
 
   it("returns null for an empty list", () => {

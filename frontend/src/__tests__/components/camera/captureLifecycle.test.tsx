@@ -803,4 +803,53 @@ describe("capture lifecycle", () => {
     expect(mockCameraViewProps.current.pictureSize).toBe("1920x1440");
     expect(captureButtonProps().disabled).toBe(false);
   });
+
+  it("blocks capture entirely when no ratio-matching <=12 MP size exists", async () => {
+    mockCameraApi.getAvailablePictureSizesAsync.mockResolvedValueOnce([
+      "8000x6000",
+      "5000x3750",
+    ]);
+    await renderScreen();
+
+    expect(mockCameraViewProps.current.pictureSize).toBeUndefined();
+    expect(captureButtonProps().disabled).toBe(true);
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+
+    expect(captureGpsMock).not.toHaveBeenCalled();
+    expect(mockCameraApi.takePictureAsync).not.toHaveBeenCalled();
+    expect(mockPhotoCreate).not.toHaveBeenCalled();
+  });
+
+  it("re-blocks capture when the new ratio has no compliant <=12 MP size", async () => {
+    await renderScreen();
+    expect(captureButtonProps().disabled).toBe(false);
+    expect(mockCameraViewProps.current.pictureSize).toBe("4000x3000");
+
+    const pendingSizes = deferred<string[]>();
+    mockCameraApi.getAvailablePictureSizesAsync.mockReturnValueOnce(pendingSizes.promise);
+    await TestRenderer.act(async () => {
+      pressRatio();
+      await flushAsync();
+    });
+    expect(captureButtonProps().disabled).toBe(true);
+
+    await TestRenderer.act(async () => {
+      pendingSizes.resolve(["7680x4320", "5120x2880"]);
+      await flushAsync();
+    });
+
+    expect(mockCameraViewProps.current.pictureSize).toBeUndefined();
+    expect(captureButtonProps().disabled).toBe(true);
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+    expect(mockCameraApi.takePictureAsync).not.toHaveBeenCalled();
+    expect(captureGpsMock).not.toHaveBeenCalled();
+  });
 });

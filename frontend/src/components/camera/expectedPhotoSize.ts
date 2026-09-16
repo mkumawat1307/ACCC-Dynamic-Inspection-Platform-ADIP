@@ -79,9 +79,11 @@ export interface LimitedPhotoSizeOptions {
  * the caller can pass it directly to the `pictureSize` prop.
  *
  * - Devices that already capture at or below the cap are left unchanged.
- * - When no <= maxPixels size matches the ratio, falls back to the largest
- *   ratio-matching device-supported size so an unsupported size is never
- *   requested.
+ * - The cap is HARD: a size above `maxPixels` is never returned, even when it
+ *   is the only ratio-matching device-supported size. When no <= maxPixels size
+ *   matches the ratio the function returns null so the caller can leave the
+ *   capture configuration not-ready/blocked instead of capturing at an
+ *   uncontrolled resolution.
  * - Returns null for empty, malformed, or non-ratio-matching lists.
  */
 export function pickLimitedPhotoSize(
@@ -95,8 +97,6 @@ export function pickLimitedPhotoSize(
 
   let best: PhotoSize | null = null;
   let bestArea = 0;
-  let fallback: PhotoSize | null = null;
-  let fallbackArea = 0;
   for (const raw of sizes) {
     const size = parsePictureSize(raw);
     if (!size || !matchesAspect(size, target)) continue;
@@ -105,12 +105,8 @@ export function pickLimitedPhotoSize(
       best = size;
       bestArea = area;
     }
-    if (area > fallbackArea) {
-      fallback = size;
-      fallbackArea = area;
-    }
   }
-  return best ?? fallback;
+  return best;
 }
 
 /**
