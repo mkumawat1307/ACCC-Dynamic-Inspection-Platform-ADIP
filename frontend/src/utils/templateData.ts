@@ -2,6 +2,7 @@ import { logger } from "@/src/utils/logger";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { getDatabase } from "../database/db";
+import { DEFAULT_MINIMUM_PHOTOS } from "../database/seeds/factory-config";
 
 const VALID_FIELD_TYPES = ["text", "number", "multiline", "dropdown", "date", "date_auto", "time", "GPS", "checkbox", "switch", "device", "camera", "calculation"];
 
@@ -33,6 +34,7 @@ export interface TemplateExportSection {
   DisplayOrder: number;
   IsRepeatable: number;
   IsVisible: number;
+  MinimumPhotos?: number;
   fields: TemplateExportField[];
 }
 
@@ -122,8 +124,9 @@ export async function buildTemplateExportData(): Promise<{
       DisplayOrder: number;
       IsRepeatable: number;
       IsVisible: number;
+      MinimumPhotos: number;
     }>(
-      `SELECT SectionID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible
+      `SELECT SectionID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, MinimumPhotos
        FROM InspectionSections WHERE TemplateID = ? AND IsActive = 1 ORDER BY DisplayOrder`,
       [template.TemplateID]
     );
@@ -195,6 +198,7 @@ export async function buildTemplateExportData(): Promise<{
         DisplayOrder: section.DisplayOrder,
         IsRepeatable: section.IsRepeatable,
         IsVisible: section.IsVisible,
+        MinimumPhotos: section.MinimumPhotos,
         fields: exportFields,
       });
       sectionCount++;
@@ -510,7 +514,7 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
             await db.runAsync(
               `UPDATE InspectionSections
                SET SectionName = ?, Description = ?, Icon = ?, DisplayOrder = ?,
-                   IsRepeatable = ?, IsVisible = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
+                   IsRepeatable = ?, IsVisible = ?, MinimumPhotos = ?, IsActive = 1, UpdatedAt = CURRENT_TIMESTAMP
                WHERE SectionID = ?`,
               [
                 section.SectionName,
@@ -519,14 +523,15 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
                 section.DisplayOrder,
                 section.IsRepeatable,
                 section.IsVisible ?? 1,
+                section.MinimumPhotos ?? DEFAULT_MINIMUM_PHOTOS,
                 sectionId,
               ]
             );
           } else {
             const sectionResult = await db.runAsync(
               `INSERT INTO InspectionSections
-               (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1)`,
+               (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, MinimumPhotos, IsDefault, IsActive)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)`,
               [
                 templateId,
                 section.SectionName,
@@ -536,6 +541,7 @@ export async function applyTemplateImport(data: TemplateExportData): Promise<{ s
                 section.DisplayOrder,
                 section.IsRepeatable,
                 section.IsVisible ?? 1,
+                section.MinimumPhotos ?? DEFAULT_MINIMUM_PHOTOS,
               ]
             );
             sectionId = sectionResult.lastInsertRowId;

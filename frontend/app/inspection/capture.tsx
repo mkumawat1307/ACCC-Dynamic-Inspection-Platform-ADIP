@@ -84,6 +84,15 @@ export default function CaptureScreen() {
   const [expectedPhotoSize, setExpectedPhotoSize] = useState<{ width: number; height: number } | null>(null);
   const [captureSize, setCaptureSize] = useState<{ width: number; height: number } | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  // Incremented on every `onCameraReady` so a camera re-initialization forces a
+  // fresh picture-size resolution instead of reusing the previously applied
+  // configuration.
+  const [cameraEpoch, setCameraEpoch] = useState(0);
+  // True only after a supported picture size has been resolved AND committed to
+  // the CameraView. Any pending resolution/reconfiguration temporarily flips it
+  // back to false, which disables the shutter and blocks capture.
+  const [captureConfigReady, setCaptureConfigReady] = useState(false);
+  const captureConfigReadyRef = useRef(false);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -180,10 +189,18 @@ export default function CaptureScreen() {
   // before the first capture). Also select the largest supported capture size
   // at or below ~12 MP matching the active ratio to avoid unnecessary
   // high-resolution capture on high-MP devices.
+  //
+  // While the supported picture sizes are unknown or being re-resolved the
+  // capture configuration is NOT ready: capture is disabled and the capture
+  // handler refuses to start. `cameraEpoch` forces a fresh resolution every
+  // time the underlying camera re-initializes instead of trusting a size
+  // chosen against a stale/previous device state.
   useEffect(() => {
-    if (!cameraReady || cameraSize.width <= 0 || cameraSize.height <= 0) return;
     setCapturedPhotoSize(null);
     setCaptureSize(null);
+    setCaptureConfigReady(false);
+    captureConfigReadyRef.current = false;
+    if (!cameraReady || cameraSize.width <= 0 || cameraSize.height <= 0) return;
     let cancelled = false;
     cameraRef.current
       ?.getAvailablePictureSizesAsync()
@@ -201,6 +218,10 @@ export default function CaptureScreen() {
           ratio,
         });
         setExpectedPhotoSize(expected);
+        if (limited) {
+          setCaptureConfigReady(true);
+          captureConfigReadyRef.current = true;
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -211,7 +232,7 @@ export default function CaptureScreen() {
     return () => {
       cancelled = true;
     };
-  }, [cameraReady, cameraSize.width, cameraSize.height, ratio, facing]);
+  }, [cameraReady, cameraEpoch, cameraSize.width, cameraSize.height, ratio, facing]);
 
   useEffect(() => {
     if (flow.phase !== "merging" || flow.pending == null) return;
@@ -310,6 +331,7 @@ export default function CaptureScreen() {
 
   const handleShutter = async () => {
     if (shutterBusy) return;
+    if (!captureConfigReadyRef.current) return;
     setShutterBusy(true);
     uiPerfReset();
     uiPerfStage("shutterTap", `phase=${flow.phase} gps=${gps.status} previewFrozen=false`);
@@ -471,6 +493,16 @@ export default function CaptureScreen() {
     }
   };
 
+  // Called synchronously when the user switches ratio/facing. It closes the
+  // frame where the previously resolved capture size would otherwise remain
+  // applied to the new configuration: capture is disabled immediately and only
+  // re-enabled once a fresh picture-size resolution completes below.
+  const prepareForReconfiguration = () => {
+    setCaptureConfigReady(false);
+    captureConfigReadyRef.current = false;
+    setCaptureSize(null);
+  };
+
   const handleDiscard = async () => {
     await cleanupPending();
     flow.discard();
@@ -536,6 +568,7 @@ export default function CaptureScreen() {
 
       <View style={styles.body}>
         <View
+          testID="camera-wrap"
           style={styles.cameraWrap}
           onLayout={(e) =>
             setCameraSize({
@@ -557,7 +590,10 @@ export default function CaptureScreen() {
               flash={flash}
               zoom={zoom}
               style={styles.fill}
-              onCameraReady={() => setCameraReady(true)}
+              onCameraReady={() => {
+                setCameraReady(true);
+                setCameraEpoch((e) => e + 1);
+              }}
             />
           ) : (
             <View style={[styles.fill, styles.center]}>
@@ -644,7 +680,10 @@ export default function CaptureScreen() {
             icon={FACING_ICONS[facing]}
             accessibilityLabel={FACING_LABELS[facing]}
             testID="camera-facing"
-            onPress={() => setFacing(nextFacing)}
+            onPress={() => {
+              prepareForReconfiguration();
+              setFacing(nextFacing);
+            }}
           />
           <IconButton
             icon={FLASH_ICONS[flash]}
@@ -657,7 +696,10 @@ export default function CaptureScreen() {
             icon="aspect-ratio"
             accessibilityLabel={`Aspect ratio ${RATIO_LABELS[ratio]}`}
             testID="camera-ratio"
-            onPress={() => setRatio(nextRatio)}
+            onPress={() => {
+              prepareForReconfiguration();
+              setRatio(nextRatio);
+            }}
           />
         </View>
 
@@ -670,6 +712,7 @@ export default function CaptureScreen() {
             loading={shutterBusy}
             disabled={
               shutterBusy ||
+              !captureConfigReady ||
               (gps.status !== "fixed" && gps.status !== "stale") ||
               flow.phase !== "preview"
             }

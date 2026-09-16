@@ -15,6 +15,7 @@ import { useGpsTracker, GpsFix, GPS_STATUS_TICK_MS, GPS_WATCH_VALIDATION_MS } fr
 import {
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
   GPS_ONE_SHOT_TIMEOUT_COLD_MS,
+  GPS_REFRESH_AGE_MS,
   GPS_STALE_MS,
   GPS_MOVE_THRESHOLD_M,
   GPS_WATCH_ACQUIRING_MIN_MS,
@@ -718,5 +719,388 @@ const late = await gpsSnap.captureGps();
     });
     expect(rendered(tree)).toBe("fixed|30,40");
     await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  describe("one-shot concurrency", () => {
+    type OneShotLocation = Awaited<ReturnType<typeof Location.getCurrentPositionAsync>>;
+
+    function makeDeferred() {
+      let resolve!: (v: OneShotLocation) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<OneShotLocation>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    }
+
+    function loc(latitude: number, longitude: number, accuracy: number): OneShotLocation {
+      return {
+        coords: { latitude, longitude, accuracy, altitude: 0, altitudeAccuracy: 0, heading: 0, speed: 0 },
+        timestamp: Date.now(),
+      };
+    }
+
+    it("auto refresh already running + tap refresh → one getCurrentPositionAsync call (join)", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      __setMockLocation(1, 2, 5);
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("fixed|1,2");
+
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      await TestRenderer.act(async () => {
+        jest.advanceTimersByTime(GPS_REFRESH_AGE_MS); // auto poll starts its one-shot
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      let tapped: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const p = gpsRef.current!.refreshNow(); // joins the in-flight auto request
+        d.resolve(loc(3, 4, 6));
+        tapped = await p;
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1); // tap did NOT open a second device call
+      expect(tapped).not.toBeNull();
+      expect(tapped!.latitude).toBe(3);
+      expect(rendered(tree)).toBe("fixed|3,4");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("tap refresh already running + auto poll fires → one getCurrentPositionAsync call (join)", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      __setMockLocation(1, 2, 5);
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("fixed|1,2");
+
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      // Start the tap just before the first auto-poll tick so the poll fires
+      // while the tap's one-shot is still in flight (its 8s cached timeout has
+      // not elapsed).
+      await TestRenderer.act(async () => {
+        jest.advanceTimersByTime(GPS_REFRESH_AGE_MS - 500);
+        await flushAsync();
+      });
+
+      let tapped: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const p = gpsRef.current!.refreshNow(); // starts the Highest one-shot
+        jest.advanceTimersByTime(500); // auto poll fires while it is in flight
+        await flushAsync();
+        expect(spy).toHaveBeenCalledTimes(1); // poll joined, no second call
+        d.resolve(loc(3, 4, 6));
+        tapped = await p;
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(tapped).not.toBeNull();
+      expect(tapped!.latitude).toBe(3);
+      expect(rendered(tree)).toBe("fixed|3,4");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("capture GPS running + tap refresh → one getCurrentPositionAsync call (join)", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("acquiring|none");
+
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      let captured: GpsFix | null = null;
+      let tapped: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const cp = captureGpsFn!().then((f) => { captured = f; return f; });
+        const rp = gpsRef.current!.refreshNow().then((f) => { tapped = f; return f; });
+        await flushAsync();
+        expect(spy).toHaveBeenCalledTimes(1); // capture started the only request
+        d.resolve(loc(5, 6, 7));
+        await Promise.all([cp, rp]);
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1); // tap joined, no second device call
+      expect(captured).not.toBeNull();
+      expect(tapped).not.toBeNull();
+      expect(captured!.latitude).toBe(5);
+      expect(tapped!.latitude).toBe(5);
+      expect(rendered(tree)).toBe("fixed|5,6");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("auto refresh running + captureGps requests GPS → one getCurrentPositionAsync call (join)", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      __setMockLastKnown(1, 1, 5, 55_000); // unusable by the first auto tick
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("fixed|1,1");
+
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      await TestRenderer.act(async () => {
+        jest.advanceTimersByTime(GPS_REFRESH_AGE_MS); // auto poll starts its one-shot
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      let captured: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const p = captureGpsFn!().then((f) => { captured = f; return f; });
+        await flushAsync();
+        expect(spy).toHaveBeenCalledTimes(1); // capture joined the auto request
+        d.resolve(loc(7, 8, 20));
+        await p;
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(captured).not.toBeNull();
+      expect(captured!.latitude).toBe(7);
+      expect(rendered(tree)).toBe("fixed|7,8");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("two callers waiting on the same in-flight request receive the same fix", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      __setMockLastKnown(1, 1, 5, 55_000);
+      const tree = await renderProbe();
+
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      await TestRenderer.act(async () => {
+        jest.advanceTimersByTime(GPS_REFRESH_AGE_MS);
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      let captured: GpsFix | null = null;
+      let tapped: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const cp = captureGpsFn!().then((f) => { captured = f; return f; });
+        const rp = gpsRef.current!.refreshNow().then((f) => { tapped = f; return f; });
+        await flushAsync();
+        d.resolve(loc(7, 8, 20));
+        await Promise.all([cp, rp]);
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(captured!.latitude).toBe(7);
+      expect(captured!.longitude).toBe(8);
+      expect(tapped!.latitude).toBe(7);
+      expect(tapped!.longitude).toBe(8);
+      expect(rendered(tree)).toBe("fixed|7,8");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("clears the in-flight reference after a successful one-shot (next request starts fresh)", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      __setMockLocation(1, 2, 5);
+      const tree = await renderProbe();
+
+      let call = 0;
+      const deferreds: ReturnType<typeof makeDeferred>[] = [];
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => {
+        call += 1;
+        const d = makeDeferred();
+        deferreds.push(d);
+        return d.promise;
+      });
+
+      await TestRenderer.act(async () => {
+        const p = gpsRef.current!.refreshNow(); // request #1
+        await flushAsync();
+        expect(call).toBe(1);
+        deferreds[0].resolve(loc(3, 4, 6));
+        await p;
+        await flushAsync();
+      });
+      expect(call).toBe(1);
+      expect(rendered(tree)).toBe("fixed|3,4");
+
+      // A second request must start a NEW device call. If the in-flight slot
+      // leaked after success, this would join the already-resolved request.
+      await TestRenderer.act(async () => {
+        const p2 = gpsRef.current!.refreshNow();
+        await flushAsync();
+        expect(call).toBe(2);
+        deferreds[1].resolve(loc(5, 6, 7));
+        await p2;
+        await flushAsync();
+      });
+      expect(call).toBe(2);
+      expect(rendered(tree)).toBe("fixed|5,6");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("clears the in-flight reference after a failed one-shot (next request starts fresh)", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      __setMockLocation(1, 2, 5);
+      const tree = await renderProbe();
+
+      let call = 0;
+      const deferreds: ReturnType<typeof makeDeferred>[] = [];
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => {
+        call += 1;
+        const d = makeDeferred();
+        deferreds.push(d);
+        return d.promise;
+      });
+
+      let first: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const p = gpsRef.current!.refreshNow(); // request #1
+        await flushAsync();
+        expect(call).toBe(1);
+        deferreds[0].reject(new Error("GPS failure"));
+        first = await p;
+        await flushAsync();
+      });
+      expect(first).toBeNull();
+      expect(rendered(tree)).toBe("fixed|1,2"); // old fix kept, slot cleared
+
+      await TestRenderer.act(async () => {
+        const p2 = gpsRef.current!.refreshNow(); // must start a NEW device call
+        await flushAsync();
+        expect(call).toBe(2);
+        deferreds[1].resolve(loc(9, 10, 4));
+        await p2;
+        await flushAsync();
+      });
+      expect(call).toBe(2);
+      expect(rendered(tree)).toBe("fixed|9,10");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("a failed one-shot does not permanently block future requests", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("acquiring|none");
+
+      const realImpl = Location.getCurrentPositionAsync;
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      let first: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const p = gpsRef.current!.refreshNow();
+        await flushAsync();
+        d.reject(new Error("GPS failure"));
+        first = await p;
+        await flushAsync();
+      });
+      expect(first).toBeNull();
+      expect(rendered(tree)).toBe("acquiring|none");
+      expect(gpsRef.current!.refreshing).toBe(false);
+
+      // Restore the module behavior: a later capture acquires normally.
+      __setMockLocation(9, 9, 4);
+      spy.mockImplementation((_o) => realImpl(_o));
+      let captured: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        captured = await captureGpsFn!();
+        await flushAsync();
+      });
+      expect(captured).not.toBeNull();
+      expect(captured!.latitude).toBe(9);
+      expect(rendered(tree)).toBe("fixed|9,9");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("policy: Balanced one-shot already running + Highest arrives → Highest joins, no second device call", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("acquiring|none");
+
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      let captured: GpsFix | null = null;
+      let tapped: GpsFix | null = null;
+      await TestRenderer.act(async () => {
+        const cp = captureGpsFn!().then((f) => { captured = f; return f; }); // Balanced
+        const rp = gpsRef.current!.refreshNow().then((f) => { tapped = f; return f; }); // Highest
+        await flushAsync();
+        expect(spy).toHaveBeenCalledTimes(1);
+        d.resolve(loc(5, 6, 7));
+        await Promise.all([cp, rp]);
+        await flushAsync();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+      const options = spy.mock.calls[0]?.[0] as { accuracy?: number } | undefined;
+      expect(options?.accuracy).toBe(Location.Accuracy.Balanced); // in-flight request ran as Balanced
+      expect(captured!.latitude).toBe(5);
+      expect(tapped!.latitude).toBe(5); // tap received the shared result
+      expect(gpsRef.current!.refreshing).toBe(false);
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("refreshNow() refreshing stays true during a shared request and clears when it finishes", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      __setMockLocation(1, 2, 5);
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("fixed|1,2");
+
+      const d = makeDeferred();
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+      spy.mockImplementation(() => d.promise);
+
+      // Auto refresh running (no refreshing flag yet).
+      await TestRenderer.act(async () => {
+        jest.advanceTimersByTime(GPS_REFRESH_AGE_MS);
+        await flushAsync();
+      });
+      expect(gpsRef.current!.refreshing).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      // Tap joins the shared request: refreshing must become true and stay
+      // true while the shared request is actually running.
+      let tapped: GpsFix | null = null;
+      let done = false;
+      let tappedPromise: Promise<GpsFix | null> | null = null;
+      await TestRenderer.act(async () => {
+        tappedPromise = gpsRef.current!.refreshNow().then((f) => { tapped = f; done = true; return f; });
+        await flushAsync();
+        expect(done).toBe(false); // shared request still in flight
+        expect(spy).toHaveBeenCalledTimes(1); // still joined, no new call
+      });
+      // After the act boundary the refreshing + acquiring render commits:
+      // refreshing stays true while the shared request is still running.
+      expect(done).toBe(false);
+      expect(gpsRef.current!.refreshing).toBe(true);
+      expect(gpsRef.current!.status).toBe("acquiring");
+      await TestRenderer.act(async () => {
+        d.resolve(loc(3, 4, 6));
+        await tappedPromise;
+        await flushAsync();
+      });
+      expect(done).toBe(true);
+      expect(gpsRef.current!.refreshing).toBe(false);
+      expect(tapped).not.toBeNull();
+      expect(rendered(tree)).toBe("fixed|3,4");
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
   });
 });

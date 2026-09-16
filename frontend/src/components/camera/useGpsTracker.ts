@@ -67,6 +67,13 @@ export function useGpsTracker() {
   const deniedRef = useRef(false);
   const statusRef = useRef<GpsStatus>("loading");
   const pendingWatchFixRef = useRef<GpsFix | null>(null);
+  // Shared in-flight one-shot acquisition. While a getCurrentPositionAsync
+  // request is active, every other caller (automatic refresh, tap refresh,
+  // captureGps) must join it instead of issuing a second device request.
+  const inFlightOneShotRef = useRef<{
+    request: Promise<GpsFix | null>;
+    accuracy: Location.Accuracy;
+  } | null>(null);
 
   const setStatusBoth = useCallback((next: GpsStatus) => {
     statusRef.current = next;
@@ -124,17 +131,15 @@ export function useGpsTracker() {
     settleStatus(false);
   }, [acceptFix, settleStatus, setStatusBoth]);
 
-  const oneShotFix = useCallback(
-    async (accuracy?: Location.Accuracy): Promise<GpsFix | null> => {
+  const runOneShot = useCallback(
+    async (accuracy: Location.Accuracy): Promise<GpsFix | null> => {
       const timeoutMs = fixRef.current
         ? GPS_ONE_SHOT_TIMEOUT_CACHED_MS
         : GPS_ONE_SHOT_TIMEOUT_COLD_MS;
       let raceTimer: ReturnType<typeof setTimeout> | undefined;
       try {
         const loc = await Promise.race([
-          Location.getCurrentPositionAsync({
-            accuracy: accuracy ?? Location.Accuracy.Balanced,
-          }),
+          Location.getCurrentPositionAsync({ accuracy }),
           new Promise<null>((_, reject) => {
             raceTimer = setTimeout(() => reject(new Error("GPS timeout")), timeoutMs);
           }),
@@ -153,6 +158,32 @@ export function useGpsTracker() {
       }
     },
     [acceptFix, settleStatus]
+  );
+
+  // Concurrency guard: only ONE one-shot acquisition may be active at a time.
+  // If a request is already in flight, later callers await/reuse it and never
+  // call getCurrentPositionAsync again. Accuracy policy: the first-started
+  // request's accuracy governs the shared result; a later explicit
+  // Higher-accuracy request joins the running request instead of opening a
+  // second device call (documented by the concurrency regression tests).
+  const oneShotFix = useCallback(
+    async (accuracy?: Location.Accuracy): Promise<GpsFix | null> => {
+      const requested = accuracy ?? Location.Accuracy.Balanced;
+      const running = inFlightOneShotRef.current;
+      if (running != null) {
+        return running.request;
+      }
+      const request = runOneShot(requested);
+      inFlightOneShotRef.current = { request, accuracy: requested };
+      try {
+        return await request;
+      } finally {
+        if (inFlightOneShotRef.current?.request === request) {
+          inFlightOneShotRef.current = null;
+        }
+      }
+    },
+    [runOneShot]
   );
 
   const captureGps = useCallback(
@@ -228,22 +259,7 @@ export function useGpsTracker() {
         }
       } catch {}
 
-      const timeoutMs = fixRef.current
-        ? GPS_ONE_SHOT_TIMEOUT_CACHED_MS
-        : GPS_ONE_SHOT_TIMEOUT_COLD_MS;
-      let raceTimer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const fresh = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-          new Promise<null>((_, reject) => {
-            raceTimer = setTimeout(() => reject(new Error("GPS timeout")), timeoutMs);
-          }),
-        ]);
-        if (!cancelled && fresh && isAcceptableFix(fresh)) {
-          acceptFix(toFix(fresh));
-        }
-      } catch {}
-      if (raceTimer) clearTimeout(raceTimer);
+      await oneShotFix();
       if (cancelled) return;
       if (!fixRef.current) {
         settleStatus(true);

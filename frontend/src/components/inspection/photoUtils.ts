@@ -269,8 +269,12 @@ export function extractIdentityFromFileName(
   // treating arbitrary underscore-delimited names as captured identities.
   if (parts.length < 4 || !/^\d{2}[A-Z]{3}\d{4}$/.test(parts[3])) return null;
   const [district, block, poleId] = parts.slice(0, 3).map(cleanPoleToken);
-  if ([district, block, poleId].some((token) => token === "NA")) return null;
-  return { district, block, poleId };
+  // "NA" is the placeholder generateFileName() writes when a token is empty.
+  // An empty BLOCK is valid (inspections can skip the block), so it must not
+  // block identity recovery. A missing district or Site ID leaves too little
+  // evidence to rename safely — keep rejecting those.
+  if (district === "NA" || poleId === "NA") return null;
+  return { district, block: block === "NA" ? "" : block, poleId };
 }
 
 export function renamePoleTokenInFileName(

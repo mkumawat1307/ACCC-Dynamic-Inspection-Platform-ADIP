@@ -443,16 +443,19 @@ describe("extractIdentityFromFileName", () => {
     expect(extractIdentityFromFileName("Sikar_SIKAR_SIK001_103000_photo1.jpg")).toBeNull();
   });
 
-  it("returns null when any token cleans to NA", () => {
+  it("returns null when the district or Site ID token cleans to NA", () => {
     expect(
       extractIdentityFromFileName("NA_B1_P001_14AUG2026_103000_photo1.jpg"),
     ).toBeNull();
     expect(
-      extractIdentityFromFileName("Sikar_NA_P001_14AUG2026_103000_photo1.jpg"),
-    ).toBeNull();
-    expect(
       extractIdentityFromFileName("Sikar_B1_NA_14AUG2026_103000_photo1.jpg"),
     ).toBeNull();
+  });
+
+  it("recovers an empty Block from the NA placeholder while keeping the Site ID", () => {
+    expect(
+      extractIdentityFromFileName("Sikar_NA_P001_14AUG2026_103000_photo1.jpg"),
+    ).toEqual({ district: "Sikar", block: "", poleId: "P001" });
   });
 });
 

@@ -550,11 +550,9 @@ const GeneralInformation = forwardRef<
                     text: "Cancel",
                     style: "cancel",
                     onPress: () => {
-                      // Dismiss the duplicate alert and clear ONLY the Site ID.
-                      // Cancel any pending/debounced save for the duplicate so it
-                      // cannot be written back, and keep the user on this form with
-                      // all other data intact. No draft is created by cancelling.
-                      clearSiteId();
+                      // Dismiss the duplicate alert without touching any data.
+                      // The Site ID value stays in the field so the user can edit
+                      // it. No pending saves are cancelled and no fields are cleared.
                     },
                   },
                 ],
@@ -651,25 +649,6 @@ const GeneralInformation = forwardRef<
       onDataChanged?.();
     }
 
-    // Clear ONLY the Site ID (Pole ID) from form state. Used when the user
-    // dismisses a duplicate-Site-ID alert with Cancel. It cancels any pending
-    // debounced save so a stale duplicate value can never be written back, then
-    // empties the field while preserving every other form value. The inspection
-    // row and all other section data are left untouched.
-    function clearSiteId() {
-      poleCheckVersion.current += 1;
-      InspectionRepository.cancelPendingFieldValueSaves();
-      if (poleCheckTimeout.current) {
-        clearTimeout(poleCheckTimeout.current);
-        poleCheckTimeout.current = null;
-      }
-      setValues((prev) => ({ ...prev, pole_id: "" }));
-      setPoleId("");
-      setFormUnlocked(false);
-      syncLiveField("pole_id", "");
-      onDataChanged?.();
-    }
-
     // Abandon the current duplicate inspection and reset the whole form to a blank
     // new-inspection lifecycle. Used when the user dismisses a duplicate-Site-ID
     // alert with "Create New". It cancels pending timers, deletes the abandoned
@@ -732,48 +711,6 @@ const GeneralInformation = forwardRef<
       }
     }
 
-    // Revert the on-screen identity (and the staged copy) back to what is persisted
-    // for the inspection. Used when the user dismisses the save-time rename dialog.
-    function revertIdentityToPersisted(
-      persisted: InspectionIdentity = persistedIdentityRef.current,
-    ) {
-      setValues((prev) => ({
-        ...prev,
-        block: persisted.block,
-        pole_id: persisted.poleId,
-      }));
-      setPoleId(persisted.poleId);
-      setFormUnlocked(persisted.poleId.trim().length > 0);
-      syncLiveField("pole_id", persisted.poleId);
-      syncLiveField("block", persisted.block);
-      if (InspectionEditSession.isActive(inspectionId)) {
-        for (const key of ["district", "block", "pole_id"] as const) {
-          const field = fields.find((f) => f.FieldKey === key);
-          if (!field) continue;
-          InspectionEditSession.stageFieldValue(
-            field.FieldID,
-            key === "district"
-              ? (contextProject?.DistrictName ?? "")
-              : key === "block"
-                ? persisted.block
-                : persisted.poleId,
-          );
-        }
-        InspectionEditSession.stagePoleId(persisted.poleId);
-        InspectionEditSession.stagePendingRename(null);
-      } else if (inspectionId != null && persisted.poleId !== "") {
-        const poleField = fields.find((f) => f.FieldKey === "pole_id");
-        if (poleField) {
-          void InspectionRepository.updatePoleIdDirectSave(
-            inspectionId,
-            poleField.FieldID,
-            persisted.poleId,
-          );
-        }
-      }
-      onDataChanged?.();
-    }
-
     // Settle (cancel + drain) any in-flight/pending Site ID debounce so a save-time
     // decision is computed against the value the user actually typed, and a stale
     // timer can never fire AFTER the save has committed. Called at the start of
@@ -831,17 +768,9 @@ const GeneralInformation = forwardRef<
         const duplicate =
           await InspectionRepository.getInspectionByPoleId(newPoleId);
         if (duplicate && duplicate.InspectionID !== effectiveId) {
-          if (!existing) {
-            const poleField = fields.find((f) => f.FieldKey === "pole_id");
-            if (poleField) {
-              await InspectionRepository.updatePoleIdDirectSave(
-                effectiveId,
-                poleField.FieldID,
-                persisted.poleId,
-              );
-            }
-          }
-          revertPoleId(persisted.poleId);
+          // Do NOT revert the PoleID or write to the database — leave the
+          // duplicate value on screen so the user can edit it, and let the
+          // caller (new.tsx) show a one-button OK popup that stops the save.
           return { type: "duplicate", duplicatePoleId: newPoleId };
         }
       }
@@ -1084,7 +1013,6 @@ const GeneralInformation = forwardRef<
             const resolve = renamePromptResolverRef.current;
             renamePromptResolverRef.current = null;
             if (resolve) resolve({ type: "cancelled" });
-            revertIdentityToPersisted();
           }}
           onConfirm={async (renameFiles, updateReports) => {
             if (!renamePrompt) return;

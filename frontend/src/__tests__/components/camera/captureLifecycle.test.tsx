@@ -28,12 +28,18 @@ const mockCameraApi = {
   takePictureAsync: jest.fn(),
   getAvailablePictureSizesAsync: jest.fn(),
 };
+const mockCameraViewProps: { current: Record<string, unknown> } = { current: {} };
 
 jest.mock("expo-camera", () => {
   const React = require("react");
   const { View } = require("react-native");
   const CameraView = React.forwardRef((_props: any, ref: any) => {
+    mockCameraViewProps.current = _props;
     React.useImperativeHandle(ref, () => mockCameraApi);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mock fires camera-ready once on mount
+    React.useEffect(() => {
+      _props.onCameraReady?.();
+    }, []);
     return React.createElement(View);
   });
   CameraView.displayName = "CameraView";
@@ -240,6 +246,16 @@ async function flushAsync(times = 30) {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("capture lifecycle", () => {
   let tree: ReturnType<typeof TestRenderer.create> | null = null;
   let alertButtons: { text: string; onPress?: () => void | Promise<void> }[] = [];
@@ -303,6 +319,20 @@ describe("capture lifecycle", () => {
       tree = TestRenderer.create(<CaptureScreen />);
       await flushAsync();
     });
+    await TestRenderer.act(async () => {
+      const wrap = tree!.root.find((n) => n.props.testID === "camera-wrap");
+      (wrap.props.onLayout as (e: {
+        nativeEvent: {
+          layout: {
+            width: number;
+            height: number;
+          };
+        };
+      }) => void)({
+        nativeEvent: { layout: { width: 375, height: 500 } },
+      });
+      await flushAsync();
+    });
     return tree!;
   }
 
@@ -314,6 +344,16 @@ describe("capture lifecycle", () => {
   function pressBack() {
     const back = tree!.root.find((n) => n.props.testID === "capture-back");
     (back.props.onPress as () => void)();
+  }
+
+  function pressRatio() {
+    const btn = tree!.root.find((n) => n.props.testID === "camera-ratio");
+    (btn.props.onPress as () => void)();
+  }
+
+  function pressFacing() {
+    const btn = tree!.root.find((n) => n.props.testID === "camera-facing");
+    (btn.props.onPress as () => void)();
   }
 
   function captureButtonProps() {
@@ -674,5 +714,93 @@ describe("capture lifecycle", () => {
     const photo = mockPhotoCreate.mock.calls[0][0];
     expect(photo.Latitude).toBe(34.05);
     expect(photo.Longitude).toBe(-118.25);
+  });
+
+  it("blocks capture until the capture size is resolved, then allows it", async () => {
+    const pendingSizes = deferred<string[]>();
+    mockCameraApi.getAvailablePictureSizesAsync.mockReturnValue(pendingSizes.promise);
+    await renderScreen();
+
+    expect(captureButtonProps().disabled).toBe(true);
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+    expect(captureGpsMock).not.toHaveBeenCalled();
+    expect(mockCameraApi.takePictureAsync).not.toHaveBeenCalled();
+
+    await TestRenderer.act(async () => {
+      pendingSizes.resolve(["4000x3000", "3840x2160", "1920x1080"]);
+      await flushAsync();
+    });
+    expect(captureButtonProps().disabled).toBe(false);
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+    expect(captureGpsMock).toHaveBeenCalledTimes(1);
+    expect(mockCameraApi.takePictureAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-blocks capture on a ratio change until the new size is resolved", async () => {
+    await renderScreen();
+    expect(captureButtonProps().disabled).toBe(false);
+
+    const pendingSizes = deferred<string[]>();
+    mockCameraApi.getAvailablePictureSizesAsync.mockReturnValueOnce(pendingSizes.promise);
+    await TestRenderer.act(async () => {
+      pressRatio();
+      await flushAsync();
+    });
+    expect(captureButtonProps().disabled).toBe(true);
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+    expect(mockCameraApi.takePictureAsync).not.toHaveBeenCalled();
+
+    await TestRenderer.act(async () => {
+      pendingSizes.resolve(["4000x3000", "3840x2160", "1920x1080"]);
+      await flushAsync();
+    });
+    expect(captureButtonProps().disabled).toBe(false);
+    expect(mockCameraViewProps.current.pictureSize).toBe("3840x2160");
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+    expect(mockCameraApi.takePictureAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a stale picture-size result that resolves after a reconfiguration", async () => {
+    const staleSizes = deferred<string[]>();
+    mockCameraApi.getAvailablePictureSizesAsync.mockReturnValueOnce(staleSizes.promise);
+    await renderScreen();
+    expect(captureButtonProps().disabled).toBe(true);
+
+    const freshSizes = deferred<string[]>();
+    mockCameraApi.getAvailablePictureSizesAsync.mockReturnValueOnce(freshSizes.promise);
+    await TestRenderer.act(async () => {
+      pressFacing();
+      await flushAsync();
+    });
+
+    await TestRenderer.act(async () => {
+      freshSizes.resolve(["1920x1440", "1280x960"]);
+      await flushAsync();
+    });
+    expect(captureButtonProps().disabled).toBe(false);
+    expect(mockCameraViewProps.current.pictureSize).toBe("1920x1440");
+
+    await TestRenderer.act(async () => {
+      staleSizes.resolve(["4000x3000", "1920x1080"]);
+      await flushAsync();
+    });
+    expect(mockCameraViewProps.current.pictureSize).toBe("1920x1440");
+    expect(captureButtonProps().disabled).toBe(false);
   });
 });
