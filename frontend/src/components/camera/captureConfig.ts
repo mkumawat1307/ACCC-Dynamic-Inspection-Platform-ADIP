@@ -7,3 +7,4 @@ export const GPS_ACCURACY_REFRESH_M = 25;
 export const PHOTO_QUALITY = 0.8;
 export const GPS_ONE_SHOT_TIMEOUT_CACHED_MS = 8000;
 export const GPS_ONE_SHOT_TIMEOUT_COLD_MS = 20000;
+export const GPS_WATCH_ACQUIRING_MIN_MS = 500;

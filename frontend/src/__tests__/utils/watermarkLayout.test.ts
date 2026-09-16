@@ -104,11 +104,11 @@ describe("composeWatermarkLines", () => {
 });
 
 describe("gpsAccuracyCategory", () => {
-  it("is high ≤15, medium ≤30, low >30", () => {
-    expect(gpsAccuracyCategory(15)).toBe("high");
-    expect(gpsAccuracyCategory(16)).toBe("medium");
-    expect(gpsAccuracyCategory(30)).toBe("medium");
-    expect(gpsAccuracyCategory(31)).toBe("low");
+  it("is high ≤20, medium ≤50, low >50", () => {
+    expect(gpsAccuracyCategory(20)).toBe("high");
+    expect(gpsAccuracyCategory(20.1)).toBe("medium");
+    expect(gpsAccuracyCategory(50)).toBe("medium");
+    expect(gpsAccuracyCategory(50.1)).toBe("low");
   });
 });
 
@@ -130,16 +130,17 @@ describe("formatGpsAccuracyLine", () => {
 });
 
 describe("gpsPillText", () => {
-  it("shows high accuracy for fixed with accuracy ≤15m", () => {
+  it("shows high accuracy for fixed with accuracy ≤20m", () => {
     expect(gpsPillText("fixed", 12)).toBe("🟢 High Accuracy");
   });
 
-  it("shows medium accuracy for fixed with accuracy 16–30m", () => {
-    expect(gpsPillText("fixed", 20)).toBe("🟡 Medium Accuracy");
+  it("shows medium accuracy for fixed with accuracy 21–50m", () => {
+    expect(gpsPillText("fixed", 20.1)).toBe("🟡 Medium Accuracy");
+    expect(gpsPillText("fixed", 50)).toBe("🟡 Medium Accuracy");
   });
 
-  it("shows low accuracy for fixed with accuracy >30m", () => {
-    expect(gpsPillText("fixed", 50)).toBe("🔴 Low Accuracy");
+  it("shows low accuracy for fixed with accuracy >50m", () => {
+    expect(gpsPillText("fixed", 50.1)).toBe("🔴 Low Accuracy");
   });
 
   it("defaults to high accuracy when fixed but accuracy unknown", () => {

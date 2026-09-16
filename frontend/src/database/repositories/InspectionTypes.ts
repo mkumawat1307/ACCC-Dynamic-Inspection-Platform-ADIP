@@ -6,6 +6,7 @@ export interface InspectionSection {
   IsActive?: number;
   IsVisible?: number;
   IsDefault?: number;
+  MinimumPhotos?: number;
   CreatedAt?: string | null;
 }
 

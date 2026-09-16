@@ -629,4 +629,50 @@ describe("capture lifecycle", () => {
     expect(mockRouter.back).not.toHaveBeenCalled();
     expect(hasText("Merging watermark…")).toBe(true);
   });
+
+  it("writes its own immutable GPS snapshot per capture that later fixes cannot mutate", async () => {
+    let call = 0;
+    captureGpsMock.mockImplementation(() => {
+      call += 1;
+      return Promise.resolve(call === 1 ? makeFix(34.05, -118.25, 12) : makeFix(10.5, 20.25, 8));
+    });
+    await renderScreen();
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+    expect(mockPhotoCreate).toHaveBeenCalledTimes(1);
+    const photo1 = mockPhotoCreate.mock.calls[0][0];
+    expect(photo1.Latitude).toBe(34.05);
+    expect(photo1.Longitude).toBe(-118.25);
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+    expect(mockPhotoCreate).toHaveBeenCalledTimes(2);
+    const photo2 = mockPhotoCreate.mock.calls[1][0];
+    expect(photo2.Latitude).toBe(10.5);
+    expect(photo2.Longitude).toBe(20.25);
+
+    expect(photo1.Latitude).toBe(34.05);
+    expect(photo1.Longitude).toBe(-118.25);
+  });
+
+  it("captures the photo even when a late address resolve rejects (non-blocking)", async () => {
+    resolveAddressMock.mockRejectedValue(new Error("geocode down"));
+    await renderScreen();
+
+    await TestRenderer.act(async () => {
+      pressCapture();
+      await flushAsync();
+    });
+
+    expect(mockCameraApi.takePictureAsync).toHaveBeenCalledTimes(1);
+    expect(mockPhotoCreate).toHaveBeenCalledTimes(1);
+    const photo = mockPhotoCreate.mock.calls[0][0];
+    expect(photo.Latitude).toBe(34.05);
+    expect(photo.Longitude).toBe(-118.25);
+  });
 });

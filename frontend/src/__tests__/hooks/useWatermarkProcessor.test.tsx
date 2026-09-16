@@ -2144,4 +2144,163 @@ describe("useWatermarkProcessor cancellation queue recovery", () => {
     expect(result.current.watermarkState[keyOf(2)]).toBe("completed");
     unmount();
   });
+
+  it("keeps the active job's stage watchdog armed when a queued photo is discarded", async () => {
+    jest.useFakeTimers();
+    (hasNativeWatermarkEncoder as jest.Mock).mockReturnValue(false);
+    (hasNativeOverlayEncoder as jest.Mock).mockReturnValue(false);
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/x/u.jpg",
+      fileName: "u.jpg",
+    });
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+    expect(result.current.watermarkState[keyOf(1)]).toBe("processing");
+
+    // Photo 2 is queued behind the active photo. Discarding it must NOT clear
+    // the active photo's stage watchdog, otherwise photo 1 stalls forever.
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(2, "file:///tmp/u.jpg", "u.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.clearWatermarkState(2);
+    });
+    expect(result.current.watermarkState[keyOf(2)]).toBeUndefined();
+
+    // If photo 1's toblob watchdog (12000ms) survived, it fires → job retried.
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(12000);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(injectJavaScript).toHaveBeenCalledTimes(2);
+    const retryScript = injectJavaScript.mock.calls[1][0] as string;
+    expect(retryScript).toContain('"photoId":1');
+    expect(result.current.watermarkState[keyOf(1)]).toBe("processing");
+    unmount();
+  });
+
+  it("does not clear the downshifted stage watchdog when a stale overlay completion arrives", async () => {
+    jest.useFakeTimers();
+    (hasNativeWatermarkEncoder as jest.Mock).mockReturnValue(true);
+    (hasNativeOverlayEncoder as jest.Mock).mockReturnValue(true);
+    jest.spyOn(Image, "getSize").mockImplementation((_url: string, ok) => {
+      (ok as (w: number, h: number) => void)(4000, 3000);
+    });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue("BASE64DATA");
+    (writePhotoUnique as jest.Mock).mockResolvedValue({
+      contentUri: "content://media/x/u.jpg",
+      fileName: "u.jpg",
+    });
+
+    let resolveOverlay: (v?: unknown) => void = () => {};
+    (encodeWatermarkOverlay as jest.Mock).mockImplementation(
+      () => new Promise(resolveElect => { resolveOverlay = resolveElect; })
+    );
+
+    const injectJavaScript = jest.fn();
+    const { result, unmount } = renderHook(() =>
+      useWatermarkProcessor({ project, onPhotosUpdated: jest.fn() })
+    );
+    result.current.webViewRef.current = { injectJavaScript } as unknown as WebView;
+
+    TestRenderer.act(() => {
+      result.current.enqueueWatermark(1, "file:///tmp/t.jpg", "photo.jpg", ["line"]);
+    });
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ __ready: true }) },
+      });
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(1);
+
+    // Measure + render phases for the overlay.
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: { data: JSON.stringify({ photoId: 1, maxTextWidth: 300 }) },
+      });
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(2);
+
+    // Overlay arrives → native composite starts and hangs; watchdog re-armed at 8s.
+    TestRenderer.act(() => {
+      result.current.handleWebViewMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            photoId: 1,
+            overlay: "PNG_B64",
+            overlayX: 88,
+            overlayY: 1843,
+            overlayWidth: 550,
+            overlayHeight: 1036,
+          }),
+        },
+      });
+    });
+    expect(encodeWatermarkOverlay).toHaveBeenCalledTimes(1);
+
+    // The 8s overlay watchdog fires → job downshifts to toblob and re-runs.
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(8000);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(3);
+    const toblobScript = injectJavaScript.mock.calls[2][0] as string;
+    expect(toblobScript).toContain('"photoId":1');
+
+    // Stale composite resolves AFTER the downshift. It must NOT restart the job
+    // or clear the toblob watchdog (regression for Bug B).
+    await TestRenderer.act(async () => {
+      resolveOverlay(undefined);
+      await Promise.resolve();
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    expect(injectJavaScript).toHaveBeenCalledTimes(3);
+    expect(writePhotoUnique).not.toHaveBeenCalled();
+
+    // The downshifted toblob watchdog (12000ms) is still armed: it fires and retries.
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(12000);
+    });
+    await TestRenderer.act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(injectJavaScript).toHaveBeenCalledTimes(4);
+    const retryScript = injectJavaScript.mock.calls[3][0] as string;
+    expect(retryScript).toContain('"photoId":1');
+
+    unmount();
+    jest.restoreAllMocks();
+  });
 });

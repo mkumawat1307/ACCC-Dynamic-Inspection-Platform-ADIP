@@ -41,7 +41,12 @@ export function uniqueFileNameSuffix(): string {
 }
 
 export type PhotoSaveBlockReason =
-  "no_photos" | "processing" | "pending" | "failed" | "unprocessed";
+  | "no_photos"
+  | "below_minimum"
+  | "processing"
+  | "pending"
+  | "failed"
+  | "unprocessed";
 
 export interface PhotoSaveValidation {
   canSave: boolean;
@@ -51,9 +56,13 @@ export interface PhotoSaveValidation {
 export function validatePhotosForSave(
   photos: Photo[],
   states: Record<number, WatermarkState>,
+  minimumPhotos: number = 1,
 ): PhotoSaveValidation {
-  if (photos.length === 0) {
-    return { canSave: false, reason: "no_photos" };
+  if (photos.length < minimumPhotos) {
+    return {
+      canSave: false,
+      reason: photos.length === 0 ? "no_photos" : "below_minimum",
+    };
   }
 
   for (const photo of photos) {
@@ -71,6 +80,31 @@ export function validatePhotosForSave(
   }
 
   return { canSave: true, reason: null };
+}
+
+export interface MinimumPhotosInputResult {
+  value: number;
+  error: string | null;
+}
+
+/**
+ * Parse the admin-entered photo minimum requirement. Blank or 0 means photos
+ * are optional; a positive whole number sets the minimum. Decimals, negatives
+ * and non-numeric text are invalid.
+ */
+export function parseMinimumPhotosInput(text: string): MinimumPhotosInputResult {
+  const trimmed = (text ?? "").trim();
+  if (trimmed === "") {
+    return { value: 0, error: null };
+  }
+  if (!/^\d{1,6}$/.test(trimmed)) {
+    return {
+      value: 0,
+      error:
+        "Minimum photos must be a whole number. Leave blank or enter 0 to make photos optional.",
+    };
+  }
+  return { value: Number(trimmed), error: null };
 }
 
 export function formatDate(dateStr: string | null): string {
@@ -286,4 +320,38 @@ export function renameIdentityInFileName(
   parts[1] = cleanPoleToken(newBlock) || "NA";
   parts[2] = cleanPoleToken(newPoleId) || "NA";
   return parts.join("_");
+}
+
+export function photoRequirementLabel(minimumPhotos: number): string {
+  if (minimumPhotos <= 0) return "Optional";
+  return minimumPhotos === 1
+    ? "Min 1 Required"
+    : `Min ${minimumPhotos} Required`;
+}
+
+export function photoEmptyStateTitle(minimumPhotos: number): string {
+  return minimumPhotos > 0 ? "No photo captured" : "No photos captured";
+}
+
+export function photoEmptyStateHint(minimumPhotos: number): string {
+  if (minimumPhotos <= 0) {
+    return "Tap capture to take a photo.\nPhotos are optional.";
+  }
+  const noun = minimumPhotos === 1 ? "Photo" : "Photos";
+  return `Tap capture to take the first photo.\nMinimum ${minimumPhotos} ${noun} Required`;
+}
+
+export function photoProgressLabel(
+  captured: number,
+  minimumPhotos: number,
+): string {
+  const countNoun = captured === 1 ? "photo" : "photos";
+  const countText = `${captured} ${countNoun} captured`;
+  if (minimumPhotos <= 0) return countText;
+  if (captured < minimumPhotos) {
+    const remaining = minimumPhotos - captured;
+    const remainingNoun = remaining === 1 ? "photo" : "photos";
+    return `${countText}\n${remaining} more ${remainingNoun} required`;
+  }
+  return `${countText}\nRequirement satisfied`;
 }

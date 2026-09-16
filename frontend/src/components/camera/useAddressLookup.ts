@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { formatAddressLines, haversineMeters, reverseGeocode } from "@/src/utils/geo";
 
-export const ADDRESS_CACHE_RADIUS_M = 10;
+// Reverse geocoding refreshes only when the device moves this far from the
+// last geocoded location. Keep distinct from the 10 m GPS move interval.
+export const ADDRESS_REVERSE_GEOCODE_REFRESH_M = 50;
 export const RESOLVING_ADDRESS = "Resolving Address...";
 
 interface CachedAddress {
@@ -29,7 +31,7 @@ function cacheHit(
   if (
     cache &&
     haversineMeters(cache.latitude, cache.longitude, latitude, longitude) <=
-      ADDRESS_CACHE_RADIUS_M
+      ADDRESS_REVERSE_GEOCODE_REFRESH_M
   ) {
     return cache;
   }

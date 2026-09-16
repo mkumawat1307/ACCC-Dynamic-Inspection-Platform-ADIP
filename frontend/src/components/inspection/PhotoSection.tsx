@@ -24,7 +24,13 @@ import { composeWatermarkLines } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
 import { usePhotoStates } from "@/src/context/PhotoStatesContext";
-import { makePhotoStateKey } from "./photoUtils";
+import {
+  makePhotoStateKey,
+  photoEmptyStateHint,
+  photoEmptyStateTitle,
+  photoProgressLabel,
+} from "./photoUtils";
+import SectionRepository from "@/src/database/repositories/SectionRepository";
 import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView";
 import { useWatermarkProcessor } from "./useWatermarkProcessor";
 import PhotoCard from "./PhotoCard";
@@ -48,9 +54,24 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
   const [loading, setLoading] = useState(true);
   const [block, setBlock] = useState("");
   const [previewPhoto, setPreviewPhoto] = useState<Photo | null>(null);
+  const [minimumPhotos, setMinimumPhotos] = useState(1);
 
   useEffect(() => {
     loadBlock();
+  }, [inspectionId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    SectionRepository.getMinimumPhotos()
+      .then((value) => {
+        if (!cancelled) setMinimumPhotos(value);
+      })
+      .catch(() => {
+        if (!cancelled) setMinimumPhotos(1);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [inspectionId]);
 
   async function loadBlock() {
@@ -177,7 +198,6 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
     ]);
   }
 
-  const hasMinPhotos = photos.length >= 1;
   const allComplete = photos.length > 0 && photos.every(
     p => watermarkState[makePhotoStateKey(project?.DBPath, p.PhotoID!)] === "completed"
   );
@@ -207,7 +227,7 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
 
       <PhotoSectionHeader
         photoCount={photos.length}
-        hasMinPhotos={hasMinPhotos}
+        minimumPhotos={minimumPhotos}
         allComplete={allComplete}
         capturing={false}
         onCapture={handleCapture}
@@ -216,12 +236,17 @@ export default function PhotoSection({ inspectionId, locked = false }: Props) {
       {photos.length === 0 && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyIcon}>{'\uD83D\uDCF7'}</Text>
-          <Text style={styles.emptyTitle}>No Photos Captured</Text>
+          <Text style={styles.emptyTitle}>{photoEmptyStateTitle(minimumPhotos)}</Text>
           <Text style={styles.emptySubtitle}>
-            Tap Capture to take the first photo.
-            Minimum 1 photo required.
+            {photoEmptyStateHint(minimumPhotos)}
           </Text>
         </View>
+      )}
+
+      {photos.length > 0 && minimumPhotos > 0 && (
+        <Text style={styles.progressText}>
+          {photoProgressLabel(photos.length, minimumPhotos)}
+        </Text>
       )}
 
       {photos.map((photo, index) => (
@@ -271,6 +296,12 @@ const styles = StyleSheet.create({
     color: "#777",
     textAlign: "center",
     paddingHorizontal: 20,
+  },
+  progressText: {
+    fontSize: 13,
+    color: "#555",
+    textAlign: "center",
+    marginBottom: 8,
   },
 });
 

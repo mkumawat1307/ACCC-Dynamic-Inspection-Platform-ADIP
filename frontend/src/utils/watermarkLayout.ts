@@ -5,8 +5,8 @@ import {
 import type { WatermarkSettings } from "@/src/utils/watermarkSettings";
 import type { GpsStatus } from "@/src/components/camera/useGpsTracker";
 
-export const GPS_ACCURACY_HIGH_M = 15;
-export const GPS_ACCURACY_MEDIUM_M = 30;
+export const GPS_ACCURACY_HIGH_M = 20;
+export const GPS_ACCURACY_MEDIUM_M = 50;
 
 export type GpsAccuracyCategory = "high" | "medium" | "low";
 

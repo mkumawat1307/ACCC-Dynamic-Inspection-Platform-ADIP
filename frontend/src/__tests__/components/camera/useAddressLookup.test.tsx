@@ -9,6 +9,7 @@ import {
 import {
   useAddressLookup,
   RESOLVING_ADDRESS,
+  ADDRESS_REVERSE_GEOCODE_REFRESH_M,
 } from "@/src/components/camera/useAddressLookup";
 
 jest.mock("expo-location");
@@ -122,7 +123,101 @@ describe("useAddressLookup", () => {
     expect(lastLines).toEqual(["Main St, Anytown", "CA"]);
   });
 
-  it("enters the resolving state again for a fresh location", async () => {
+  it("reverse-geocode refresh threshold constant is set to 50 m", () => {
+    expect(ADDRESS_REVERSE_GEOCODE_REFRESH_M).toBe(50);
+  });
+
+  it("reverse-geocodes immediately on the first usable GPS fix (no 50 m wait)", async () => {
+    const spy = jest.spyOn(Location, "reverseGeocodeAsync");
+    spy.mockClear();
+    __setMockReverseGeocode([{ street: "Main St", city: "Anytown", region: "CA" }]);
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DriverHost />);
+    });
+    expect(spy).not.toHaveBeenCalled();
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0, longitude: 0 });
+    });
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(lastLines).toEqual(["Main St, Anytown", "CA"]);
+  });
+
+  it("does not trigger reverse geocoding for ~30 m of movement within the 50 m threshold", async () => {
+    const spy = jest.spyOn(Location, "reverseGeocodeAsync");
+    spy.mockClear();
+    __setMockReverseGeocode([{ street: "A", region: "R" }]);
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DriverHost />);
+    });
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0, longitude: 0 });
+    });
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+    const callsAfterFirst = spy.mock.calls.length;
+
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0.0003, longitude: 0 });
+    });
+    await flush();
+    expect(spy.mock.calls.length).toBe(callsAfterFirst);
+    expect(lastLines).toEqual(["A", "R"]);
+  });
+
+  it("does not reverse-geocode across multiple ~10 m GPS steps that stay within the 50 m threshold", async () => {
+    const spy = jest.spyOn(Location, "reverseGeocodeAsync");
+    spy.mockClear();
+    __setMockReverseGeocode([{ street: "A", region: "R" }]);
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DriverHost />);
+    });
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0, longitude: 0 });
+    });
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+    const callsAfterFirst = spy.mock.calls.length;
+
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0.0001, longitude: 0 });
+    });
+    await flush();
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0.0002, longitude: 0 });
+    });
+    await flush();
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0.0003, longitude: 0 });
+    });
+    await flush();
+    expect(spy.mock.calls.length).toBe(callsAfterFirst);
+    expect(lastLines).toEqual(["A", "R"]);
+  });
+
+  it("triggers reverse geocoding when movement exceeds the 50 m refresh threshold", async () => {
+    const spy = jest.spyOn(Location, "reverseGeocodeAsync");
+    spy.mockClear();
+    __setMockReverseGeocode([{ street: "A", region: "R" }]);
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DriverHost />);
+    });
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0, longitude: 0 });
+    });
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+    const callsAfterFirst = spy.mock.calls.length;
+
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0.001, longitude: 0 });
+    });
+    await flush();
+    expect(spy.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+    expect(lastLines).toEqual(["A", "R"]);
+  });
+
+  it("enters the resolving state for a fresh location beyond the 50 m threshold", async () => {
     __setMockReverseGeocode([{ street: "Main St", city: "Anytown", region: "CA" }]);
     await TestRenderer.act(async () => {
       tree = TestRenderer.create(<DriverHost />);
@@ -142,5 +237,17 @@ describe("useAddressLookup", () => {
     });
     await flush();
     expect(lastLines).toEqual([RESOLVING_ADDRESS]);
+  });
+
+  it("reverse geocoding failure does not block useAddressLookup (returns no lines silently)", async () => {
+    __setMockReverseGeocode(null);
+    await TestRenderer.act(async () => {
+      tree = TestRenderer.create(<DriverHost />);
+    });
+    await TestRenderer.act(async () => {
+      setDriverCoords!({ latitude: 0, longitude: 0 });
+    });
+    await flush();
+    expect(lastLines).toEqual([]);
   });
 });

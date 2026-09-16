@@ -15,6 +15,11 @@ import {
   makePhotoStateKey,
   extractProjectPhotoStates,
   extractIdentityFromFileName,
+  parseMinimumPhotosInput,
+  photoRequirementLabel,
+  photoEmptyStateTitle,
+  photoEmptyStateHint,
+  photoProgressLabel,
 } from "@/src/components/inspection/photoUtils";
 import { Photo } from "@/src/models/Photo";
 
@@ -522,6 +527,121 @@ describe("validatePhotosForSave", () => {
   });
 });
 
+describe("validatePhotosForSave with a configured minimum", () => {
+  const completed = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      makePhoto(i + 1, "content://media/1.jpg")
+    );
+
+  it("blocks with no_photos when the minimum is unmet and no photos exist", () => {
+    expect(validatePhotosForSave([], {}, 3)).toEqual({
+      canSave: false,
+      reason: "no_photos",
+    });
+  });
+
+  it("blocks with below_minimum when photos exist but are fewer than the minimum", () => {
+    expect(validatePhotosForSave(completed(1), {}, 2)).toEqual({
+      canSave: false,
+      reason: "below_minimum",
+    });
+  });
+
+  it("allows exactly the minimum number of photos", () => {
+    expect(validatePhotosForSave(completed(2), {}, 2)).toEqual({
+      canSave: true,
+      reason: null,
+    });
+  });
+
+  it("allows more than the minimum number of photos", () => {
+    expect(validatePhotosForSave(completed(4), {}, 2)).toEqual({
+      canSave: true,
+      reason: null,
+    });
+  });
+
+  it("allows zero photos when the configured minimum is 0 (photos optional)", () => {
+    expect(validatePhotosForSave([], {}, 0)).toEqual({
+      canSave: true,
+      reason: null,
+    });
+  });
+
+  it("still blocks a pending photo even when the minimum is 0", () => {
+    const photos = [makePhoto(1, "file:///tmp/1.jpg")];
+    expect(validatePhotosForSave(photos, { 1: "pending" }, 0)).toEqual({
+      canSave: false,
+      reason: "pending",
+    });
+  });
+
+  it("still validates watermark states at or above the configured minimum", () => {
+    const photos = [makePhoto(1, "file:///tmp/1.jpg")];
+    expect(validatePhotosForSave(photos, { 1: "processing" }, 1)).toEqual({
+      canSave: false,
+      reason: "processing",
+    });
+  });
+
+  it("defaults to a minimum of 1 when none is supplied", () => {
+    expect(validatePhotosForSave([], {})).toEqual({
+      canSave: false,
+      reason: "no_photos",
+    });
+  });
+});
+
+describe("parseMinimumPhotosInput", () => {
+  it("treats an empty string as optional (0) with no error", () => {
+    expect(parseMinimumPhotosInput("")).toEqual({ value: 0, error: null });
+  });
+
+  it("treats blank/whitespace input as optional (0) with no error", () => {
+    expect(parseMinimumPhotosInput("   ")).toEqual({ value: 0, error: null });
+  });
+
+  it("treats 0 as optional with no error", () => {
+    expect(parseMinimumPhotosInput("0")).toEqual({ value: 0, error: null });
+  });
+
+  it("accepts 1", () => {
+    expect(parseMinimumPhotosInput("1")).toEqual({ value: 1, error: null });
+  });
+
+  it("accepts 2", () => {
+    expect(parseMinimumPhotosInput("2")).toEqual({ value: 2, error: null });
+  });
+
+  it("accepts a larger positive whole number", () => {
+    expect(parseMinimumPhotosInput("25")).toEqual({ value: 25, error: null });
+  });
+
+  it("rejects a decimal value", () => {
+    const result = parseMinimumPhotosInput("2.5");
+    expect(result.value).toBe(0);
+    expect(result.error).not.toBeNull();
+  });
+
+  it("rejects a negative value", () => {
+    const result = parseMinimumPhotosInput("-2");
+    expect(result.value).toBe(0);
+    expect(result.error).not.toBeNull();
+  });
+
+  it("rejects non-numeric text", () => {
+    const result = parseMinimumPhotosInput("abc");
+    expect(result.value).toBe(0);
+    expect(result.error).not.toBeNull();
+  });
+
+  it("rejects an implausibly large minimum", () => {
+    const result = parseMinimumPhotosInput("99999999");
+    expect(result.value).toBe(0);
+    expect(result.error).not.toBeNull();
+  });
+});
+
 describe("decidePoleIdChange", () => {
   it("returns direct-save when there are no photos", () => {
     expect(decidePoleIdChange([], {})).toEqual({ type: "direct-save" });
@@ -656,5 +776,72 @@ describe("save validation over scoped photo state", () => {
       canSave: true,
       reason: null,
     });
+  });
+});
+
+describe("photoRequirementLabel", () => {
+  it("says Optional when photos are not required", () => {
+    expect(photoRequirementLabel(0)).toBe("Optional");
+  });
+
+  it("says Min 1 Required for a minimum of 1", () => {
+    expect(photoRequirementLabel(1)).toBe("Min 1 Required");
+  });
+
+  it("says Min 3 Required for a minimum of 3", () => {
+    expect(photoRequirementLabel(3)).toBe("Min 3 Required");
+  });
+});
+
+describe("photoEmptyStateTitle", () => {
+  it("says No photo captured when a minimum is configured", () => {
+    expect(photoEmptyStateTitle(3)).toBe("No photo captured");
+  });
+
+  it("says No photos captured when photos are optional", () => {
+    expect(photoEmptyStateTitle(0)).toBe("No photos captured");
+  });
+});
+
+describe("photoEmptyStateHint", () => {
+  it("invites the first photo and states a 3-photo minimum", () => {
+    const hint = photoEmptyStateHint(3);
+    expect(hint).toContain("Tap capture to take the first photo");
+    expect(hint).toContain("Minimum 3 Photos Required");
+  });
+
+  it("states a 1-photo minimum", () => {
+    expect(photoEmptyStateHint(1)).toContain("Minimum 1 Photo Required");
+  });
+
+  it("says photos are optional when the minimum is 0", () => {
+    const hint = photoEmptyStateHint(0);
+    expect(hint).toContain("Photos are optional.");
+  });
+});
+
+describe("photoProgressLabel", () => {
+  it("reports two more required when 1 of 3 are captured", () => {
+    expect(photoProgressLabel(1, 3)).toContain("1 photo captured");
+    expect(photoProgressLabel(1, 3)).toContain("2 more photos required");
+  });
+
+  it("reports one more required when 2 of 3 are captured", () => {
+    expect(photoProgressLabel(2, 3)).toContain("2 photos captured");
+    expect(photoProgressLabel(2, 3)).toContain("1 more photo required");
+  });
+
+  it("reports the requirement satisfied exactly at the minimum", () => {
+    expect(photoProgressLabel(3, 3)).toContain("3 photos captured");
+    expect(photoProgressLabel(3, 3)).toContain("Requirement satisfied");
+  });
+
+  it("reports the requirement satisfied above the minimum (not a maximum)", () => {
+    expect(photoProgressLabel(4, 3)).toContain("4 photos captured");
+    expect(photoProgressLabel(4, 3)).toContain("Requirement satisfied");
+  });
+
+  it("does not claim a requirement is satisfied when photos are optional", () => {
+    expect(photoProgressLabel(2, 0)).toBe("2 photos captured");
   });
 });

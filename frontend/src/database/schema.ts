@@ -732,6 +732,12 @@ export async function migrateProjectSchema(projectId: number) {
     } catch {
         // column already exists
     }
+
+    try {
+        await db.execAsync(`ALTER TABLE InspectionSections ADD COLUMN MinimumPhotos INTEGER NOT NULL DEFAULT 1;`);
+    } catch {
+        // column already exists
+    }
 }
 
 export async function migrateInspectionValueUniqueness(db: SQLiteDatabase): Promise<void> {

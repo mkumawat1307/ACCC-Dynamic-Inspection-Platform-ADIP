@@ -2,6 +2,7 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import SectionsScreen from "@/app/settings/sections";
 import { getDatabase } from "@/src/database/db";
+import SectionRepository from "@/src/database/repositories/SectionRepository";
 
 type HostComponent = ((props: Record<string, unknown>) => React.ReactElement) &
   Record<string, unknown>;
@@ -38,6 +39,7 @@ jest.mock("react-native-paper", () => {
     Chip: make("Chip"),
     Button: make("Button"),
     IconButton: make("IconButton"),
+    Icon: make("Icon"),
     Card,
     Appbar,
     Dialog,
@@ -67,6 +69,8 @@ jest.mock("@/src/database/repositories/SectionRepository", () => {
       nameExists: jest.fn().mockResolvedValue(false),
       keyExists: jest.fn().mockResolvedValue(false),
       softDeleteSection: jest.fn(),
+      getMinimumPhotos: jest.fn().mockResolvedValue(1),
+      setMinimumPhotos: jest.fn().mockResolvedValue(undefined),
     },
   };
 });
@@ -139,6 +143,20 @@ const SAMPLE_SECTION = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const PHOTO_SECTION = (overrides: Record<string, unknown> = {}) =>
+  SAMPLE_SECTION({
+    SectionID: 2,
+    SectionName: "Photo Section",
+    SectionKey: "photos",
+    IsDefault: 1,
+    ...overrides,
+  });
+
+function controlByLabel(tree: ReturnType<typeof TestRenderer.create>, label: string) {
+  const node = tree.root.findAll((n) => (n as TestNode).props?.accessibilityLabel === label)[0];
+  return node?.props as { onPress: (e: object) => void } | undefined;
+}
+
 describe("SectionsScreen (Sections)", () => {
   afterEach(() => {
     jest.clearAllMocks();
@@ -205,5 +223,48 @@ describe("SectionsScreen (Sections)", () => {
     expect(updateCalls.length).toBe(1);
     expect(updateCalls[0][1][0]).toBe("Slab Access");
     expect(updateCalls[0][1][1]).toBe("site_access");
+  });
+
+  it("shows a gear Minimum Photo Requirement control (no numeric icon) and correct grammar on the Photo Section card", async () => {
+    const { tree } = await renderScreen([PHOTO_SECTION({ MinimumPhotos: 1 })]);
+    expect(controlByLabel(tree, "Minimum Photo Requirement")).toBeDefined();
+    expect(nodesByType(tree, "IconButton").filter((n) => (n as TestNode).props.icon === "numeric").length).toBe(0);
+    expect(nodeByText(tree, "Text", "Minimum 1 Photo")).toBeDefined();
+  });
+
+  it("pluralizes the photo requirement subtitle and shows optional text for zero", async () => {
+    const { tree: plural } = await renderScreen([PHOTO_SECTION({ MinimumPhotos: 3 })]);
+    expect(nodeByText(plural, "Text", "Minimum 3 Photos")).toBeDefined();
+    const { tree: optional } = await renderScreen([PHOTO_SECTION({ MinimumPhotos: 0 })]);
+    expect(nodeByText(optional, "Text", "Photos Optional")).toBeDefined();
+  });
+
+  it("opens the existing Photos Requirement dialog from the gear control and persists the new value", async () => {
+    const { tree } = await renderScreen([PHOTO_SECTION({ MinimumPhotos: 1 })]);
+    await act(async () => {
+      controlByLabel(tree, "Minimum Photo Requirement")?.onPress({});
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(nodeByText(tree, "DialogTitle", "Photos Requirement")).toBeDefined();
+    expect(textInputByLabel(tree, "Minimum Photos")?.value).toBe("1");
+    act(() => {
+      (textInputByLabel(tree, "Minimum Photos") as unknown as {
+        onChangeText: (t: string) => void;
+      }).onChangeText("3");
+    });
+    const saveButtons = nodesByType(tree, "Button").filter(
+      (n) => (n as TestNode).props.children === "Save"
+    );
+    act(() => {
+      (saveButtons[saveButtons.length - 1].props as { onPress: () => void }).onPress();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(SectionRepository.setMinimumPhotos).toHaveBeenCalledWith(3);
   });
 });

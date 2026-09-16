@@ -312,4 +312,51 @@ describe("Cross-project data isolation", () => {
     );
     expect(historyInAAfter).toEqual([{ NewPoleId: "SIK101" }]);
   });
+
+  it("does not leak a configured photo minimum from one project into another", async () => {
+    const dbModule = require("@/src/database/db") as typeof import("@/src/database/db");
+    const { db: dbA } = await openProject(PROJECT_A);
+
+    const templateA = await dbA.getFirstAsync<{ TemplateID: number }>(
+      "SELECT TemplateID FROM InspectionTemplates LIMIT 1"
+    );
+    expect(templateA).not.toBeNull();
+
+    const insertA = await dbA.runAsync(
+      `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive, MinimumPhotos)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [templateA!.TemplateID, "Photos", "photos", "", "camera", 3, 0, 1, 1, 1, 3]
+    );
+    expect(insertA.lastInsertRowId).toBeGreaterThan(0);
+
+    const { default: SectionRepository } = require("@/src/database/repositories/SectionRepository") as typeof import("@/src/database/repositories/SectionRepository");
+
+    await expect(SectionRepository.getMinimumPhotos()).resolves.toBe(3);
+    await SectionRepository.setMinimumPhotos(5);
+    await expect(SectionRepository.getMinimumPhotos()).resolves.toBe(5);
+
+    await dbModule.clearActiveProject();
+
+    const { db: dbB } = await openProject(PROJECT_B);
+
+    const templateB = await dbB.getFirstAsync<{ TemplateID: number }>(
+      "SELECT TemplateID FROM InspectionTemplates LIMIT 1"
+    );
+    expect(templateB).not.toBeNull();
+
+    const insertB = await dbB.runAsync(
+      `INSERT INTO InspectionSections (TemplateID, SectionName, SectionKey, Description, Icon, DisplayOrder, IsRepeatable, IsVisible, IsDefault, IsActive, MinimumPhotos)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [templateB!.TemplateID, "Photos", "photos", "", "camera", 3, 0, 1, 1, 1, 1]
+    );
+    expect(insertB.lastInsertRowId).toBeGreaterThan(0);
+
+    await expect(SectionRepository.getMinimumPhotos()).resolves.toBe(1);
+
+    await dbModule.clearActiveProject();
+
+    const a2 = await openProject(PROJECT_A);
+    expect(a2.db).toBe(dbA);
+    await expect(SectionRepository.getMinimumPhotos()).resolves.toBe(5);
+  });
 });

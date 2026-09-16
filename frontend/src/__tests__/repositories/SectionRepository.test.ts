@@ -130,3 +130,94 @@ describe("SectionRepository.keyExists", () => {
     await expect(SectionRepository.keyExists("  Pole_Structure  ", 1)).resolves.toBe(true);
   });
 });
+
+describe("SectionRepository.getMinimumPhotos", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("returns the configured minimum from the default template photos section", async () => {
+    mockDb.getFirstAsync.mockResolvedValue({ MinimumPhotos: 3 });
+
+    await expect(SectionRepository.getMinimumPhotos()).resolves.toBe(3);
+  });
+
+  it("scopes the query to the photos section of the default template", async () => {
+    mockDb.getFirstAsync.mockResolvedValue({ MinimumPhotos: 1 });
+
+    await SectionRepository.getMinimumPhotos();
+
+    const [sql] = mockDb.getFirstAsync.mock.calls[0];
+    expect(String(sql)).toContain("INNER JOIN InspectionTemplates t");
+    expect(String(sql)).toContain("s.SectionKey = 'photos'");
+    expect(String(sql)).toContain("s.IsActive = 1");
+    expect(String(sql)).toContain("t.IsDefault = 1");
+  });
+
+  it("uses a fixed-key query without runtime parameters", async () => {
+    mockDb.getFirstAsync.mockResolvedValue({ MinimumPhotos: 1 });
+
+    await SectionRepository.getMinimumPhotos();
+
+    const call = mockDb.getFirstAsync.mock.calls[0];
+    expect(String(call[0])).toContain("s.SectionKey = 'photos'");
+    expect(call[1]).toBeUndefined();
+  });
+
+  it("falls back to 1 when the photos section row has a null minimum", async () => {
+    mockDb.getFirstAsync.mockResolvedValue({ MinimumPhotos: null });
+
+    await expect(SectionRepository.getMinimumPhotos()).resolves.toBe(1);
+  });
+
+  it("falls back to 1 when no photos section exists", async () => {
+    mockDb.getFirstAsync.mockResolvedValue(null);
+
+    await expect(SectionRepository.getMinimumPhotos()).resolves.toBe(1);
+  });
+});
+
+describe("SectionRepository.setMinimumPhotos", () => {
+  let mockDb: ReturnType<typeof createMockDb>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDb = createMockDb();
+    (getDatabase as jest.Mock).mockResolvedValue(mockDb);
+  });
+
+  it("updates MinimumPhotos on the found photos section and nothing else", async () => {
+    mockDb.getFirstAsync.mockResolvedValue({ SectionID: 10 });
+
+    await SectionRepository.setMinimumPhotos(5);
+
+    expect(mockDb.getFirstAsync).toHaveBeenCalledTimes(1);
+    expect(mockDb.runAsync).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockDb.runAsync.mock.calls[0];
+    expect(String(sql)).toContain("UPDATE InspectionSections SET MinimumPhotos = ?");
+    expect(String(sql)).toContain("WHERE SectionID = ?");
+    expect(params).toEqual([5, 10]);
+  });
+
+  it("does not write when no photos section exists in the default template", async () => {
+    mockDb.getFirstAsync.mockResolvedValue(null);
+
+    await SectionRepository.setMinimumPhotos(3);
+
+    expect(mockDb.getFirstAsync).toHaveBeenCalledTimes(1);
+    expect(mockDb.runAsync).not.toHaveBeenCalled();
+  });
+
+  it("persists 0 to represent optional photos", async () => {
+    mockDb.getFirstAsync.mockResolvedValue({ SectionID: 10 });
+
+    await SectionRepository.setMinimumPhotos(0);
+
+    const [, params] = mockDb.runAsync.mock.calls[0];
+    expect(params).toEqual([0, 10]);
+  });
+});

@@ -136,6 +136,7 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
 
   function clearWatermarkState(photoId: number) {
     const job = queueRef.current.find(j => j.photoId === photoId);
+    const isActive = job != null && activeJobIdRef.current === job.photoId;
     cancelledRef.current.add(photoId);
     setWatermarkState(prev => {
       const next = { ...prev };
@@ -144,7 +145,9 @@ export function useWatermarkProcessor({ project, onPhotosUpdated }: UseWatermark
     });
     queueRef.current = queueRef.current.filter(j => j.photoId !== photoId);
     failedJobsRef.current.delete(photoId);
-    clearWatchdog();
+    if (isActive) {
+      clearWatchdog();
+    }
     if (job?.inputPath) {
       Promise.resolve(FileSystem.deleteAsync(job.inputPath, { idempotent: true })).catch(() => {});
     }
@@ -614,15 +617,13 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
               95,
               outputPath
             );
-            clearWatchdog();
             if (abandonedOverlayRef.current.has(job.photoId)) {
               try {
                 await FileSystem.deleteAsync(outputPath, { idempotent: true });
               } catch {}
-              resetIfActive(job);
-              processNext();
               return;
             }
+            clearWatchdog();
             if (perfRef.current) perfStage(perfRef.current, "nativeComposite");
 
             const fileBase64 = await FileSystem.readAsStringAsync(outputPath, {

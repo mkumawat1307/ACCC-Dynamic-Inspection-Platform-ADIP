@@ -13,6 +13,7 @@ import {
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
   GPS_ONE_SHOT_TIMEOUT_COLD_MS,
   GPS_REFRESH_AGE_MS,
+  GPS_WATCH_ACQUIRING_MIN_MS,
 } from "./captureConfig";
 
 export type { GpsFix } from "./gpsPolicy";
@@ -20,6 +21,14 @@ export type { GpsFix } from "./gpsPolicy";
 export type GpsStatus = "loading" | "acquiring" | "fixed" | "stale" | "denied";
 
 export const GPS_STATUS_TICK_MS = 1000;
+
+// A watcher update must keep the UI in "acquiring" long enough to actually be
+// painted on a real device. The validation window is at least the settle tick
+// so the acquiring state can never collapse to a sub-frame glitch.
+export const GPS_WATCH_VALIDATION_MS = Math.max(
+  GPS_STATUS_TICK_MS,
+  GPS_WATCH_ACQUIRING_MIN_MS
+);
 
 interface LocationLike {
   coords: {
@@ -57,11 +66,20 @@ export function useGpsTracker() {
   const cancelledRef = useRef(false);
   const deniedRef = useRef(false);
   const statusRef = useRef<GpsStatus>("loading");
+  const pendingWatchFixRef = useRef<GpsFix | null>(null);
 
   const setStatusBoth = useCallback((next: GpsStatus) => {
     statusRef.current = next;
     setStatus(next);
   }, []);
+
+  const acceptFix = useCallback((fix: GpsFix) => {
+    if (cancelledRef.current) return;
+    fixRef.current = fix;
+    setCoords({ latitude: fix.latitude, longitude: fix.longitude });
+    setAccuracyM(fix.accuracyM);
+    setStatusBoth(isFixUsable(fix) ? "fixed" : "stale");
+  }, [setStatusBoth]);
 
   const settleStatus = useCallback((duringExplicit: boolean) => {
     if (cancelledRef.current) return;
@@ -69,6 +87,11 @@ export function useGpsTracker() {
       setStatusBoth("denied");
       return;
     }
+    // Pending watcher fixes are validated exclusively by the watcher-resynced
+    // timer (settleWatchPending). The free-running settle tick must never
+    // consume a candidate that is still inside its validation window, which
+    // would collapse the acquiring state to a sub-frame glitch.
+    if (pendingWatchFixRef.current != null) return;
     const fix = fixRef.current;
     if (statusRef.current === "acquiring" && !duringExplicit && fix == null) {
       return;
@@ -82,13 +105,24 @@ export function useGpsTracker() {
     }
   }, [setStatusBoth]);
 
-  const acceptFix = useCallback((fix: GpsFix) => {
+  const settleWatchPending = useCallback(() => {
     if (cancelledRef.current) return;
-    fixRef.current = fix;
-    setCoords({ latitude: fix.latitude, longitude: fix.longitude });
-    setAccuracyM(fix.accuracyM);
-    setStatusBoth(isFixUsable(fix) ? "fixed" : "stale");
-  }, [setStatusBoth]);
+    if (deniedRef.current) {
+      setStatusBoth("denied");
+      return;
+    }
+    const pending = pendingWatchFixRef.current;
+    if (pending == null) return;
+    pendingWatchFixRef.current = null;
+    if (isFixUsable(pending)) {
+      acceptFix(pending);
+      return;
+    }
+    // Invalid watcher candidate: it must never become the capture source nor
+    // overwrite the previous fix. Fall back through the existing policy (old
+    // fix usable -> fixed, stale -> stale, none -> acquiring).
+    settleStatus(false);
+  }, [acceptFix, settleStatus, setStatusBoth]);
 
   const oneShotFix = useCallback(
     async (accuracy?: Location.Accuracy): Promise<GpsFix | null> => {
@@ -124,6 +158,9 @@ export function useGpsTracker() {
   const captureGps = useCallback(
     async (): Promise<GpsFix | null> => {
       if (cancelledRef.current || deniedRef.current) return null;
+      // While a watcher-provided fix is still awaiting validation, the
+      // previous fix must never be captured with.
+      if (pendingWatchFixRef.current != null) return null;
       const current = fixRef.current;
       if (current != null && isFixUsable(current)) {
         return { ...current };
@@ -159,6 +196,7 @@ export function useGpsTracker() {
   useEffect(() => {
     let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
+    let validateTimer: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
       let permStatus: string;
@@ -215,9 +253,19 @@ export function useGpsTracker() {
         const sub = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.Balanced, distanceInterval: GPS_MOVE_THRESHOLD_M },
           (loc: LocationLike) => {
-            if (!cancelled && isAcceptableFix(loc)) {
-              acceptFix(toFix(loc));
-            }
+            if (cancelled) return;
+            // Every actual watcher update opens a fresh validation window:
+            // "acquiring" is shown immediately (Capture hidden/disabled), any
+            // prior validation timer is cancelled, and this candidate is
+            // validated by settleWatchPending on its own resynced timer. A NEW
+            // WATCHER UPDATE always starts a NEW VALIDATION WINDOW.
+            if (validateTimer) clearTimeout(validateTimer);
+            pendingWatchFixRef.current = toFix(loc);
+            setStatusBoth("acquiring");
+            validateTimer = setTimeout(() => {
+              validateTimer = null;
+              settleWatchPending();
+            }, GPS_WATCH_VALIDATION_MS);
           }
         );
         if (cancelled) {
@@ -239,9 +287,11 @@ export function useGpsTracker() {
       cancelledRef.current = true;
       subRef.current?.remove();
       subRef.current = null;
+      if (validateTimer) clearTimeout(validateTimer);
+      validateTimer = null;
       if (interval) clearInterval(interval);
     };
-  }, [acceptFix, oneShotFix, settleStatus, setStatusBoth]);
+  }, [acceptFix, oneShotFix, settleStatus, settleWatchPending, setStatusBoth]);
 
   useEffect(() => {
     const t = setInterval(() => {

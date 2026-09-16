@@ -57,6 +57,7 @@ static async getSections(templateId?: number, inspectionId?: number): Promise<In
         IsActive,
         IsVisible,
         IsDefault,
+        MinimumPhotos,
         CreatedAt
       FROM InspectionSections
       WHERE IsActive = 1 AND TemplateID = ?
@@ -97,8 +98,8 @@ static async getSections(templateId?: number, inspectionId?: number): Promise<In
       if (sectionIds.length > 0) {
         const sectionPlaceholders = sectionIds.map(() => "?").join(",");
         const sections = await db.getAllAsync<InspectionSection>(
-          `SELECT SectionID, SectionName, SectionKey, DisplayOrder, IsActive, IsVisible, IsDefault, CreatedAt
-           FROM InspectionSections WHERE SectionID IN (${sectionPlaceholders})`,
+          `SELECT SectionID, SectionName, SectionKey, DisplayOrder, IsActive, IsVisible, IsDefault, MinimumPhotos, CreatedAt
+            FROM InspectionSections WHERE SectionID IN (${sectionPlaceholders})`,
           sectionIds
         );
         for (const s of sections) {

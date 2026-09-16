@@ -1,10 +1,11 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import { Text, Button, Chip } from "react-native-paper";
+import { photoRequirementLabel } from "./photoUtils";
 
 interface PhotoSectionHeaderProps {
   photoCount: number;
-  hasMinPhotos: boolean;
+  minimumPhotos: number;
   allComplete: boolean;
   capturing: boolean;
   onCapture: () => void;
@@ -12,11 +13,13 @@ interface PhotoSectionHeaderProps {
 
 export default function PhotoSectionHeader({
   photoCount,
-  hasMinPhotos,
+  minimumPhotos,
   allComplete,
   capturing,
   onCapture,
 }: PhotoSectionHeaderProps) {
+  const belowRequirement =
+    minimumPhotos > 0 && photoCount < minimumPhotos;
   return (
     <View>
       <View style={styles.header}>
@@ -24,17 +27,17 @@ export default function PhotoSectionHeader({
           <Text variant="titleMedium" style={styles.headerTitle}>
             Photos ({photoCount})
           </Text>
-          {!hasMinPhotos && (
-            <Chip
-              icon="alert-circle"
-              style={styles.warningChip}
-              textStyle={styles.warningChipText}
-              compact
-            >
-              Min 1 required
-            </Chip>
-          )}
-          {hasMinPhotos && !allComplete && (
+          <Chip
+            icon="alert-circle-outline"
+            style={belowRequirement ? styles.warningChip : styles.requirementChip}
+            textStyle={
+              belowRequirement ? styles.warningChipText : styles.requirementChipText
+            }
+            compact
+          >
+            {photoRequirementLabel(minimumPhotos)}
+          </Chip>
+          {photoCount > 0 && !allComplete && (
             <Chip
               icon="progress-check"
               style={styles.processingChip}
@@ -112,6 +115,13 @@ const styles = StyleSheet.create({
   },
   successChipText: {
     color: "#2E7D32",
+    fontSize: 11,
+  },
+  requirementChip: {
+    backgroundColor: "#EEEEEE",
+  },
+  requirementChipText: {
+    color: "#616161",
     fontSize: 11,
   },
   infoBanner: {

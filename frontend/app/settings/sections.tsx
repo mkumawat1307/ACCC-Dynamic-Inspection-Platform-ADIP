@@ -1,15 +1,16 @@
 import React, { useState, useCallback } from "react";
-import { View, FlatList, StyleSheet, Alert } from "react-native";
+import { View, FlatList, StyleSheet, Alert, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Appbar, Card, Text, IconButton, Chip, Portal, Dialog,
-  Button, TextInput,
+  Button, TextInput, Icon,
 } from "react-native-paper";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { getDatabase } from "../../src/database/db";
 import SectionRepository, { SectionDeletionError } from "../../src/database/repositories/SectionRepository";
 import { isLockedSectionKey } from "../../src/database/seeds/factory-config";
+import { parseMinimumPhotosInput } from "../../src/components/inspection/photoUtils";
 
 interface Section {
   SectionID: number;
@@ -23,6 +24,7 @@ interface Section {
   IsVisible: number;
   IsDefault: number;
   IsActive: number;
+  MinimumPhotos: number;
   FieldCount: number;
 }
 
@@ -34,6 +36,8 @@ export default function SectionsScreen() {
   const [sectionName, setSectionName] = useState("");
   const [sectionKey, setSectionKey] = useState("");
   const [description, setDescription] = useState("");
+  const [minPhotosVisible, setMinPhotosVisible] = useState(false);
+  const [minPhotosText, setMinPhotosText] = useState("");
 
   const loadSections = useCallback(async () => {
     const db = await getDatabase();
@@ -135,6 +139,36 @@ export default function SectionsScreen() {
     loadSections();
   };
 
+  const openMinPhotosDialog = async () => {
+    try {
+      setMinPhotosText(String(await SectionRepository.getMinimumPhotos()));
+    } catch {
+      setMinPhotosText("1");
+    }
+    setMinPhotosVisible(true);
+  };
+
+  const saveMinPhotos = async () => {
+    const parsed = parseMinimumPhotosInput(minPhotosText);
+    if (parsed.error) {
+      Alert.alert("Invalid Value", parsed.error);
+      return;
+    }
+    try {
+      await SectionRepository.setMinimumPhotos(parsed.value);
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error instanceof Error
+          ? error.message
+          : "Failed to save the minimum photo requirement.",
+      );
+      return;
+    }
+    setMinPhotosVisible(false);
+    loadSections();
+  };
+
   const handleDelete = (s: Section) => {
     if (isLockedSectionKey(s.SectionKey)) {
       Alert.alert("Cannot Delete", "Locked sections cannot be deleted.");
@@ -207,6 +241,11 @@ export default function SectionsScreen() {
     setSections(updated);
   };
 
+  const minPhotosSummary = (min: number): string => {
+    if (min <= 0) return "Photos Optional";
+    return min === 1 ? "Minimum 1 Photo" : `Minimum ${min} Photos`;
+  };
+
   const renderSection = ({ item, index }: { item: Section; index: number }) => {
     const isLocked =
       item.SectionKey === "general_information" ||
@@ -271,6 +310,22 @@ export default function SectionsScreen() {
                     onPress={(e) => { e.stopPropagation?.(); openEditDialog(item); }}
                   />
                 )}
+                {item.SectionKey === "photos" && (
+                  <Pressable
+                    onPress={(e) => { e.stopPropagation?.(); openMinPhotosDialog(); }}
+                    style={({ pressed }) => [
+                      styles.photoRequirementControl,
+                      pressed ? styles.photoRequirementControlPressed : null,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Minimum Photo Requirement"
+                  >
+                    <Icon source="cog" size={16} color="#3F51B5" />
+                    <Text variant="labelMedium" numberOfLines={1} style={styles.photoRequirementLabel}>
+                      Minimum Photo Requirement
+                    </Text>
+                  </Pressable>
+                )}
                 {!isLocked && (
                   <IconButton
                     icon="delete"
@@ -282,7 +337,9 @@ export default function SectionsScreen() {
                 {!isLocked && <IconButton icon="chevron-right" size={20} />}
               </View>
               <Text variant="bodySmall" style={styles.cardSubtitle}>
-                {item.FieldCount} fields
+                {item.SectionKey === "photos"
+                  ? minPhotosSummary(item.MinimumPhotos ?? 1)
+                  : `${item.FieldCount} fields`}
               </Text>
               {item.Description ? (
                 <Text variant="bodySmall" style={styles.cardDescription} numberOfLines={2}>
@@ -356,6 +413,35 @@ export default function SectionsScreen() {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      <Portal>
+        <Dialog
+          visible={minPhotosVisible}
+          onDismiss={() => setMinPhotosVisible(false)}
+        >
+          <Dialog.Title>Photos Requirement</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium" style={styles.cardDescription}>
+              Set the minimum number of photos required for this section.
+            </Text>
+            <TextInput
+              label="Minimum Photos"
+              value={minPhotosText}
+              onChangeText={setMinPhotosText}
+              keyboardType="numeric"
+              mode="outlined"
+              style={styles.input}
+            />
+            <Text variant="bodySmall" style={styles.cardDescription}>
+              0 = Photos optional
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setMinPhotosVisible(false)}>Cancel</Button>
+            <Button onPress={saveMinPhotos}>Save</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </SafeAreaView>
   );
 }
@@ -369,7 +455,25 @@ const styles = StyleSheet.create({
   orderNumber: { fontWeight: "700", fontSize: 16 },
   cardInfo: { flex: 1 },
   cardTitleRow: { flexDirection: "row", alignItems: "center" },
-  cardTitle: { fontWeight: "600", flex: 1 },
+  cardTitle: { fontWeight: "600", flex: 1, flexShrink: 1 },
+  photoRequirementControl: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+    backgroundColor: "#E8EAF6",
+    flexShrink: 1,
+  },
+  photoRequirementControlPressed: { backgroundColor: "#C5CAE9" },
+  photoRequirementLabel: {
+    color: "#3F51B5",
+    marginLeft: 4,
+    fontSize: 12,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
   cardSubtitle: { color: "#666", marginTop: 2 },
   cardDescription: { color: "#666", marginTop: 2 },
   chipRow: { flexDirection: "row", marginTop: 4, gap: 4 },

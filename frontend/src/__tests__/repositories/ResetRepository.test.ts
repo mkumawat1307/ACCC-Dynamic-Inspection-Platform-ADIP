@@ -598,4 +598,41 @@ describe("ResetRepository.performReset", () => {
       expect(secondDeviceOpts[i].params).toEqual(firstDeviceOpts[i].params);
     }
   });
+
+  it("35. resets MinimumPhotos to the application default (DEFAULT_MINIMUM_PHOTOS)", async () => {
+    mockDb.getAllAsync.mockResolvedValue([
+      { SectionKey: "general_information", SectionID: 1 },
+    ]);
+
+    const { ResetRepository } = require("@/src/database/repositories/ResetRepository");
+    await ResetRepository.performReset();
+
+    const { DEFAULT_MINIMUM_PHOTOS } = require("@/src/database/seeds/factory-config");
+    const calls = mockDb.runAsync.mock.calls.map((c: [string, unknown[]]) => ({ sql: String(c[0]), params: c[1] }));
+    const resetMin = calls.find((c) =>
+      c.sql.includes("UPDATE InspectionSections") && c.sql.includes("SET MinimumPhotos = ?")
+    );
+    expect(resetMin).toBeTruthy();
+    expect(resetMin!.sql).toContain("SectionKey = 'photos'");
+    expect(resetMin!.sql).toContain("IsDefault = 1");
+    expect(resetMin!.params).toContain(DEFAULT_MINIMUM_PHOTOS);
+  });
+
+  it("36. does NOT reset MinimumPhotos to 0 (optional must survive reset only if the app default is 0)", async () => {
+    mockDb.getAllAsync.mockResolvedValue([
+      { SectionKey: "general_information", SectionID: 1 },
+    ]);
+
+    const { ResetRepository } = require("@/src/database/repositories/ResetRepository");
+    await ResetRepository.performReset();
+
+    const { DEFAULT_MINIMUM_PHOTOS } = require("@/src/database/seeds/factory-config");
+    const calls = mockDb.runAsync.mock.calls.map((c: [string, unknown[]]) => ({ sql: String(c[0]), params: c[1] }));
+    const resetMin = calls.find((c) =>
+      c.sql.includes("UPDATE InspectionSections") && c.sql.includes("SET MinimumPhotos = ?")
+    );
+    expect(resetMin).toBeTruthy();
+    expect(resetMin!.params![0]).toBe(DEFAULT_MINIMUM_PHOTOS);
+    expect(resetMin!.params![0]).not.toBe(0);
+  });
 });

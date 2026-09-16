@@ -11,11 +11,13 @@ import {
   __resetLocationState,
 } from "expo-location";
 import * as Location from "expo-location";
-import { useGpsTracker, GpsFix } from "@/src/components/camera/useGpsTracker";
+import { useGpsTracker, GpsFix, GPS_STATUS_TICK_MS, GPS_WATCH_VALIDATION_MS } from "@/src/components/camera/useGpsTracker";
 import {
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
   GPS_ONE_SHOT_TIMEOUT_COLD_MS,
   GPS_STALE_MS,
+  GPS_MOVE_THRESHOLD_M,
+  GPS_WATCH_ACQUIRING_MIN_MS,
 } from "@/src/components/camera/captureConfig";
 
 let captureGpsFn: (() => Promise<GpsFix | null>) | null = null;
@@ -95,11 +97,17 @@ describe("useGpsTracker", () => {
   });
 
   it("updates coords from watch callbacks", async () => {
+    jest.useFakeTimers();
     __setPermissionStatus("granted");
     __setMockLocation(0, 0, 5);
     const tree = await renderProbe();
     await TestRenderer.act(async () => {
       __emitWatchLocation(1, 2, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|0,0");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
       await flushAsync();
     });
     expect(rendered(tree)).toBe("fixed|1,2");
@@ -119,6 +127,11 @@ describe("useGpsTracker", () => {
     expect(rendered(tree)).toBe("stale|1,2");
     await TestRenderer.act(async () => {
       __emitWatchLocation(7, 8, 20);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
       await flushAsync();
     });
     expect(rendered(tree)).toBe("fixed|7,8");
@@ -374,6 +387,336 @@ describe("useGpsTracker", () => {
     const opt = spy.mock.calls[0]?.[0] as { accuracy?: number } | undefined;
     expect(opt?.accuracy).toBe(Location.Accuracy.Balanced);
     expect(rendered(tree)).toBe("fixed|3,4");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("acquires GPS automatically on mount before any capture request", async () => {
+    __setPermissionStatus("granted");
+    __setMockLocation(34.05, -118.25, 12);
+    const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|34.05,-118.25");
+    expect(spy).toHaveBeenCalled();
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("registers watchPositionAsync with the configured 10 m distance interval", async () => {
+    __setPermissionStatus("granted");
+    __setMockLocation(0, 0, 5);
+    const spy = jest.spyOn(Location, "watchPositionAsync");
+    const tree = await renderProbe();
+    const options = spy.mock.calls.find((c) => typeof c[0] === "object")?.[0] as
+      | { distanceInterval?: number }
+      | undefined;
+    expect(options).toBeDefined();
+    expect(options?.distanceInterval).toBe(GPS_MOVE_THRESHOLD_M);
+    expect(options?.distanceInterval).toBe(10);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("unmount removes the watcher and remount registers a new active watcher (no duplicate)", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLocation(0, 0, 5);
+    const tree = await renderProbe();
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(1, 1, 5);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|0,0");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|1,1");
+    await TestRenderer.act(async () => { tree.unmount(); });
+
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(2, 2, 5);
+      await flushAsync();
+    });
+
+    __setMockLocation(0, 0, 5);
+    const tree2 = await renderProbe();
+    expect(rendered(tree2)).toBe("fixed|0,0");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(3, 3, 5);
+      await flushAsync();
+    });
+    expect(rendered(tree2)).toBe("acquiring|0,0");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
+      await flushAsync();
+    });
+expect(rendered(tree2)).toBe("fixed|3,3");
+    await TestRenderer.act(async () => { tree2.unmount(); });
+  });
+
+  it("race A: watcher update just before the settle tick is not consumed by the tick", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    // Move to just before the next free-running settle tick (interval starts at t=0).
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(999);
+      await flushAsync();
+    });
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(3, 4, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    // The old free-running tick at the 1000ms mark must NOT consume the pending
+    // candidate: the acquiring window must survive until the watcher-resynced timer.
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(1);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    // The watcher-resynced validation window (emit + GPS_WATCH_VALIDATION_MS)
+    // now validates the candidate.
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(999);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|3,4");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("race B: acquiring is guaranteed a minimum dwell and capture refuses while pending", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(3, 4, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    // Capture must refuse while the watcher fix still awaits validation.
+    expect(await gpsRef.current!.captureGps()).toBeNull();
+    // Before the minimum acquiring dwell elapses the status must still be acquiring.
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_WATCH_ACQUIRING_MIN_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    expect(await gpsRef.current!.captureGps()).toBeNull();
+    // After the validation window the fix is adopted and capture becomes available.
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_WATCH_VALIDATION_MS - GPS_WATCH_ACQUIRING_MIN_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|3,4");
+    const after = await gpsRef.current!.captureGps();
+    expect(after).not.toBeNull();
+    expect(after!.latitude).toBe(3);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("race C: a later watcher update reschedules the window and supersedes the earlier candidate", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLocation(0, 0, 5);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|0,0");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(10, 20, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|0,0");
+    // New update arrives mid-window: it cancels the previous validation timer.
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(400);
+      await flushAsync();
+    });
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(30, 40, 6);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|0,0");
+    // At the ORIGINAL first-update deadline (+1000 from the first emit) the
+    // superseded candidate must NOT be adopted.
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(600);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|0,0");
+    // The resynced window for the second update validates at +1000 from it.
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(400);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|30,40");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("race D: invalid watcher fix never becomes the capture source and the old fix is protected", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(99, 99, 99);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    // While the invalid candidate awaits validation, capture must refuse.
+    expect(await gpsRef.current!.captureGps()).toBeNull();
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_WATCH_VALIDATION_MS);
+      await flushAsync();
+    });
+    // Rejected: status returns to the previous valid fix, coords unchanged.
+    expect(rendered(tree)).toBe("fixed|1,2");
+    const captured = await gpsRef.current!.captureGps();
+    expect(captured).not.toBeNull();
+    expect(captured!.latitude).toBe(1);
+    expect(captured!.longitude).toBe(2);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("race E: every watcher update opens a fresh acquiring window and capture stays gated", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLocation(0, 0, 5);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|0,0");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(10, 20, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|0,0");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_WATCH_VALIDATION_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|10,20");
+    // A second real update re-enters acquiring with its own window.
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(30, 40, 6);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|10,20");
+    expect(await gpsRef.current!.captureGps()).toBeNull();
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_WATCH_VALIDATION_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|30,40");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("race F: unmount clears the pending validation timer and late capture refuses", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    const gpsSnap = gpsRef.current!;
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(3, 4, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    // Unmount while a validation window is pending.
+    await TestRenderer.act(async () => { tree.unmount(); });
+    // Advancing across the validation mark after unmount must not throw or
+    // mutate state (the resynced timer is cleared on unmount).
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_WATCH_VALIDATION_MS + 5_000);
+      await flushAsync();
+    });
+const late = await gpsSnap.captureGps();
+    expect(late).toBeNull();
+  });
+
+  it("captureGps after unmount refuses late fixes", async () => {
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    const gpsSnap = gpsRef.current!;
+    const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+    await TestRenderer.act(async () => { tree.unmount(); });
+
+    await TestRenderer.act(async () => {
+      const result = await gpsSnap.captureGps();
+      expect(result).toBeNull();
+    });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("test A: watcher valid update goes acquiring then fixed on the next tick", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(3, 4, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|3,4");
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("test B: watcher invalid update goes acquiring then reverts to the old fix", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLastKnown(1, 2, 5, 0);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|1,2");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(99, 99, 99);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|1,2");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|1,2");
+    const captured = await gpsRef.current!.captureGps();
+    expect(captured).not.toBeNull();
+    expect(captured!.latitude).toBe(1);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("test C: two sequential valid watcher updates each pass through acquiring", async () => {
+    jest.useFakeTimers();
+    __setPermissionStatus("granted");
+    __setMockLocation(0, 0, 5);
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|0,0");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(10, 20, 8);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|0,0");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|10,20");
+    await TestRenderer.act(async () => {
+      __emitWatchLocation(30, 40, 6);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("acquiring|10,20");
+    await TestRenderer.act(async () => {
+      jest.advanceTimersByTime(GPS_STATUS_TICK_MS);
+      await flushAsync();
+    });
+    expect(rendered(tree)).toBe("fixed|30,40");
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 });

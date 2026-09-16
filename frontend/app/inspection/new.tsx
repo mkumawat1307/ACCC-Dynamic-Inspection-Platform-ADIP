@@ -43,6 +43,7 @@ import {
 } from "@/src/components/inspection/dropdownScrollGate";
 import { getDatabase } from "@/src/database/db";
 import { InspectionRepository } from "@/src/database/repositories/InspectionRepository";
+import SectionRepository from "@/src/database/repositories/SectionRepository";
 import InspectionFieldRepository from "@/src/database/repositories/InspectionFieldRepository";
 import { DeviceRecordsRepository } from "@/src/database/repositories/DeviceRecordsRepository";
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
@@ -327,11 +328,15 @@ export default function NewInspectionScreen({
     }
 
     const photos = await PhotoRepository.getByInspection(inspectionId);
+    const minimumPhotos = await SectionRepository.getMinimumPhotos();
 
-    if (photos.length < 1) {
+    if (photos.length < minimumPhotos) {
       Alert.alert(
         "Inspection Incomplete",
-        "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section.",
+        getPhotoBlockMessage(
+          photos.length === 0 ? "no_photos" : "below_minimum",
+          minimumPhotos,
+        ),
       );
       return false;
     }
@@ -546,14 +551,19 @@ export default function NewInspectionScreen({
     }
 
     const photos = await PhotoRepository.getByInspection(inspectionId);
+    const minimumPhotos = await SectionRepository.getMinimumPhotos();
 
     const photoValidation = validatePhotosForSave(
       photos,
       extractProjectPhotoStates(contextProject?.DBPath, getPhotoStates()),
+      minimumPhotos,
     );
 
     if (!photoValidation.canSave) {
-      const message = getPhotoBlockMessage(photoValidation.reason);
+      const message = getPhotoBlockMessage(
+        photoValidation.reason,
+        minimumPhotos,
+      );
       Alert.alert("Inspection Incomplete", message);
       return;
     }
@@ -598,7 +608,14 @@ export default function NewInspectionScreen({
     ]);
   };
 
-  function getPhotoBlockMessage(reason: string | null): string {
+  function getPhotoBlockMessage(
+    reason: string | null,
+    minimumPhotos: number,
+  ): string {
+    const belowMinimum =
+      minimumPhotos === 1
+        ? "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section."
+        : `Minimum ${minimumPhotos} photos are required.\n\nPlease capture at least ${minimumPhotos} photos in the Photos section.`;
     switch (reason) {
       case "processing":
       case "pending":
@@ -606,8 +623,11 @@ export default function NewInspectionScreen({
         return "Photos are still being processed.\n\nPlease wait for watermarking to complete before saving.";
       case "failed":
         return "One or more photos failed to process.\n\nPlease retry or remove the failed photos before saving.";
+      case "no_photos":
+      case "below_minimum":
+        return belowMinimum;
       default:
-        return "Minimum 1 photo is required.\n\nPlease capture at least one photo in the Photos section.";
+        return belowMinimum;
     }
   }
 

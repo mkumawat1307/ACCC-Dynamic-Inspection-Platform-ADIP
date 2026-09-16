@@ -1,5 +1,5 @@
 import { getDatabase } from "../db";
-import { isLockedSectionKey } from "../seeds/factory-config";
+import { DEFAULT_MINIMUM_PHOTOS, isLockedSectionKey } from "../seeds/factory-config";
 
 export interface SectionDeletionResult {
   deleted: boolean;
@@ -89,5 +89,44 @@ export default class SectionRepository {
       (await db.getAllAsync<{ SectionKey: string }>(query, params)) ?? [];
     const target = key.trim().toLowerCase();
     return rows.some((r) => r.SectionKey.trim().toLowerCase() === target);
+  }
+
+  /**
+   * The configured minimum number of photos required to save an inspection,
+   * read from the active photos section of the default template. A value of 0
+   * means photos are optional. Defaults to 1 when no photos section exists.
+   */
+  static async getMinimumPhotos(): Promise<number> {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<{ MinimumPhotos: number | null }>(
+      `SELECT s.MinimumPhotos
+       FROM InspectionSections s
+       INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
+       WHERE s.SectionKey = 'photos' AND s.IsActive = 1 AND t.IsDefault = 1
+       LIMIT 1`
+    );
+    return row?.MinimumPhotos ?? DEFAULT_MINIMUM_PHOTOS;
+  }
+
+  /**
+   * Persist the minimum photo requirement onto the active photos section of
+   * the default template. This is safe for locked photos sections, which are
+   * protected from structural edits but do carry configurable behavior.
+   */
+  static async setMinimumPhotos(minimumPhotos: number): Promise<void> {
+    const db = await getDatabase();
+    const section = await db.getFirstAsync<{ SectionID: number }>(
+      `SELECT s.SectionID
+       FROM InspectionSections s
+       INNER JOIN InspectionTemplates t ON t.TemplateID = s.TemplateID
+       WHERE s.SectionKey = 'photos' AND s.IsActive = 1 AND t.IsDefault = 1
+       LIMIT 1`
+    );
+    if (!section) return;
+
+    await db.runAsync(
+      `UPDATE InspectionSections SET MinimumPhotos = ?, UpdatedAt = CURRENT_TIMESTAMP WHERE SectionID = ?`,
+      [minimumPhotos, section.SectionID]
+    );
   }
 }

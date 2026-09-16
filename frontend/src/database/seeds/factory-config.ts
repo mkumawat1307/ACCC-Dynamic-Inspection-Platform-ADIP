@@ -33,6 +33,10 @@ export function isLockedSectionKey(sectionKey: string | null | undefined): boole
   return sectionKey != null && LOCKED_SECTION_KEYS.has(sectionKey);
 }
 
+// Application default for the photos section minimum-photo requirement. This
+// is the current default that Reset to Default restores MinimumPhotos to.
+export const DEFAULT_MINIMUM_PHOTOS: number = 1;
+
 export const FACTORY_SECTIONS: FactorySection[] = [
   { key: "general_information", name: "General Information", description: "General inspection details", icon: "information-circle", repeatable: 0 },
   { key: "pole_structure", name: "Pole Structure Details", description: "Pole structure", icon: "business", repeatable: 0 },

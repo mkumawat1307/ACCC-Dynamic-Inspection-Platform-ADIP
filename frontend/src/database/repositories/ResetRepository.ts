@@ -6,6 +6,7 @@ import {
   FACTORY_DEVICE_FIELDS,
   FACTORY_DEVICE_OPTIONS,
   LOCKED_SECTION_KEYS,
+  DEFAULT_MINIMUM_PHOTOS,
 } from "../seeds/factory-config";
 import { poleInspectionFields } from "../seeds/pole-inspection-data";
 import { fieldOptions } from "../seeds/field-options.data";
@@ -172,6 +173,19 @@ export class ResetRepository {
           );
         }
       }
+
+      // 6a. Restore the configured photo minimum to the application default.
+      //     MinimumPhotos is form configuration, not inspection data, so it
+      //     belongs to the reset scope even though the photos section row is
+      //     structurally locked. It is scoped to the active photos section of
+      //     the default template, matching SectionRepository.setMinimumPhotos.
+      await db.runAsync(
+        `UPDATE InspectionSections
+         SET MinimumPhotos = ?, UpdatedAt = CURRENT_TIMESTAMP
+         WHERE SectionKey = 'photos' AND IsActive = 1
+           AND TemplateID = (SELECT TemplateID FROM InspectionTemplates WHERE IsDefault = 1 LIMIT 1)`,
+        [DEFAULT_MINIMUM_PHOTOS]
+      );
 
       const sectionKeyToId = await db.getAllAsync<{ SectionKey: string; SectionID: number }>(
         `SELECT SectionKey, SectionID FROM InspectionSections WHERE IsDefault = 1`
