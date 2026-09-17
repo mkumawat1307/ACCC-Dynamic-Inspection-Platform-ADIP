@@ -4,7 +4,9 @@ import {
 } from "@/src/components/inspection/photoUtils";
 import type { WatermarkSettings } from "@/src/utils/watermarkSettings";
 import type { GpsStatus } from "@/src/components/camera/useGpsTracker";
+import { getGpsQuality, type GpsQualityInfo } from "@/src/utils/gpsQuality";
 
+// Legacy constants for backward compatibility with watermarkLayout tests
 export const GPS_ACCURACY_HIGH_M = 20;
 export const GPS_ACCURACY_MEDIUM_M = 50;
 
@@ -38,6 +40,24 @@ export function gpsPillText(
     if (cat === "high") return "🟢 High Accuracy";
     if (cat === "medium") return "🟡 Medium Accuracy";
     return "🔴 Low Accuracy";
+  }
+  if (status === "stale") return "🟠 Stale GPS – tap to refresh";
+  if (status === "denied") return "GPS denied";
+  return "Acquiring GPS…";
+}
+
+export function gpsPillTextNew(
+  status: GpsStatus,
+  accuracyM: number | null,
+  refreshing = false,
+  gpsQuality?: GpsQualityInfo
+): string {
+  if (refreshing) return "⏳ Refreshing GPS…";
+  if (status === "fixed") {
+    if (accuracyM == null) return "🟢 GPS";
+    const quality = gpsQuality ?? getGpsQuality(accuracyM);
+    const emoji = quality.level === "excellent" ? "🟢" : quality.level === "moderate" ? "🟠" : "🔴";
+    return `${emoji} GPS ${accuracyM}m`;
   }
   if (status === "stale") return "🟠 Stale GPS – tap to refresh";
   if (status === "denied") return "GPS denied";

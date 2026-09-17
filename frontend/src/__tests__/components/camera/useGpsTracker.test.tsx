@@ -1,5 +1,3 @@
-jest.mock("expo-location");
-
 import React, { useEffect, useState } from "react";
 import { Text } from "react-native";
 import TestRenderer from "react-test-renderer";
@@ -11,14 +9,38 @@ import {
   __resetLocationState,
 } from "expo-location";
 import * as Location from "expo-location";
+import { Accelerometer } from "expo-sensors";
 import { useGpsTracker, GpsFix } from "@/src/components/camera/useGpsTracker";
+
+jest.mock("expo-location");
+jest.mock("expo-sensors", () => {
+  let accelerometerCallback: ((data: { x: number; y: number; z: number }) => void) | null = null;
+  return {
+    Accelerometer: {
+      setUpdateInterval: jest.fn(),
+      addListener: jest.fn((callback: (data: { x: number; y: number; z: number }) => void) => {
+        accelerometerCallback = callback;
+        return { remove: () => { accelerometerCallback = null; } };
+      }),
+      removeAllListeners: jest.fn(),
+      __setMockAcceleration: (x: number, y: number, z: number) => {
+        if (accelerometerCallback) {
+          accelerometerCallback({ x, y, z });
+        }
+      },
+      __reset: () => { accelerometerCallback = null; },
+    },
+  };
+});
 import {
   GPS_STALE_MS,
   GPS_MOVE_THRESHOLD_M,
   GPS_PARALLEL_REQUESTS,
   GPS_ATTEMPT_TIMEOUT_MS,
   GPS_MAX_ATTEMPTS,
+  MOVEMENT_CHECK_INTERVAL_MS,
 } from "@/src/components/camera/captureConfig";
+import { getGpsQuality } from "@/src/utils/gpsQuality";
 
 let captureGpsFn: (() => Promise<GpsFix | null>) | null = null;
 let gpsRef: { current: ReturnType<typeof useGpsTracker> | null } = { current: null };
@@ -87,15 +109,27 @@ describe("useGpsTracker", () => {
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 
-  it("rejects fixes above the accuracy threshold and abandons the cold-start loop", async () => {
+  it("accepts fixes regardless of accuracy threshold and does not abandon the cold-start loop", async () => {
     __setPermissionStatus("granted");
     __setMockLocation(34.05, -118.25, 99);
     const spy = jest.spyOn(Location, "getCurrentPositionAsync");
     const tree = await renderProbe();
-    expect(rendered(tree)).toBe("acquiring|none");
-    // The cold-start loop is bounded: exactly GPS_MAX_ATTEMPTS attempts, not a
-    // continuous re-acquisition loop while every result is unacceptable.
-    expect(spy).toHaveBeenCalledTimes(GPS_MAX_ATTEMPTS);
+    // Now we accept all valid GPS regardless of accuracy
+    expect(rendered(tree)).toBe("fixed|34.05,-118.25");
+    expect(spy).toHaveBeenCalledTimes(1);
+    await TestRenderer.act(async () => { tree.unmount(); });
+  });
+
+  it("initial cold-start acquisition uses Highest accuracy", async () => {
+    __setPermissionStatus("granted");
+    __setMockLocation(34.05, -118.25, 12);
+    const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+    const tree = await renderProbe();
+    expect(rendered(tree)).toBe("fixed|34.05,-118.25");
+    const highestCall = spy.mock.calls.find(
+      (c) => c[0]?.accuracy === Location.Accuracy.Highest
+    );
+    expect(highestCall).toBeDefined();
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 
@@ -271,7 +305,7 @@ describe("useGpsTracker", () => {
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 
-  it("a movement-triggered refresh ignores an unacceptable result", async () => {
+  it("a movement-triggered refresh accepts a result regardless of accuracy", async () => {
     jest.useFakeTimers();
     __setPermissionStatus("granted");
     __setMockLastKnown(1, 2, 5, 0);
@@ -279,12 +313,13 @@ describe("useGpsTracker", () => {
     expect(rendered(tree)).toBe("fixed|1,2");
     const spy = jest.spyOn(Location, "getCurrentPositionAsync");
     await TestRenderer.act(async () => {
-      __setMockLocation(5, 6, 99); // moves far, but > 50 m accuracy → unacceptable
+      __setMockLocation(5, 6, 99); // moves far, accuracy 99m - now accepted
       __emitWatchLocation(5, 6, 99);
       await flushAsync();
     });
-    expect(spy).toHaveBeenCalledTimes(1); // the refresh WAS attempted
-    expect(rendered(tree)).toBe("fixed|1,2"); // ...but its result was rejected
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Now we accept the 99m accuracy result
+    expect(rendered(tree)).toBe("fixed|5,6");
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 
@@ -425,20 +460,22 @@ describe("useGpsTracker", () => {
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 
-  it("refreshNow returns null for an unacceptable one-shot and keeps the last good fix", async () => {
+  it("refreshNow accepts a result regardless of accuracy and updates the fix", async () => {
     jest.useFakeTimers();
     __setPermissionStatus("granted");
     __setMockLastKnown(10, 20, 30, 1000); // seeds a fresh, acceptable, cached fix first
     const tree = await renderProbe();
     expect(rendered(tree)).toBe("fixed|10,20");
-    __setMockLocation(5, 6, 99); // unacceptable accuracy
+    __setMockLocation(5, 6, 99); // now acceptable (was previously unacceptable)
     let fix: GpsFix | null = null;
     await TestRenderer.act(async () => {
       fix = await gpsRef.current!.refreshNow();
     });
-    expect(fix).toBeNull();
+    expect(fix).not.toBeNull(); // now we accept the 99m accuracy
+    expect(fix!.latitude).toBe(5);
+    expect(fix!.longitude).toBe(6);
     await TestRenderer.act(async () => { await flushAsync(); });
-    expect(rendered(tree)).toBe("fixed|10,20"); // stays on the last good fix, no stale fallback
+    expect(rendered(tree)).toBe("fixed|5,6"); // updates to the new fix
     expect(gpsRef.current!.refreshing).toBe(false);
     await TestRenderer.act(async () => { tree.unmount(); });
   });
@@ -592,7 +629,7 @@ describe("useGpsTracker", () => {
     await TestRenderer.act(async () => { tree.unmount(); });
   });
 
-  it("captureGps rejects a stale-but-accurate one-shot result (freshness gate regression)", async () => {
+  it("captureGps accepts a stale-but-accurate one-shot result (freshness gate removed)", async () => {
     jest.useFakeTimers();
     __setPermissionStatus("granted");
     __setMockLocation(34.05, -118.25, 12);
@@ -612,7 +649,8 @@ describe("useGpsTracker", () => {
       await flushAsync();
       await p;
     });
-    expect(outcome).toBe("null");
+    // Now we accept the stale fix since it has valid coordinates
+    expect(outcome).toBe("34.05,-118.25");
     expect(rendered(tree)).toBe("stale|34.05,-118.25");
     await TestRenderer.act(async () => { tree.unmount(); });
   });
@@ -984,7 +1022,7 @@ describe("useGpsTracker", () => {
       await TestRenderer.act(async () => { tree.unmount(); });
     });
 
-    it("policy: captureGps fires Balanced parallel batch while refreshNow fires its own Highest request", async () => {
+    it("policy: captureGps fires Balanced parallel batch while refreshNow fires Highest", async () => {
       jest.useFakeTimers();
       __setPermissionStatus("granted");
       const tree = await renderProbe();
@@ -1000,17 +1038,21 @@ describe("useGpsTracker", () => {
         const cp = captureGpsFn!().then((f) => { captured = f; return f; });
         const rp = gpsRef.current!.refreshNow().then((f) => { tapped = f; return f; });
         await flushAsync();
+        // captureGps fires GPS_PARALLEL_REQUESTS Balanced requests (bypasses oneShotFix)
+        // refreshNow fires 1 Highest request via oneShotFix
         expect(spy).toHaveBeenCalledTimes(GPS_PARALLEL_REQUESTS + 1);
         d.resolve(loc(5, 6, 7));
         await Promise.all([cp, rp]);
         await flushAsync();
       });
-      const balancedCalls = spy.mock.calls.filter(
-        (c) => c[0]?.accuracy === Location.Accuracy.Balanced
-      );
       const highestCalls = spy.mock.calls.filter(
         (c) => c[0]?.accuracy === Location.Accuracy.Highest
       );
+      const balancedCalls = spy.mock.calls.filter(
+        (c) => c[0]?.accuracy === Location.Accuracy.Balanced
+      );
+      // captureGps fires GPS_PARALLEL_REQUESTS Balanced requests
+      // refreshNow fires 1 Highest request via oneShotFix
       expect(balancedCalls).toHaveLength(GPS_PARALLEL_REQUESTS); // capture batch ran Balanced
       expect(highestCalls).toHaveLength(1); // refreshNow ran its own Highest request
       expect(captured).not.toBeNull();
@@ -1409,5 +1451,161 @@ describe("useGpsTracker", () => {
       expect(outcome).toBe("null");
       expect(gpsRef.current!.coords).toBeNull();
     });
+  });
+
+  describe("movement dirty + immediate shutter forces fresh GPS", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("movement dirty → immediate shutter → cached GPS rejected → fresh GPS acquired", async () => {
+      jest.useFakeTimers();
+      __setPermissionStatus("granted");
+      // Start with a valid fix at location A
+      __setMockLocation(1, 2, 12);
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("fixed|1,2");
+      expect(gpsRef.current!.movementDirty).toBe(false);
+
+      // Simulate movement detected by accelerometer (movementDirty becomes true)
+      // Use the mock's __setMockAcceleration to simulate movement directly
+      // This simulates acceleration > threshold (two samples required)
+      const mockAcc = Accelerometer as any;
+      await TestRenderer.act(async () => {
+        mockAcc.__setMockAcceleration(0, 0, 12); // 12 m/s² > 1.5 threshold
+        jest.advanceTimersByTime(500);
+      });
+      await flushAsync();
+      await TestRenderer.act(async () => {
+        mockAcc.__setMockAcceleration(0, 0, 12); // 2nd sample for confirmation
+        jest.advanceTimersByTime(500);
+      });
+      await flushAsync();
+
+      // Movement detected - GPS should be marked dirty
+      expect(gpsRef.current!.movementState).toBe("moving");
+      expect(gpsRef.current!.movementDirty).toBe(true);
+
+      // Now simulate shutter press IMMEDIATELY (before 10-second timer fires)
+      // captureGps() should NOT return the cached fix (1,2) because movementDirty=true
+      // It should perform a fresh GPS acquisition instead
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+
+      // Set up the mock to return a NEW location B when fresh GPS is requested
+      __setMockLocation(8, 9, 10); // New location B
+
+      let captureResult: string | null = null;
+      await TestRenderer.act(async () => {
+        const result = await captureGpsFn!();
+        captureResult = result ? `${result.latitude},${result.longitude}` : "null";
+      });
+
+      // Fast path should be blocked — getCurrentPositionAsync should be called
+      expect(spy).toHaveBeenCalled();
+      // Should return the NEW location B, NOT the old cached location A
+      expect(captureResult).toBe("8,9");
+      expect(captureResult).not.toBe("1,2"); // Old cached GPS must NOT be returned
+
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+
+    it("movement-triggered verification uses Balanced accuracy", async () => {
+      __setPermissionStatus("granted");
+      __setMockLocation(1, 2, 12);
+      const tree = await renderProbe();
+      expect(rendered(tree)).toBe("fixed|1,2");
+
+      const spy = jest.spyOn(Location, "getCurrentPositionAsync");
+
+      const mockAcc = Accelerometer as any;
+      await TestRenderer.act(async () => {
+        mockAcc.__setMockAcceleration(0, 0, 12);
+        jest.advanceTimersByTime(500);
+      });
+      await flushAsync();
+      await TestRenderer.act(async () => {
+        mockAcc.__setMockAcceleration(0, 0, 12);
+        jest.advanceTimersByTime(500);
+      });
+      await flushAsync();
+      expect(gpsRef.current!.movementState).toBe("moving");
+
+      // Sustained movement past the check interval fires a verification one-shot.
+      __setMockLocation(3, 4, 12);
+      await TestRenderer.act(async () => {
+        jest.advanceTimersByTime(MOVEMENT_CHECK_INTERVAL_MS);
+        await flushAsync();
+      });
+      await flushAsync();
+
+      const balancedCall = spy.mock.calls.find(
+        (c) => c[0]?.accuracy === Location.Accuracy.Balanced
+      );
+      expect(balancedCall).toBeDefined();
+
+      await TestRenderer.act(async () => { tree.unmount(); });
+    });
+  });
+});
+
+describe("GPS Quality Helper", () => {
+  it("returns Excellent for 0m accuracy", () => {
+    expect(getGpsQuality(0)).toEqual({ level: "excellent", label: "Excellent", color: "#4CAF50" });
+  });
+
+  it("returns Excellent for 10m accuracy", () => {
+    expect(getGpsQuality(10)).toEqual({ level: "excellent", label: "Excellent", color: "#4CAF50" });
+  });
+
+  it("returns Excellent for 20m accuracy", () => {
+    expect(getGpsQuality(20)).toEqual({ level: "excellent", label: "Excellent", color: "#4CAF50" });
+  });
+
+  it("returns Moderate for 20.1m accuracy", () => {
+    expect(getGpsQuality(20.1)).toEqual({ level: "moderate", label: "Moderate", color: "#FF9800" });
+  });
+
+  it("returns Moderate for 30m accuracy", () => {
+    expect(getGpsQuality(30)).toEqual({ level: "moderate", label: "Moderate", color: "#FF9800" });
+  });
+
+  it("returns Moderate for 50m accuracy", () => {
+    expect(getGpsQuality(50)).toEqual({ level: "moderate", label: "Moderate", color: "#FF9800" });
+  });
+
+  it("returns Poor for 50.1m accuracy", () => {
+    expect(getGpsQuality(50.1)).toEqual({ level: "poor", label: "Poor", color: "#F44336" });
+  });
+
+  it("returns Poor for 95m accuracy", () => {
+    expect(getGpsQuality(95)).toEqual({ level: "poor", label: "Poor", color: "#F44336" });
+  });
+
+  it("returns Poor for 100m accuracy", () => {
+    expect(getGpsQuality(100)).toEqual({ level: "poor", label: "Poor", color: "#F44336" });
+  });
+
+  it("returns Unavailable for null accuracy", () => {
+    expect(getGpsQuality(null)).toEqual({ level: "unavailable", label: "Unavailable", color: "#9E9E9E" });
+  });
+
+  it("returns Unavailable for undefined accuracy", () => {
+    expect(getGpsQuality(undefined)).toEqual({ level: "unavailable", label: "Unavailable", color: "#9E9E9E" });
+  });
+
+  it("returns Unavailable for NaN accuracy", () => {
+    expect(getGpsQuality(NaN)).toEqual({ level: "unavailable", label: "Unavailable", color: "#9E9E9E" });
+  });
+
+  it("returns Unavailable for negative accuracy", () => {
+    expect(getGpsQuality(-1)).toEqual({ level: "unavailable", label: "Unavailable", color: "#9E9E9E" });
+  });
+
+  it("returns Poor for Infinity accuracy", () => {
+    expect(getGpsQuality(Infinity)).toEqual({ level: "poor", label: "Poor", color: "#F44336" });
   });
 });

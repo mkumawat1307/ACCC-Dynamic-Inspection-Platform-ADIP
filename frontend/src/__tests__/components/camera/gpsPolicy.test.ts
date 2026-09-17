@@ -22,9 +22,9 @@ describe("gpsPolicy", () => {
       expect(isFixUsable(baseFix, 2000)).toBe(true);
     });
 
-    it("rejects a fix whose accuracy is above the threshold", () => {
+    it("accepts a fix regardless of accuracy (accuracy is now informational only)", () => {
       const bad = { ...baseFix, accuracyM: MAX_GPS_ACCURACY_M + 1 };
-      expect(isFixUsable(bad, 2000)).toBe(false);
+      expect(isFixUsable(bad, 2000)).toBe(true);
     });
 
     it("accepts a fix exactly at the accuracy threshold", () => {
@@ -70,9 +70,9 @@ describe("gpsPolicy", () => {
       expect(isFixStale(old, 1000 + GPS_STALE_MS)).toBe(true);
     });
 
-    it("returns true when accuracy is above the threshold", () => {
+    it("returns false for high accuracy (accuracy is no longer a staleness factor)", () => {
       const bad = { ...baseFix, accuracyM: MAX_GPS_ACCURACY_M + 1 };
-      expect(isFixStale(bad, 2000)).toBe(true);
+      expect(isFixStale(bad, 2000)).toBe(false);
     });
   });
 

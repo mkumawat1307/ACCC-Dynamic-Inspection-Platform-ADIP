@@ -11,9 +11,16 @@ export function isFixUsable(
   fix: GpsFix | null,
   nowMs: number = Date.now()
 ): boolean {
+  // A fix is usable if it has valid coordinates and is not stale.
+  // Accuracy is informational only - we accept any valid GPS fix regardless of accuracy.
   return (
     fix != null &&
-    fix.accuracyM <= MAX_GPS_ACCURACY_M &&
+    fix.latitude !== null &&
+    fix.longitude !== null &&
+    fix.timestamp !== null &&
+    !isNaN(fix.latitude) &&
+    !isNaN(fix.longitude) &&
+    !isNaN(fix.timestamp) &&
     nowMs - fix.timestamp < GPS_STALE_MS
   );
 }

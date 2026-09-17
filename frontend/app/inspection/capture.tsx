@@ -24,7 +24,7 @@ import WatermarkMergeWebView from "@/src/components/camera/WatermarkMergeWebView
 import { useWatermarkProcessor } from "@/src/components/inspection/useWatermarkProcessor";
 import { useAddressLookup } from "@/src/components/camera/useAddressLookup";
 import { saveLocationAddress } from "@/src/components/camera/saveLocationAddress";
-import { composeWatermarkLines, gpsPillText, gpsAccuracyCategory, GPS_CATEGORY_COLORS } from "@/src/utils/watermarkLayout";
+import { composeWatermarkLines, gpsPillTextNew } from "@/src/utils/watermarkLayout";
 import { toWatermarkStyleConfig } from "@/src/utils/watermarkStyle";
 import { pickExpectedPhotoSize, pickLimitedPhotoSize, alignCapturedSizeToContainer } from "@/src/components/camera/expectedPhotoSize";
 import { useWatermarkSettings } from "@/src/context/WatermarkSettingsContext";
@@ -540,7 +540,7 @@ export default function CaptureScreen() {
     gps.refreshing
       ? "#FFEB3B"
       : gps.status === "fixed" && gps.accuracyM != null
-      ? GPS_CATEGORY_COLORS[gpsAccuracyCategory(gps.accuracyM)]
+      ? gps.gpsQuality?.color ?? "#FFEB3B"
       : gps.status === "stale"
       ? "#FF9800"
       : gps.status === "denied"
@@ -641,7 +641,7 @@ export default function CaptureScreen() {
 
           <View style={styles.gpsPill}>
             <Text style={[styles.gpsPillText, { color: gpsPillColor }]}>
-              {gpsPillText(gps.status, gps.accuracyM, gps.refreshing)}
+              {gpsPillTextNew(gps.status, gps.accuracyM, gps.refreshing, gps.gpsQuality)}
             </Text>
           </View>
         </View>
@@ -719,9 +719,6 @@ export default function CaptureScreen() {
               shutterBusy ||
               !captureConfigReady ||
               (gps.status !== "fixed" && gps.status !== "stale") ||
-              // Movement-dirty: GPS fix is suspected stale due to movement.
-              // Shutter must not use cached GPS; captureGps() will acquire fresh.
-              gps.movementDirty ||
               flow.phase !== "preview"
             }
             onPress={handleShutter}
