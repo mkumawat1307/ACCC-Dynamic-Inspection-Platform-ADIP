@@ -83,6 +83,7 @@ export default function NewInspectionScreen({
 }) {
   const router = useRouter();
   const initDoneRef = useRef(false);
+  const saveInProgressRef = useRef(false);
   const backInFlightRef = useRef(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
@@ -377,6 +378,26 @@ export default function NewInspectionScreen({
         validateBeforeExit()
           .then((ok) => {
             if (ok) {
+              // In CREATE mode, persist the Pole ID before navigating back
+              if (!routeInspectionId && inspectionId != null) {
+                const poleId = generalInfoRef.current?.getPoleId?.() ?? "";
+                if (poleId.trim() !== "") {
+                  InspectionFieldRepository.getDefaultTemplateFields()
+                    .then((fields: any[]) => fields.find((f: any) => f.FieldKey === "pole_id"))
+                    .then((poleField: any) => {
+                      if (poleField) {
+                        return InspectionRepository.updatePoleIdDirectSave(
+                          inspectionId,
+                          poleField.FieldID,
+                          poleId.trim()
+                        );
+                      }
+                    })
+                    .catch((error: any) => {
+                      logger.error("[new.tsx] Failed to persist Pole ID on hardware back:", error);
+                    });
+                }
+              }
               router.back();
             }
           })
@@ -389,7 +410,7 @@ export default function NewInspectionScreen({
     );
 
     return () => subscription.remove();
-  }, [inspectionId, router]);
+  }, [inspectionId, router, routeInspectionId]);
 
   async function initialize() {
     // The live overlay is a module-level singleton; start this screen with a
@@ -530,6 +551,25 @@ export default function NewInspectionScreen({
     const ok = await validateBeforeExit();
 
     if (ok) {
+      // In CREATE mode, persist the Pole ID before navigating back so the Draft retains it
+      if (!routeInspectionId && inspectionId != null) {
+        const poleId = generalInfoRef.current?.getPoleId?.() ?? "";
+        if (poleId.trim() !== "") {
+          try {
+            const poleField = await InspectionFieldRepository.getDefaultTemplateFields()
+              .then((fields: any[]) => fields.find((f: any) => f.FieldKey === "pole_id"));
+            if (poleField) {
+              await InspectionRepository.updatePoleIdDirectSave(
+                inspectionId,
+                poleField.FieldID,
+                poleId.trim()
+              );
+            }
+          } catch (error) {
+            logger.error("[new.tsx] Failed to persist Pole ID on back:", error);
+          }
+        }
+      }
       router.back();
     }
   };
@@ -537,75 +577,85 @@ export default function NewInspectionScreen({
   const handleSave = async () => {
     if (!inspectionId) return;
 
-    const isExisting = Boolean(routeInspectionId);
-
-    const result = await validateSectionsAndDevices();
-
-    if (!result.valid) {
-      Alert.alert(
-        "Inspection Incomplete",
-        "Please complete the following:\n\n• " +
-          result.missingFields.join("\n• "),
-      );
+    // Save concurrency guard: prevent concurrent Save invocations
+    if (saveInProgressRef.current) {
       return;
     }
+    saveInProgressRef.current = true;
 
-    const photos = await PhotoRepository.getByInspection(inspectionId);
-    const minimumPhotos = await SectionRepository.getMinimumPhotos();
+    try {
+      const isExisting = Boolean(routeInspectionId);
 
-    const photoValidation = validatePhotosForSave(
-      photos,
-      extractProjectPhotoStates(contextProject?.DBPath, getPhotoStates()),
-      minimumPhotos,
-    );
+      const result = await validateSectionsAndDevices();
 
-    if (!photoValidation.canSave) {
-      const message = getPhotoBlockMessage(
-        photoValidation.reason,
-        minimumPhotos,
-      );
-      Alert.alert("Inspection Incomplete", message);
-      return;
-    }
-
-    // Persist all staged edits (field values, Pole ID, device records) for an
-    // existing inspection. This is the explicit Save boundary — nothing is
-    // written to the database until this point, and only a fully valid Save
-    // deactivates the edit session.
-    const decision = await generalInfoRef.current?.confirmIdentityRename();
-    if (decision?.type === "duplicate") {
-      Alert.alert(
-        "Duplicate Site ID",
-        `Site ID ${decision.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`,
-      );
-      return;
-    }
-    if (decision?.type === "cancelled") {
-      return;
-    }
-
-    if (isExisting) {
-      const committed = await InspectionEditSession.commit();
-      if (!committed) {
+      if (!result.valid) {
         Alert.alert(
-          "Duplicate Site ID",
-          "Site ID already exists in another inspection. Please enter a unique Site ID.",
+          "Inspection Incomplete",
+          "Please complete the following:\n\n• " +
+            result.missingFields.join("\n• "),
         );
         return;
       }
+
+      const photos = await PhotoRepository.getByInspection(inspectionId);
+      const minimumPhotos = await SectionRepository.getMinimumPhotos();
+
+      const photoValidation = validatePhotosForSave(
+        photos,
+        extractProjectPhotoStates(contextProject?.DBPath, getPhotoStates()),
+        minimumPhotos,
+      );
+
+      if (!photoValidation.canSave) {
+        const message = getPhotoBlockMessage(
+          photoValidation.reason,
+          minimumPhotos,
+        );
+        Alert.alert("Inspection Incomplete", message);
+        return;
+      }
+
+      // Persist all staged edits (field values, Pole ID, device records) for an
+      // existing inspection. This is the explicit Save boundary — nothing is
+      // written to the database until this point, and only a fully valid Save
+      // deactivates the edit session.
+      const decision = await generalInfoRef.current?.confirmIdentityRename();
+      if (decision?.type === "duplicate") {
+        Alert.alert(
+          "Duplicate Site ID",
+          `Site ID ${decision.duplicatePoleId} already exists in another inspection. Please enter a unique Site ID.`,
+        );
+        return;
+      }
+      if (decision?.type === "cancelled") {
+        return;
+      }
+
+      if (isExisting) {
+        const committed = await InspectionEditSession.commit();
+        if (!committed) {
+          Alert.alert(
+            "Duplicate Site ID",
+            "Site ID already exists in another inspection. Please enter a unique Site ID.",
+          );
+          return;
+        }
+      }
+
+      await InspectionRepository.updateInspectionStatus(
+        inspectionId,
+        "Completed",
+      );
+
+      Alert.alert("Success", "Inspection saved successfully.", [
+        {
+          text: "OK",
+          onPress: () => router.back(),
+        },
+      ]);
+    } finally {
+      saveInProgressRef.current = false;
     }
-
-    await InspectionRepository.updateInspectionStatus(
-      inspectionId,
-      "Completed",
-    );
-
-    Alert.alert("Success", "Inspection saved successfully.", [
-      {
-        text: "OK",
-        onPress: () => router.back(),
-      },
-    ]);
   };
 
   function getPhotoBlockMessage(
@@ -824,7 +874,7 @@ export default function NewInspectionScreen({
                 mode="contained"
                 icon="content-save"
                 onPress={handleSave}
-                disabled={photosProcessing}
+                disabled={photosProcessing || saveInProgressRef.current}
                 style={{
                   flex: 1,
                   marginLeft: 8,

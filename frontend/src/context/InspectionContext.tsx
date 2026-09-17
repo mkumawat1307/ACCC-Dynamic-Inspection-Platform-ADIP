@@ -46,20 +46,38 @@ export function InspectionProvider({
 
   const [project, setProject] = useState<Project | null>(null);
   const openSeqRef = useRef(0);
+  // Identity of the project open currently in flight. Guards against a concurrent
+  // open of the SAME project: a home-screen double-tap can otherwise fire two
+  // openProjectDb calls while the guarded `project` state is still null, racing
+  // two migrateProjectSchema runs on the same SQLite handle. Different projects
+  // are allowed through — the activation sequence cancels stale completions.
+  const openingProjectKeyRef = useRef<string | null>(null);
 
 const [inspectionDate, setInspectionDate] = useState("");
 const [inspectionId, setInspectionId] = useState<number | null>(null);
 const [poleId, setPoleId] = useState("");
 
 const openProject = useCallback(async (p: Project) => {
-  const seq = ++openSeqRef.current;
-  if (p.DBPath) {
-    await openProjectDb(p.DBPath, p.ProjectID);
-  }
-  if (seq === openSeqRef.current) {
-    setProject(p);
-  }
-}, []);
+    const key = `${p.ProjectID}::${p.DBPath ?? ""}`;
+    if (openingProjectKeyRef.current === key) {
+      return; // Same project is already being opened
+    }
+    openingProjectKeyRef.current = key;
+
+    try {
+      const seq = ++openSeqRef.current;
+      if (p.DBPath) {
+        await openProjectDb(p.DBPath, p.ProjectID);
+      }
+      if (seq === openSeqRef.current) {
+        setProject(p);
+      }
+    } finally {
+      if (openingProjectKeyRef.current === key) {
+        openingProjectKeyRef.current = null;
+      }
+    }
+  }, []);
 
 const closeProject = useCallback(async () => {
   await clearActiveProject();

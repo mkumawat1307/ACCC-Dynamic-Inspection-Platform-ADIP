@@ -499,6 +499,11 @@ static async validateInspection(
         ? InspectionEditSessionState.getStagedFieldValues()
         : undefined);
 
+    // Also check for staged Pole ID in edit session
+    const stagedPoleId = InspectionEditSessionState.isActive(inspectionId)
+      ? InspectionEditSessionState.getStagedPoleId()
+      : null;
+
     const missingFields: string[] = [];
 
     const autoFilledFields = [
@@ -520,10 +525,16 @@ static async validateInspection(
       }
 
       const stagedValue = effectiveStagedValues?.get(field.FieldID);
+
+      // For pole_id field, also check staged Pole ID from edit session
+      const poleIdStagedValue = field.FieldKey === "pole_id" ? stagedPoleId : null;
+
       const value =
         stagedValue !== undefined
           ? stagedValue
-          : values[field.FieldKey];
+          : poleIdStagedValue !== undefined && poleIdStagedValue !== null
+            ? poleIdStagedValue
+            : values[field.FieldKey];
 
       if (isFieldValueEmpty(field.FieldType, value ?? "")) {
         missingFields.push(field.FieldName);

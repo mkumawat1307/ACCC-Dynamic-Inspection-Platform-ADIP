@@ -121,6 +121,89 @@ describe("InspectionProvider", () => {
     expect(deleteProjectDb).toHaveBeenCalledWith("/db/other.db");
   });
 
+  it("prevents concurrent open of the same project while opening", async () => {
+    // Reproduce the home-screen double-tap: `project` is still null while the
+    // first open is in flight, so a guard keyed on the active project state
+    // would fall through and issue a second concurrent openProjectDb call on
+    // the same SQLite handle.
+    let resolveFirst: (() => void) | null = null;
+    (openProjectDb as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        })
+    );
+
+    const result = renderHookInProvider(() => useInspection());
+
+    const firstOpen = result.current.openProject(mockProject);
+    const secondOpen = result.current.openProject(mockProject);
+
+    // Same-project double-open must not issue a second DB open.
+    expect(openProjectDb).toHaveBeenCalledTimes(1);
+
+    await TestRenderer.act(async () => {
+      resolveFirst?.();
+      await firstOpen;
+      await secondOpen;
+    });
+    expect(result.current.project?.ProjectID).toBe(1);
+    expect(openProjectDb).toHaveBeenCalledTimes(1);
+
+    // Guard is released after completion: a later open is allowed again.
+    await TestRenderer.act(async () => {
+      await result.current.openProject(mockProject);
+    });
+    expect(openProjectDb).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows a different project to open while one is in flight", async () => {
+    let resolveFirst: (() => void) | null = null;
+    (openProjectDb as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        })
+    );
+
+    const result = renderHookInProvider(() => useInspection());
+    const projectB = { ...mockProject, ProjectID: 2, DBPath: "/db/other.db" };
+
+    const openA = result.current.openProject(mockProject);
+    const openB = result.current.openProject(projectB);
+
+    expect(openProjectDb).toHaveBeenCalledTimes(2);
+
+    await TestRenderer.act(async () => {
+      resolveFirst?.();
+      await openA;
+      await openB;
+    });
+
+    // The stale A completion is cancelled by the activation sequence; B wins.
+    expect(result.current.project?.ProjectID).toBe(2);
+  });
+
+  it("releases the open guard when opening fails", async () => {
+    (openProjectDb as jest.Mock).mockRejectedValueOnce(new Error("boom"));
+
+    const result = renderHookInProvider(() => useInspection());
+
+    await TestRenderer.act(async () => {
+      await expect(result.current.openProject(mockProject)).rejects.toThrow(
+        "boom"
+      );
+    });
+    expect(result.current.project).toBeNull();
+
+    // A retry of the same project must be allowed after the failure.
+    await TestRenderer.act(async () => {
+      await result.current.openProject(mockProject);
+    });
+    expect(openProjectDb).toHaveBeenCalledTimes(2);
+    expect(result.current.project?.ProjectID).toBe(1);
+  });
+
   it("sets inspection date", () => {
     const result = renderHookInProvider(() => useInspection());
     TestRenderer.act(() => {

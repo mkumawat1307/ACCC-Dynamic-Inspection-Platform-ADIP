@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { logger } from "@/src/utils/logger";
 import { View, FlatList, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -30,6 +30,12 @@ export default function HomeScreen() {
   const [cloneDialogVisible, setCloneDialogVisible] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [cloneName, setCloneName] = useState("");
+  // Open concurrency guard: a double-tap on Open would otherwise fire two
+  // concurrent openProjectDb calls (and two migrateProjectSchema runs) on the
+  // same SQLite handle, since the project is not yet open when the guard runs.
+  // The InspectionContext guard covers all callers; this ref also prevents a
+  // redundant second dashboard navigation from the double-tap.
+  const openingInProgressRef = useRef(false);
 
   const [sortBy, setSortBy] = useState<
     | "newest"
@@ -48,6 +54,27 @@ export default function HomeScreen() {
       setProjects(data);
     } catch (error) {
       logger.error("Error loading projects:", error);
+    }
+  };
+
+  const handleOpen = async (item: Project) => {
+    if (openingInProgressRef.current) {
+      return;
+    }
+    openingInProgressRef.current = true;
+    try {
+      await openProject(item);
+      router.push({
+        pathname: "/projects/dashboard",
+        params: {
+          projectId: item.ProjectID.toString(),
+          projectData: JSON.stringify(item),
+        },
+      });
+    } catch {
+      Alert.alert("Error", "Unable to open project database.");
+    } finally {
+      openingInProgressRef.current = false;
     }
   };
 
@@ -290,20 +317,7 @@ export default function HomeScreen() {
                     icon="clipboard-plus"
                     compact
                     style={styles.actionBtn}
-                    onPress={async () => {
-                      try {
-                        await openProject(item);
-                        router.push({
-                          pathname: "/projects/dashboard",
-                          params: {
-                            projectId: item.ProjectID.toString(),
-                            projectData: JSON.stringify(item),
-                          },
-                        });
-                      } catch {
-                        Alert.alert("Error", "Unable to open project database.");
-                      }
-                    }}
+                    onPress={() => handleOpen(item)}
                   >
                     Open
                   </Button>
