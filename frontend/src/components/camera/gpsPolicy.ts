@@ -1,9 +1,4 @@
-import {
-  MAX_GPS_ACCURACY_M,
-  GPS_STALE_MS,
-  GPS_REFRESH_AGE_MS,
-  GPS_ACCURACY_REFRESH_M,
-} from "./captureConfig";
+import { MAX_GPS_ACCURACY_M, GPS_STALE_MS } from "./captureConfig";
 
 export interface GpsFix {
   latitude: number;
@@ -28,15 +23,4 @@ export function isFixStale(
   nowMs: number = Date.now()
 ): boolean {
   return fix != null && !isFixUsable(fix, nowMs);
-}
-
-export function needsGpsRefresh(
-  fix: GpsFix | null,
-  nowMs: number = Date.now()
-): boolean {
-  return (
-    fix != null &&
-    (nowMs - fix.timestamp >= GPS_REFRESH_AGE_MS ||
-      fix.accuracyM > GPS_ACCURACY_REFRESH_M)
-  );
 }

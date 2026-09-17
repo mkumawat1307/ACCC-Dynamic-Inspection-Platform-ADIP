@@ -21,6 +21,7 @@ The app uses a **dynamic form engine**: inspection forms are rendered entirely f
 - **Per-project database isolation** — each project owns its own SQLite database file (template, sections, fields, devices, inspections, photos); no cross-project data mixing and no cross-DB joins.
 - **Camera capture with live watermark preview** — the watermark is overlaid on the camera preview (WYSIWYG) before capture, and a background WebView composites the final watermarked JPEG.
 - **Retake / Keep confirmation flow** — after capture the processed photo is shown and can be kept or retaken.
+- **Battery-efficient, event-driven GPS** — no continuous position polling. A low-accuracy movement watcher refreshes the fix only when the device moves more than 10 m (or on manual tap / when the fix passes the 5-minute freshness window), and photo capture reuses the stored fix or performs a bounded, deadline-guarded acquisition when needed.
 - **SAF-style download storage** — watermarked photos and exports are written to `Download/ACCC Dynamic Inspection/<Project>/` through a native Kotlin Expo module.
 - **Device management** — configurable device types (Camera, Switch) with per-type field definitions and dropdown options.
 - **Dropdown defaults** — a default selection can be configured for dropdown fields; it auto-applies for new inspections.
@@ -152,6 +153,14 @@ Per-project settings (reached from the dashboard):
   2. `useWatermarkProcessor` queues each photo (`pending` → `processing` → `completed` / `failed`).
   3. A hidden WebView (`WatermarkMergeWebView`) lays out and composites the watermark onto the JPEG (the active processing stage is the JS/WebView merge; an optional native encoder wrapper exists in `src/native/WatermarkEncoder.ts` but is not compiled into the current build).
   4. The watermarked photo is written to download storage and its `content://` URI is recorded in `Photos`.
+- **GPS capture & refresh** (`useGpsTracker`, `gpsPolicy`, `captureConfig`) —
+  - **Event-driven, not polled.** There is no continuous position loop and no fixed-interval refresh. Tracking initialises only when the capture screen becomes camera-ready; a low-accuracy watcher (`accuracy: Low`, `distanceInterval: 10`) is used purely to detect movement and never adopts its own coordinates.
+  - **Refresh triggers.** A new high-accuracy one-shot runs on manual tap, on movement beyond `GPS_MOVE_THRESHOLD_M` (10 m), or when the stored fix ages past `GPS_STALE_MS` (5 min). Every accepted fix updates the stored fix, resets the movement reference, and resets the freshness timestamp.
+  - **Validity.** A fix is usable only when `accuracy ≤ MAX_GPS_ACCURACY_M` (50 m) **and** its age is `≤ GPS_STALE_MS`. Stale (`status: "stale"`) and out-of-accuracy fixes are never treated as valid.
+  - **Capture is mandatory-GPS.** At shutter time the screen reuses the stored fix when valid and fresh; otherwise it acquires one. If acquisition fails the photo is **not** captured. Coordinates are never defaulted and stale coordinates are never stamped onto a photo.
+  - **Bounded acquisition.** Each attempt fans out `GPS_PARALLEL_REQUESTS` (3) independent requests with a `GPS_ATTEMPT_TIMEOUT_MS` (5 s) decision deadline; the best fix is the lowest-accuracy result and late results after the deadline are ignored. Up to `GPS_MAX_ATTEMPTS` (3) attempts are made; if all fail, capture is blocked with an error.
+  - **Isolation & lifecycle.** Background/manual one-shots may join one in-flight request, but capture acquisition stays independent; operation-id/generation guards discard stale or late results. The watcher is removed on unmount, never duplicated on remount, and no state is updated after invalidation. A denied location permission yields `status: "denied"` with no device query.
+  - **Manual "Get Current Location"** in General Information remains a separate immediate one-shot (`fetchCurrentLocation` → `getCurrentLocation` in `src/utils/location.ts`) that writes the `gps`/`location` `InspectionValues` fields; it is unrelated to the camera tracker.
 - **Native surface** (`android/`) — bare Android project: `MainApplication`/`MainActivity` (com.accc.dynamicinspection), `AndroidBackupModule`/`AndroidBackupPackage` for system backup hook. The local Kotlin Expo module `modules/download-storage` provides download-folder access.
 
 ## Technology Stack
@@ -199,7 +208,7 @@ yarn bundle:measure     # Node scripts/measure-bundle.js
 
 - **Framework**: Jest (`jest-expo` preset) — `yarn test`.
 - **Coverage**: per-glob coverage thresholds (80% lines/statements/functions, 70% branches) enforced for the core database, repository, and watermark files via `jest.config.js` (`collectCoverageFrom` excludes table/seed definitions).
-- **Current status**: 185 suites, 2,296 passed, 0 failed, 0 skipped — verified via a local `yarn test` run (no GitHub CI run/status for the release commit).
+- **Current status**: 188 suites, 2,476 passed, 0 failed, 0 skipped — verified via a local `yarn test` run (no GitHub CI run/status for the release commit).
 - **Key patterns**:
   - In-memory SQLite mock (`__mocks__/expo-sqlite.ts`), path-aware: tests use distinct DB paths/names and assert isolation.
   - **Isolation tests** — data created in Project A must not appear when Project B is opened (`src/__tests__/database/isolation.test.ts`).
@@ -210,6 +219,12 @@ yarn bundle:measure     # Node scripts/measure-bundle.js
 - **Automated validation**: `InspectionScrollContext` tests cover the pure reveal-target calculation and provider scrolling (42 tests total); `DeviceSection` tests cover expansion reveal triggers (38 tests total). Seven DeviceSection-related suites (80 tests) passed. `npx tsc --noEmit` completed with 0 errors and `yarn lint` completed with 0 errors (pre-existing warnings only).
 - **Physical Android validation**: Numeric, text, and multiline focused inputs remain fully visible above the keyboard, including the Camera Count input. Device 2 and Device 3 expansion, larger counts, sequential expand/collapse/re-expand, and expansion with the keyboard both visible and hidden were verified without double/overshoot scrolling or typing interruption.
 - **Implementation boundary**: Device reveal is generic and database-driven. `DeviceSection` requests `scrollElementIntoView()` from the expanded body's `onLayout`; it does not hard-code Device 2 or Device 3 behavior. The keyboard-aware viewport is preserved during expansion.
+
+### Recent GPS rewrite validation (2026-09-17)
+
+- **Automated validation**: full `yarn test` run passed **188 suites / 2,476 tests** (0 failed, 0 skipped). `npx tsc --noEmit` completed with **0 errors**; `yarn lint` completed with **0 errors** (1,596 pre-existing warnings, down from 1,597). `git diff --check` reported no whitespace errors.
+- **GPS test coverage**: `useGpsTracker.test.tsx` (48 tests) and `gpsPolicy.test.ts` cover fresh cached reuse, stale detection, movement-triggered refresh, manual refresh, 5-minute stale refresh, parallel capture acquisition, best-accuracy selection, the 5-second deadline, retries, all-attempts failure, mandatory-GPS capture blocking, late-result isolation, permission denial, watcher lifecycle, and concurrent background/capture operations.
+- **Physical Android validation**: **not performed.** The device-level GPS behavior (permission dialogs, real fix acquisition, battery impact) remains **unverified on hardware**; the automated suites exercise the mocked `expo-location` contract only.
 
 ```bash
 yarn test               # Run all tests

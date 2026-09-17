@@ -1,15 +1,9 @@
 import {
   isFixUsable,
   isFixStale,
-  needsGpsRefresh,
   GpsFix,
 } from "@/src/components/camera/gpsPolicy";
-import {
-  MAX_GPS_ACCURACY_M,
-  GPS_STALE_MS,
-  GPS_REFRESH_AGE_MS,
-  GPS_ACCURACY_REFRESH_M,
-} from "@/src/components/camera/captureConfig";
+import { MAX_GPS_ACCURACY_M, GPS_STALE_MS } from "@/src/components/camera/captureConfig";
 
 describe("gpsPolicy", () => {
   const baseFix: GpsFix = {
@@ -82,37 +76,4 @@ describe("gpsPolicy", () => {
     });
   });
 
-  describe("needsGpsRefresh", () => {
-    it("returns false for null", () => {
-      expect(needsGpsRefresh(null, 10000)).toBe(false);
-    });
-
-    it("returns false for a young, accurate fix", () => {
-      const young = { ...baseFix, timestamp: GPS_REFRESH_AGE_MS - 1 };
-      expect(needsGpsRefresh(young, GPS_REFRESH_AGE_MS)).toBe(false);
-    });
-
-    it("returns true once the fix reaches the refresh age", () => {
-      const aged = { ...baseFix, timestamp: 0 };
-      expect(needsGpsRefresh(aged, GPS_REFRESH_AGE_MS)).toBe(true);
-    });
-
-    it("returns true when accuracy is above the refresh threshold", () => {
-      const goodAgeBadAccuracy = {
-        ...baseFix,
-        accuracyM: GPS_ACCURACY_REFRESH_M + 1,
-        timestamp: 0,
-      };
-      expect(needsGpsRefresh(goodAgeBadAccuracy, 1)).toBe(true);
-    });
-
-    it("does not refresh purely on accuracy while it is exactly at the threshold", () => {
-      const edge = {
-        ...baseFix,
-        accuracyM: GPS_ACCURACY_REFRESH_M,
-        timestamp: 0,
-      };
-      expect(needsGpsRefresh(edge, 1)).toBe(false);
-    });
   });
-});

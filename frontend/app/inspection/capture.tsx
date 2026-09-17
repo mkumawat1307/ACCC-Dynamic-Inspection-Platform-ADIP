@@ -54,8 +54,6 @@ export default function CaptureScreen() {
   const { settings } = useWatermarkSettings();
 
   const cameraRef = useRef<React.ElementRef<typeof CameraView>>(null);
-  const gps = useGpsTracker();
-  const { lines: addressLines, fullAddress, getAddressFor, resolveAddress } = useAddressLookup(gps.coords);
 
   const sessionIdRef = useRef(0);
   const isActiveRef = useRef(true);
@@ -93,6 +91,11 @@ export default function CaptureScreen() {
   // back to false, which disables the shutter and blocks capture.
   const [captureConfigReady, setCaptureConfigReady] = useState(false);
   const captureConfigReadyRef = useRef(false);
+
+  // GPS acquisition starts only once the camera is actually ready; the tracker
+  // stays "loading" (shutter disabled) until then.
+  const gps = useGpsTracker(cameraReady);
+  const { lines: addressLines, fullAddress, getAddressFor, resolveAddress } = useAddressLookup(gps.coords);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);

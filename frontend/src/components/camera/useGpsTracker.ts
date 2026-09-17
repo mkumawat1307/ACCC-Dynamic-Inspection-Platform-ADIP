@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
-import { isLocationFresh } from "@/src/utils/geo";
+import { haversineMeters } from "@/src/utils/geo";
+import { isFixUsable, type GpsFix } from "./gpsPolicy";
 import {
-  isFixUsable,
-  needsGpsRefresh,
-  type GpsFix,
-} from "./gpsPolicy";
-import {
-  MAX_GPS_ACCURACY_M,
-  GPS_STALE_MS,
   GPS_MOVE_THRESHOLD_M,
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
   GPS_ONE_SHOT_TIMEOUT_COLD_MS,
-  GPS_REFRESH_AGE_MS,
-  GPS_WATCH_ACQUIRING_MIN_MS,
+  GPS_PARALLEL_REQUESTS,
+  GPS_ATTEMPT_TIMEOUT_MS,
+  GPS_MAX_ATTEMPTS,
 } from "./captureConfig";
 
 export type { GpsFix } from "./gpsPolicy";
@@ -21,14 +16,6 @@ export type { GpsFix } from "./gpsPolicy";
 export type GpsStatus = "loading" | "acquiring" | "fixed" | "stale" | "denied";
 
 export const GPS_STATUS_TICK_MS = 1000;
-
-// A watcher update must keep the UI in "acquiring" long enough to actually be
-// painted on a real device. The validation window is at least the settle tick
-// so the acquiring state can never collapse to a sub-frame glitch.
-export const GPS_WATCH_VALIDATION_MS = Math.max(
-  GPS_STATUS_TICK_MS,
-  GPS_WATCH_ACQUIRING_MIN_MS
-);
 
 interface LocationLike {
   coords: {
@@ -55,7 +42,15 @@ function isAcceptableFix(loc: LocationLike): boolean {
   return isFixUsable(toFix(loc), Date.now());
 }
 
-export function useGpsTracker() {
+// Event-driven GPS tracker. There is NO continuous acquisition loop:
+//  - cold-start acquisition runs once (bounded retries) when `active` first
+//    becomes true (camera ready),
+//  - a low-accuracy distance watcher refreshes only when the user moves more
+//    than GPS_MOVE_THRESHOLD_M from the last accepted fix,
+//  - an armed stale trigger fires ONE refresh per stale epoch,
+//  - refreshNow() (tap) and captureGps() (shutter) request on demand.
+// Every accepted fix resets both the movement reference AND the fix timestamp.
+export function useGpsTracker(active: boolean = true) {
   const [status, setStatus] = useState<GpsStatus>("loading");
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [accuracyM, setAccuracyM] = useState<number | null>(null);
@@ -66,70 +61,69 @@ export function useGpsTracker() {
   const cancelledRef = useRef(false);
   const deniedRef = useRef(false);
   const statusRef = useRef<GpsStatus>("loading");
-  const pendingWatchFixRef = useRef<GpsFix | null>(null);
-  // Shared in-flight one-shot acquisition. While a getCurrentPositionAsync
-  // request is active, every other caller (automatic refresh, tap refresh,
-  // captureGps) must join it instead of issuing a second device request.
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // Movement reference: the last accepted fix. The distance watcher compares
+  // against this and it is reset ONLY by acceptFix.
+  const movementRef = useRef<GpsFix | null>(null);
+  // Set to true when a stale-refresh trigger is armed, reset only when a new
+  // fix is accepted, so a failed refresh never re-arms on the next tick.
+  const staleArmedRef = useRef(false);
+  // Shared in-flight one-shot acquisition for refresh paths. While a
+  // getCurrentPositionAsync request is active, automatic refresh and tap
+  // refresh join it instead of issuing a second device request. captureGps
+  // does NOT use this slot — it fires its own parallel batch per attempt.
   const inFlightOneShotRef = useRef<{
     request: Promise<GpsFix | null>;
     accuracy: Location.Accuracy;
   } | null>(null);
+  // Monotonic capture-operation id. Each captureGps() invocation increments it;
+  // any attempt that completes while a newer operation is current must be
+  // discarded (its results may never be adopted nor settle status).
+  const captureOpRef = useRef(0);
 
   const setStatusBoth = useCallback((next: GpsStatus) => {
     statusRef.current = next;
     setStatus(next);
   }, []);
 
-  const acceptFix = useCallback((fix: GpsFix) => {
-    if (cancelledRef.current) return;
-    fixRef.current = fix;
-    setCoords({ latitude: fix.latitude, longitude: fix.longitude });
-    setAccuracyM(fix.accuracyM);
-    setStatusBoth(isFixUsable(fix) ? "fixed" : "stale");
-  }, [setStatusBoth]);
+  const acceptFix = useCallback(
+    (fix: GpsFix) => {
+      if (cancelledRef.current) return;
+      fixRef.current = fix;
+      // Reset the movement reference (distance is always measured from the
+      // latest accepted fix) and dis-arm the stale trigger (a fresh fix means
+      // the stale epoch is over).
+      movementRef.current = fix;
+      staleArmedRef.current = false;
+      setCoords({ latitude: fix.latitude, longitude: fix.longitude });
+      setAccuracyM(fix.accuracyM);
+      setStatusBoth(isFixUsable(fix) ? "fixed" : "stale");
+    },
+    [setStatusBoth]
+  );
 
-  const settleStatus = useCallback((duringExplicit: boolean) => {
-    if (cancelledRef.current) return;
-    if (deniedRef.current) {
-      setStatusBoth("denied");
-      return;
-    }
-    // Pending watcher fixes are validated exclusively by the watcher-resynced
-    // timer (settleWatchPending). The free-running settle tick must never
-    // consume a candidate that is still inside its validation window, which
-    // would collapse the acquiring state to a sub-frame glitch.
-    if (pendingWatchFixRef.current != null) return;
-    const fix = fixRef.current;
-    if (statusRef.current === "acquiring" && !duringExplicit && fix == null) {
-      return;
-    }
-    if (fix != null && isFixUsable(fix)) {
-      setStatusBoth("fixed");
-    } else if (fix != null) {
-      setStatusBoth("stale");
-    } else {
-      setStatusBoth("acquiring");
-    }
-  }, [setStatusBoth]);
-
-  const settleWatchPending = useCallback(() => {
-    if (cancelledRef.current) return;
-    if (deniedRef.current) {
-      setStatusBoth("denied");
-      return;
-    }
-    const pending = pendingWatchFixRef.current;
-    if (pending == null) return;
-    pendingWatchFixRef.current = null;
-    if (isFixUsable(pending)) {
-      acceptFix(pending);
-      return;
-    }
-    // Invalid watcher candidate: it must never become the capture source nor
-    // overwrite the previous fix. Fall back through the existing policy (old
-    // fix usable -> fixed, stale -> stale, none -> acquiring).
-    settleStatus(false);
-  }, [acceptFix, settleStatus, setStatusBoth]);
+  const settleStatus = useCallback(
+    (duringExplicit: boolean) => {
+      if (cancelledRef.current) return;
+      if (deniedRef.current) {
+        setStatusBoth("denied");
+        return;
+      }
+      const fix = fixRef.current;
+      if (statusRef.current === "acquiring" && !duringExplicit && fix == null) {
+        return;
+      }
+      if (fix != null && isFixUsable(fix)) {
+        setStatusBoth("fixed");
+      } else if (fix != null) {
+        setStatusBoth("stale");
+      } else {
+        setStatusBoth("acquiring");
+      }
+    },
+    [setStatusBoth]
+  );
 
   const runOneShot = useCallback(
     async (accuracy: Location.Accuracy): Promise<GpsFix | null> => {
@@ -186,23 +180,95 @@ export function useGpsTracker() {
     [runOneShot]
   );
 
+  const triggerStaleRefreshIfNeeded = useCallback(() => {
+    if (cancelledRef.current || deniedRef.current) return;
+    const fix = fixRef.current;
+    if (fix != null && !isFixUsable(fix) && !staleArmedRef.current) {
+      staleArmedRef.current = true;
+      oneShotFix().catch(() => {});
+    }
+  }, [oneShotFix]);
+
+  // Runs one capture attempt: GPS_PARALLEL_REQUESTS independent requests are
+  // fired at once and the attempt waits for all of them to settle OR the
+  // per-attempt deadline, whichever comes first. Only results delivered before
+  // the deadline are candidates; the best candidate is the lowest accuracy.
+  // Requests that resolve after the deadline are ignored entirely — they must
+  // neither influence the concluded attempt nor a later attempt.
+  const runCaptureAttempt = useCallback(
+    async (opId: number): Promise<GpsFix | null> => {
+      let conclude!: () => void;
+      let concluded = false;
+      let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+      const candidates: GpsFix[] = [];
+      let remaining = GPS_PARALLEL_REQUESTS;
+
+      const allSettled = new Promise<void>((resolve) => {
+        conclude = resolve;
+      });
+      // The deadline bounds the attempt wait. The timer marks the attempt
+      // concluded and resolves the race so the concluded attempt is evaluated
+      // even when some requests are still pending.
+      const deadline = new Promise<void>((resolve) => {
+        deadlineTimer = setTimeout(() => {
+          concluded = true;
+          resolve();
+        }, GPS_ATTEMPT_TIMEOUT_MS);
+      });
+
+      const onResult = (fix: GpsFix | null) => {
+        // A result that arrives after this attempt concluded is garbage: it
+        // must never be recorded for this attempt nor leak into a later one.
+        if (concluded) return;
+        if (fix) candidates.push(fix);
+        remaining -= 1;
+        if (remaining === 0) conclude();
+      };
+
+      for (let i = 0; i < GPS_PARALLEL_REQUESTS; i++) {
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+          .then((loc) => {
+            onResult(loc && isAcceptableFix(loc) ? toFix(loc) : null);
+          })
+          .catch(() => onResult(null));
+      }
+
+      await Promise.race([allSettled, deadline]);
+      concluded = true;
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+
+      // This capture operation was superseded: none of its results may be
+      // adopted or trigger status settlement.
+      if (cancelledRef.current || captureOpRef.current !== opId) return null;
+
+      let best: GpsFix | null = null;
+      for (const fix of candidates) {
+        if (best == null || fix.accuracyM < best.accuracyM) best = fix;
+      }
+      if (best) acceptFix(best);
+      return best;
+    },
+    [acceptFix]
+  );
+
   const captureGps = useCallback(
     async (): Promise<GpsFix | null> => {
       if (cancelledRef.current || deniedRef.current) return null;
-      // While a watcher-provided fix is still awaiting validation, the
-      // previous fix must never be captured with.
-      if (pendingWatchFixRef.current != null) return null;
       const current = fixRef.current;
       if (current != null && isFixUsable(current)) {
         return { ...current };
       }
+      const opId = ++captureOpRef.current;
       setStatusBoth("acquiring");
-      const fix = await oneShotFix();
-      if (cancelledRef.current) return null;
-      if (!fix) settleStatus(true);
-      return fix;
+      for (let attempt = 0; attempt < GPS_MAX_ATTEMPTS; attempt++) {
+        const fix = await runCaptureAttempt(opId);
+        if (cancelledRef.current || captureOpRef.current !== opId) return null;
+        if (fix) return fix;
+      }
+      settleStatus(true);
+      return null;
     },
-    [oneShotFix, settleStatus, setStatusBoth]
+    [runCaptureAttempt, settleStatus, setStatusBoth]
   );
 
   const refreshNow = useCallback(
@@ -225,9 +291,10 @@ export function useGpsTracker() {
   );
 
   useEffect(() => {
+    if (!active) return;
     let cancelled = false;
-    let interval: ReturnType<typeof setInterval> | null = null;
-    let validateTimer: ReturnType<typeof setTimeout> | null = null;
+    cancelledRef.current = false;
+    deniedRef.current = false;
 
     (async () => {
       let permStatus: string;
@@ -249,39 +316,46 @@ export function useGpsTracker() {
 
       try {
         const lastKnown = await Location.getLastKnownPositionAsync();
-        if (
-          !cancelled &&
-          lastKnown &&
-          isAcceptableFix(lastKnown) &&
-          isLocationFresh(lastKnown.timestamp ?? Date.now(), Date.now(), GPS_STALE_MS)
-        ) {
+        if (!cancelled && lastKnown && isAcceptableFix(lastKnown)) {
           acceptFix(toFix(lastKnown));
         }
       } catch {}
 
-      await oneShotFix();
+      // Bounded cold-start acquisition. A single one-shot is attempted at a
+      // time and retried only after a failure, so an unreliable cold start can
+      // recover without ever turning into a continuous acquisition loop.
+      if (!fixRef.current || !isFixUsable(fixRef.current)) {
+        for (let attempt = 0; attempt < GPS_MAX_ATTEMPTS; attempt++) {
+          const fix = await oneShotFix();
+          if (cancelled) return;
+          if (fix) break;
+        }
+      }
       if (cancelled) return;
       if (!fixRef.current) {
         settleStatus(true);
       }
 
+      // The watcher is a pure movement detector: it never adopts coordinates
+      // or status directly. When the user moves beyond the threshold from the
+      // last accepted fix it fires a single shared one-shot refresh.
       try {
         const sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, distanceInterval: GPS_MOVE_THRESHOLD_M },
+          { accuracy: Location.Accuracy.Low, distanceInterval: GPS_MOVE_THRESHOLD_M },
           (loc: LocationLike) => {
             if (cancelled) return;
-            // Every actual watcher update opens a fresh validation window:
-            // "acquiring" is shown immediately (Capture hidden/disabled), any
-            // prior validation timer is cancelled, and this candidate is
-            // validated by settleWatchPending on its own resynced timer. A NEW
-            // WATCHER UPDATE always starts a NEW VALIDATION WINDOW.
-            if (validateTimer) clearTimeout(validateTimer);
-            pendingWatchFixRef.current = toFix(loc);
-            setStatusBoth("acquiring");
-            validateTimer = setTimeout(() => {
-              validateTimer = null;
-              settleWatchPending();
-            }, GPS_WATCH_VALIDATION_MS);
+            const current = movementRef.current ?? fixRef.current;
+            if (!current) return;
+            const fix = toFix(loc);
+            const movedM = haversineMeters(
+              current.latitude,
+              current.longitude,
+              fix.latitude,
+              fix.longitude
+            );
+            if (movedM > GPS_MOVE_THRESHOLD_M) {
+              oneShotFix().catch(() => {});
+            }
           }
         );
         if (cancelled) {
@@ -290,12 +364,6 @@ export function useGpsTracker() {
         }
         subRef.current = sub;
       } catch {}
-
-      interval = setInterval(() => {
-        if (needsGpsRefresh(fixRef.current)) {
-          oneShotFix().catch(() => {});
-        }
-      }, GPS_REFRESH_AGE_MS);
     })();
 
     return () => {
@@ -303,18 +371,20 @@ export function useGpsTracker() {
       cancelledRef.current = true;
       subRef.current?.remove();
       subRef.current = null;
-      if (validateTimer) clearTimeout(validateTimer);
-      validateTimer = null;
-      if (interval) clearInterval(interval);
     };
-  }, [acceptFix, oneShotFix, settleStatus, settleWatchPending, setStatusBoth]);
+  }, [active, acceptFix, oneShotFix, settleStatus, setStatusBoth]);
 
+  // Slow status settle + stale triggering, driven by a single lightweight tick.
+  // No GPS device calls happen here — the stale trigger arms at most one
+  // refresh per stale epoch, and the settle only reconciles existing state.
   useEffect(() => {
     const t = setInterval(() => {
+      if (!activeRef.current) return;
+      triggerStaleRefreshIfNeeded();
       settleStatus(false);
     }, GPS_STATUS_TICK_MS);
     return () => clearInterval(t);
-  }, [settleStatus]);
+  }, [triggerStaleRefreshIfNeeded, settleStatus]);
 
   const ageMs = fixRef.current ? Date.now() - fixRef.current.timestamp : null;
 

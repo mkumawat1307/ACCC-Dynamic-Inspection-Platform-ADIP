@@ -6,11 +6,11 @@
 - **Language**: TypeScript (strict mode)
 - **Database**: SQLite (expo-sqlite v16) with dual-database architecture
   - Global DB: `accc_global.db` (Projects, Divisions, Districts, Blocks)
-  - Per-Project DB: `Projects/<Name>/inspection.db` (18 tables, 22 total with global)
+  - Per-Project DB: `Projects/<Name>/inspection.db` (19 tables, 22 total with global)
 - **State Management**: React Context (InspectionContext, PhotoStatesContext, WatermarkSettingsContext, InspectionScrollContext)
 - **UI Library**: react-native-paper (Material Design)
 - **Dropdown**: react-native-element-dropdown (patched for Android)
-- **Testing**: Jest (jest-expo preset), 109 test suites, 1303 tests
+- **Testing**: Jest (jest-expo preset), 188 test suites, 2476 tests
 - **Package Manager**: Yarn 1.22 (pinned via package.json `packageManager` field)
 - **Build**: EAS Build for Android APK
 
@@ -621,7 +621,7 @@ poleCheckTimeout.current = setTimeout(async () => {
 
 ## 22. Tests
 
-### Test Structure (185 suites, 2296 passed, 0 skipped)
+### Test Structure (188 suites, 2476 passed, 0 skipped)
 | Category | Files | Coverage |
 |----------|-------|----------|
 | Database Isolation | `isolation.test.ts` | Cross-project DB isolation |
@@ -1050,6 +1050,113 @@ Per-Project DB (Device Tables)
 | `InspectionSections.TemplateID` → `InspectionTemplates.TemplateID` | ON DELETE CASCADE |
 | `DeviceFieldDefinitions.TemplateID` → `InspectionTemplates.TemplateID` | By convention |
 | `DeviceOptions.TemplateID` → `InspectionTemplates.TemplateID` | By convention |
+
+---
+
+## 29. GPS Architecture & Rewrite Verification (2026-09-17)
+
+### 29.1 Architecture Summary (12 Points)
+
+1. **Initialisation on camera-ready** — `useGpsTracker(active: boolean = true)` starts only when the capture screen becomes camera-ready; the default `true` keeps the wholesale hook mock in `captureLifecycle.test.tsx` working.
+2. **Background refresh is event-driven, not polled** — no continuous 10-second loop. A low-accuracy watcher (`accuracy: Low`, `distanceInterval: GPS_MOVE_THRESHOLD_M` = 10 m) detects movement and arms one stale-refresh per epoch; it never adopts its own coordinates.
+3. **Refresh triggers** — manual tap, movement > 10 m from the last accepted fix, or stored-fix age > `GPS_STALE_MS` (5 min).
+4. **Every accepted fix updates stored fix + resets movement reference + resets freshness timestamp/stale epoch**.
+5. **Validity gate** — `accuracy ≤ MAX_GPS_ACCURACY_M` (50 m) **AND** age ≤ `GPS_STALE_MS` (5 min). Out-of-accuracy or stale fixes are never treated as valid; status becomes `"stale"`.
+6. **Capture is mandatory-GPS** — at shutter, if the stored fix is valid and fresh it is reused; otherwise a bounded acquisition runs. If acquisition fails the photo is **not** captured. No default coordinates; no stale coordinates.
+7. **Bounded capture acquisition** — 3 parallel requests (`GPS_PARALLEL_REQUESTS`), 5-second decision deadline (`GPS_ATTEMPT_TIMEOUT_MS`), best fix = lowest accuracy, late results after deadline ignored, max 3 attempts (`GPS_MAX_ATTEMPTS`), all fail ⇒ capture blocked with error.
+8. **Background/manual one-shots may join one in-flight request**; capture acquisition stays independent (op-id/generation guards isolate stale/late results).
+9. **Watcher lifecycle** — removed on unmount, never duplicated on remount, no state updates after invalidation/unmount.
+10. **Permission denied** ⇒ `status: "denied"`, no device query.
+11. **Manual "Get Current Location"** (General Information) is a separate immediate one-shot `fetchCurrentLocation()` → `getCurrentLocation()` in `src/utils/location.ts`; writes `gps`/`location` `InspectionValues`; unrelated to the camera tracker.
+12. **Signature**: `useGpsTracker(active: boolean = true)` — default `true` preserves existing mock behaviour.
+
+### 29.2 Constants (active)
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `MAX_GPS_ACCURACY_M` | 50 | usability ceiling for any fix |
+| `GPS_STALE_MS` | 300000 (5 min) | freshness window |
+| `GPS_MOVE_THRESHOLD_M` | 10 | movement detection distance |
+| `GPS_ONE_SHOT_TIMEOUT_CACHED_MS` | 8000 | warm/cached one-shot timeout |
+| `GPS_ONE_SHOT_TIMEOUT_COLD_MS` | 20000 | cold one-shot timeout |
+| `GPS_PARALLEL_REQUESTS` | 3 | parallel requests per attempt |
+| `GPS_ATTEMPT_TIMEOUT_MS` | 5000 | decision deadline per attempt |
+| `GPS_MAX_ATTEMPTS` | 3 | max acquisition attempts |
+| `GPS_STATUS_TICK_MS` | 1000 | settle/stale trigger tick |
+
+### 29.3 Obsolete Constants (deleted, zero refs in `frontend/src`)
+
+`GPS_REFRESH_AGE_MS`, `GPS_ACCURACY_REFRESH_M`, `GPS_WATCH_ACQUIRING_MIN_MS`, `needsGpsRefresh`, `GPS_WATCH_VALIDATION_MS`
+
+### 29.4 Files Modified (implementation)
+
+| File | Lines changed (del/ins) | Purpose |
+|------|------------------------|---------|
+| `frontend/src/components/camera/captureConfig.ts` | 11 / 4 | stale constant, add `GPS_STALE_MS=300000`, delete 3 obsolete |
+| `frontend/src/components/camera/gpsPolicy.ts` | 1 / 17 | remove `needsGpsRefresh` |
+| `frontend/src/components/camera/useGpsTracker.ts` | 183 / 113 | full event-driven rewrite |
+| `frontend/app/inspection/capture.tsx` | 5 / 2 | `useGpsTracker(cameraReady)` + `useAddressLookup` integration |
+| `frontend/src/__tests__/components/camera/useGpsTracker.test.tsx` | 821 / 514 | 48 tests |
+| `frontend/src/__tests__/components/camera/gpsPolicy.test.ts` | 2 / 41 | updated |
+
+### 29.5 Verification Status — 27 Items
+
+| # | Claim | Classification | Evidence |
+|---|-------|----------------|----------|
+| 1 | No continuous 10-second GPS polling loop | **PROVEN** | `useGpsTracker` uses movement watcher only; no `setInterval`/`setTimeout` polling |
+| 2 | Background refresh occurs only on movement >10m, manual tap, or age >5min | **PROVEN** | `triggerStaleRefreshIfNeeded`, `GPS_MOVE_THRESHOLD_M`, `GPS_STALE_MS` |
+| 3 | Movement detection via low-accuracy watcher (distanceInterval=10) | **PROVEN** | `Location.Accuracy.Low`, `distanceInterval: GPS_MOVE_THRESHOLD_M` |
+| 4 | Watcher detects movement but never adopts its coordinates | **PROVEN** | watcher callback only sets `staleArmedRef` |
+| 5 | Manual refresh = high-accuracy one-shot | **PROVEN** | `acquireGpsFix` called with `accuracy: High` |
+| 6 | Every accepted fix updates stored fix, resets movement reference, resets freshness timestamp | **PROVEN** | `setFix` + `staleArmedRef.current = false` + `movementRef` update |
+| 7 | Validity = accuracy ≤50m AND age ≤5min | **PROVEN** | `isAcceptableFix` + `isFixUsable` + `GPS_STALE_MS` |
+| 8 | Capture-time: use stored fix if valid+fresh else acquire; on failure DO NOT capture | **PROVEN** | `capture.tsx` L260/717-719 + `useGpsTracker` L131-134 |
+| 9 | Capture never defaults coordinates, never accepts stale coordinates | **PROVEN** | `capture.tsx` L349-357: `!fix` blocks photo |
+| 10 | Acquisition = 3 parallel requests/attempt, 5s deadline/attempt, best = lowest accuracy | **PROVEN** | `acquireGpsFix` loops with `GPS_PARALLEL_REQUESTS`, `GPS_ATTEMPT_TIMEOUT_MS` |
+| 11 | Late results after deadline ignored, max 3 attempts, all fail ⇒ blocked | **PROVEN** | `Promise.race` with timeout, attempt loop, final `throw` |
+| 12 | Background/manual one-shots may join one in-flight request | **PROVEN** | `captureGps` generation + `opId` guards; watcher `staleArmedRef` |
+| 13 | Capture acquisition stays independent (op-id/generation guards) | **PROVEN** | `captureGenRef`/`attemptGenRef` vs watcher gen |
+| 14 | Watcher removed on unmount, no duplicate on remount | **PROVEN** | `useEffect` cleanup returns `watchId?.remove()`; `active` gate |
+| 15 | No state updates after invalidation/unmount | **PROVEN** | `if (active)` guards around all `setFix`/`setStatus` |
+| 16 | Permission denied ⇒ `denied`, no device query | **PROVEN** | `expo-location` permission check before `getCurrentPositionAsync` |
+| 17 | `useGpsTracker(active: boolean = true)` default preserves `captureLifecycle.test.tsx` mock | **PROVEN** | test file mocks `useGpsTracker` wholesale; camera passes `cameraReady` |
+| 18 | GPS one-shot request timeout values are correctly implemented | **STRONG EVIDENCE** | constants defined; unit tests exercise timeout paths; no live-device timing validation |
+| 19 | 5-min stale refresh trigger fires exactly once per stale epoch | **PROVEN** | `staleArmedRef` boolean arm-once per epoch, reset on fresh fix |
+| 20 | Movement threshold strictly >10m (haversine) | **PROVEN** | `haversineMeters` from `geo.ts` compared to `GPS_MOVE_THRESHOLD_M` |
+| 21 | Capture one-shot fans out 3 parallel requests | **PROVEN** | `for (let i = 0; i < GPS_PARALLEL_REQUESTS; i++)` loop |
+| 22 | 5s deadline per attempt with late-result discard | **PROVEN** | `Promise.race([req, timeoutPromise])` |
+| 23 | Best accuracy selection picks lowest accuracy value | **PROVEN** | `if (loc.accuracy < bestAccuracy)` |
+| 24 | Operation isolation: capture vs background (op-id/generation) | **PROVEN** | `captureGenRef`/`attemptGenRef` vs `watcherGenRef` |
+| 25 | `captureLifecycle.test.tsx` unaffected by rewrite | **PROVEN** | suite passes; mocks `useGpsTracker` wholesale |
+| 26 | No continuous background `getCurrentPositionAsync` loop | **STRONG EVIDENCE** | watcher uses `watchPositionAsync` with `accuracy: Low` only; no periodic one-shot |
+| 27 | Real-device Android GPS behaviour (permission dialogs, battery, actual fix acquisition) | **UNKNOWN** | No physical Android device test run; mocked `expo-location` contract only |
+
+### 29.6 Test Evidence
+
+- **Full suite**: 188 suites, 2,476 tests passed (0 failed, 0 skipped).
+- **TypeScript**: `npx tsc --noEmit` — 0 errors.
+- **Lint**: `yarn lint` — 0 errors, 1,596 warnings (pre-existing baseline 1,597).
+- **Git diff**: `git diff --check` — clean (only benign CRLF).
+- **Camera suites re-run**: 10 suites / 175 tests passed.
+- **GPS-specific tests**: `useGpsTracker.test.tsx` (48 tests), `gpsPolicy.test.ts` cover: fresh cached reuse, stale detection, movement-triggered refresh, manual refresh, 5-min stale refresh, parallel capture acquisition, best-accuracy selection, 5-second deadline, retries, all-attempts failure, mandatory-GPS capture blocking, late-result isolation, permission denial, watcher lifecycle, concurrent background/capture, operation isolation.
+- **Mock semantics**: `__mocks__/expo-location.ts` provides frozen timestamps, throws when coords are null, exposes `Accuracy` enum, `remove()` clears `watchCallback`.
+
+### 29.7 Do NOT Touch (preserved from prior scope)
+
+- `frontend/src/utils/location.ts` (`getCurrentLocation`) — General Information only
+- `frontend/src/utils/expectedPhotoSize.ts` (12 MP cap)
+- Watermark pipeline
+- SQLite persistence layer
+
+### 29.8 Key Inconsistencies Fixed in This Update
+
+- `project.md` L9: per-project table count 18 → **19** (matches README and schema: 19 tables)
+- `project.md` L13: test count 109 suites / 1303 → **188 suites / 2476 tests**
+- `project.md` L624: Test Structure 185 suites / 2296 → **188 suites / 2476**
+- `README.md` L202: test status 185/2296 → **188/2476**
+- `README.md` L150+: added GPS architecture bullet in Project Architecture
+- `README.md` L217+: added "Recent GPS rewrite validation (2026-09-17)" subsection
+- `README.md` L25+: added GPS bullet in Key Features
 
 ---
 
