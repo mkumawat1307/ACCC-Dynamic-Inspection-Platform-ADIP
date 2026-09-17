@@ -15,3 +15,15 @@ export const GPS_ONE_SHOT_TIMEOUT_COLD_MS = 20000;
 export const GPS_PARALLEL_REQUESTS = 3;
 export const GPS_ATTEMPT_TIMEOUT_MS = 5000;
 export const GPS_MAX_ATTEMPTS = 3;
+
+// Movement detection configuration
+// Movement check interval: trigger GPS verification after this many seconds of
+// sustained movement. This is NOT a distance threshold — it's a time window
+// to trigger a GPS position verification. Actual distance is determined by GPS.
+export const MOVEMENT_CHECK_INTERVAL_MS = 10000;
+// Accelerometer threshold for detecting movement (m/s²). This is a low threshold
+// to detect any sustained motion (walking, vehicle vibration) while filtering
+// out minor hand tremors and phone rotations.
+export const MOVEMENT_ACCELERATION_THRESHOLD = 1.5;
+// Minimum time (ms) to confirm movement has stopped before triggering GPS verification
+export const MOVEMENT_STOP_CONFIRM_MS = 2000;

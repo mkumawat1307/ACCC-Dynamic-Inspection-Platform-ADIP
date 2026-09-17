@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as Location from "expo-location";
 import { haversineMeters } from "@/src/utils/geo";
 import { isFixUsable, type GpsFix } from "./gpsPolicy";
+import { useMotionDetector, MovementState } from "./useMotionDetector";
 import {
   GPS_MOVE_THRESHOLD_M,
   GPS_ONE_SHOT_TIMEOUT_CACHED_MS,
@@ -9,6 +10,9 @@ import {
   GPS_PARALLEL_REQUESTS,
   GPS_ATTEMPT_TIMEOUT_MS,
   GPS_MAX_ATTEMPTS,
+  GPS_STALE_MS,
+  MOVEMENT_CHECK_INTERVAL_MS,
+  MOVEMENT_STOP_CONFIRM_MS,
 } from "./captureConfig";
 
 export type { GpsFix } from "./gpsPolicy";
@@ -42,19 +46,13 @@ function isAcceptableFix(loc: LocationLike): boolean {
   return isFixUsable(toFix(loc), Date.now());
 }
 
-// Event-driven GPS tracker. There is NO continuous acquisition loop:
-//  - cold-start acquisition runs once (bounded retries) when `active` first
-//    becomes true (camera ready),
-//  - a low-accuracy distance watcher refreshes only when the user moves more
-//    than GPS_MOVE_THRESHOLD_M from the last accepted fix,
-//  - an armed stale trigger fires ONE refresh per stale epoch,
-//  - refreshNow() (tap) and captureGps() (shutter) request on demand.
-// Every accepted fix resets both the movement reference AND the fix timestamp.
 export function useGpsTracker(active: boolean = true) {
   const [status, setStatus] = useState<GpsStatus>("loading");
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [accuracyM, setAccuracyM] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [movementState, setMovementState] = useState<MovementState>("still");
+  const [movementDurationMs, setMovementDurationMs] = useState(0);
 
   const fixRef = useRef<GpsFix | null>(null);
   const subRef = useRef<{ remove: () => void } | null>(null);
@@ -69,6 +67,12 @@ export function useGpsTracker(active: boolean = true) {
   // Set to true when a stale-refresh trigger is armed, reset only when a new
   // fix is accepted, so a failed refresh never re-arms on the next tick.
   const staleArmedRef = useRef(false);
+  // Movement dirty flag: set to true when movement is detected. While true,
+  // the cached GPS fix MUST NOT be used via the fast path — a fresh GPS
+  // verification is required.
+  const movementDirtyRef = useRef(false);
+  // Timer for the movement check interval (10 seconds)
+  const movementCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Shared in-flight one-shot acquisition for refresh paths. While a
   // getCurrentPositionAsync request is active, automatic refresh and tap
   // refresh join it instead of issuing a second device request. captureGps
@@ -81,6 +85,44 @@ export function useGpsTracker(active: boolean = true) {
   // any attempt that completes while a newer operation is current must be
   // discarded (its results may never be adopted nor settle status).
   const captureOpRef = useRef(0);
+
+  // Use the motion detector hook
+  const motion = useMotionDetector(active);
+
+  // Sync motion detector state to local state for shutter/gps logic
+  useEffect(() => {
+    setMovementState(motion.state);
+    setMovementDurationMs(motion.durationMs);
+  }, [motion.state, motion.durationMs]);
+
+  // When motion detector reports movement start or continuation, mark GPS dirty
+  // and start/extend the movement check timer.
+  useEffect(() => {
+    if (motion.state === "moving") {
+      if (!movementDirtyRef.current) {
+        movementDirtyRef.current = true;
+        console.log("[GPS] marked dirty due to movement");
+      }
+      // Start/reset the movement check timer
+      if (movementCheckTimerRef.current) {
+        clearTimeout(movementCheckTimerRef.current);
+      }
+      movementCheckTimerRef.current = setTimeout(() => {
+        console.log("[MOTION] duration reached, triggering GPS verification");
+        triggerMovementVerification();
+      }, MOVEMENT_CHECK_INTERVAL_MS);
+    } else if (motion.state === "stopping") {
+      // Movement stopped — clear the 10-second timer and trigger immediate verification
+      if (movementCheckTimerRef.current) {
+        clearTimeout(movementCheckTimerRef.current);
+        movementCheckTimerRef.current = null;
+      }
+      if (movementDirtyRef.current) {
+        console.log("[MOTION] stopped, triggering immediate GPS verification");
+        triggerMovementVerification();
+      }
+    }
+  }, [motion.state]);
 
   const setStatusBoth = useCallback((next: GpsStatus) => {
     statusRef.current = next;
@@ -96,6 +138,12 @@ export function useGpsTracker(active: boolean = true) {
       // the stale epoch is over).
       movementRef.current = fix;
       staleArmedRef.current = false;
+      // Clear movement dirty flag — a fresh verified fix means movement is accounted for
+      movementDirtyRef.current = false;
+      if (movementCheckTimerRef.current) {
+        clearTimeout(movementCheckTimerRef.current);
+        movementCheckTimerRef.current = null;
+      }
       setCoords({ latitude: fix.latitude, longitude: fix.longitude });
       setAccuracyM(fix.accuracyM);
       setStatusBoth(isFixUsable(fix) ? "fixed" : "stale");
@@ -189,6 +237,54 @@ export function useGpsTracker(active: boolean = true) {
     }
   }, [oneShotFix]);
 
+  // Trigger GPS verification when movement duration reaches the check interval
+  // or when movement stops. This performs a fresh GPS acquisition and compares
+  // the distance from the last accepted movement reference.
+  const triggerMovementVerification = useCallback(async () => {
+    if (cancelledRef.current || deniedRef.current) return;
+    console.log("[GPS] movement verification started");
+    setStatusBoth("acquiring");
+    const f = await oneShotFix(Location.Accuracy.Highest);
+    if (cancelledRef.current) return;
+    if (!f) {
+      console.log("[GPS] movement verification failed to acquire fix");
+      settleStatus(true);
+      return;
+    }
+    // Compare with the last accepted movement reference
+    const ref = movementRef.current;
+    if (!ref) {
+      // No reference yet — accept the fix as new reference
+      console.log("[GPS] no movement reference, accepting as new reference");
+      acceptFix(f);
+      return;
+    }
+    const distanceM = haversineMeters(
+      ref.latitude,
+      ref.longitude,
+      f.latitude,
+      f.longitude
+    );
+    console.log(`[GPS] distance from reference = ${distanceM.toFixed(1)} m`);
+    if (distanceM > GPS_MOVE_THRESHOLD_M) {
+      // Movement confirmed — new GPS position accepted
+      console.log("[GPS] movement confirmed, reference updated");
+      acceptFix(f);
+    } else {
+      // No significant movement — keep old reference, but the GPS fix might be
+      // more accurate. Accept it as the current fix but don't reset the reference.
+      console.log("[GPS] movement NOT confirmed (distance <= 10m), keeping reference");
+      // Update coords/accuracy for display but don't reset movement reference
+      if (!cancelledRef.current) {
+        fixRef.current = f;
+        setCoords({ latitude: f.latitude, longitude: f.longitude });
+        setAccuracyM(f.accuracyM);
+        setStatusBoth(isFixUsable(f) ? "fixed" : "stale");
+      }
+      // Movement dirty flag remains true since we still suspect movement
+    }
+  }, [acceptFix, settleStatus, setStatusBoth]);
+
   // Runs one capture attempt: GPS_PARALLEL_REQUESTS independent requests are
   // fired at once and the attempt waits for all of them to settle OR the
   // per-attempt deadline, whichever comes first. Only results delivered before
@@ -255,9 +351,13 @@ export function useGpsTracker(active: boolean = true) {
     async (): Promise<GpsFix | null> => {
       if (cancelledRef.current || deniedRef.current) return null;
       const current = fixRef.current;
-      if (current != null && isFixUsable(current)) {
+      // FAST PATH: only use cached fix if it's valid, fresh, AND not movement-dirty
+      if (current != null && isFixUsable(current) && !movementDirtyRef.current) {
+        console.log("[GPS] captureGps: using valid fresh cached fix (not movement-dirty)");
         return { ...current };
       }
+      // GPS is stale, invalid, or movement-dirty — must acquire fresh
+      console.log("[GPS] captureGps: fast path blocked, acquiring fresh GPS");
       const opId = ++captureOpRef.current;
       setStatusBoth("acquiring");
       for (let attempt = 0; attempt < GPS_MAX_ATTEMPTS; attempt++) {
@@ -354,6 +454,10 @@ export function useGpsTracker(active: boolean = true) {
               fix.longitude
             );
             if (movedM > GPS_MOVE_THRESHOLD_M) {
+              // Distance watcher detected movement — trigger a background refresh
+              // This is separate from the accelerometer-based movement detection
+              // and acts as a safety net.
+              console.log("[GPS] distance watcher detected movement, arming refresh");
               oneShotFix().catch(() => {});
             }
           }
@@ -388,5 +492,18 @@ export function useGpsTracker(active: boolean = true) {
 
   const ageMs = fixRef.current ? Date.now() - fixRef.current.timestamp : null;
 
-  return { status, coords, accuracyM, ageMs, currentFix: fixRef.current, captureGps, refreshNow, refreshing };
+  return {
+    status,
+    coords,
+    accuracyM,
+    ageMs,
+    currentFix: fixRef.current,
+    captureGps,
+    refreshNow,
+    refreshing,
+    // Expose movement state for shutter safety
+    movementState,
+    movementDurationMs,
+    movementDirty: movementDirtyRef.current,
+  };
 }

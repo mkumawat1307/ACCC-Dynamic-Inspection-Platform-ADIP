@@ -4089,6 +4089,13 @@ expo-router@~6.0.24:
     use-latest-callback "^0.2.1"
     vaul "^1.1.2"
 
+expo-sensors@~14.0.0:
+  version "14.0.2"
+  resolved "https://registry.yarnpkg.com/expo-sensors/-/expo-sensors-14.0.2.tgz#bf2cfadcb17f396e0447aaa5405d1d90d6e46e95"
+  integrity sha512-nCb1Q3ctb0oVTZ9p6eFmQ2fINa6KoxXXIhagPpdN0qR82p00YosP27IuyxjVB3fnCJFeC4TffNxNjBxwAUk+nA==
+  dependencies:
+    invariant "^2.2.4"
+
 expo-server@^1.0.7:
   version "1.0.7"
   resolved "https://registry.npmjs.org/expo-server/-/expo-server-1.0.7.tgz"

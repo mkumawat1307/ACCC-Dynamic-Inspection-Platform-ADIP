@@ -594,8 +594,10 @@ export default function CaptureScreen() {
               zoom={zoom}
               style={styles.fill}
               onCameraReady={() => {
-                setCameraReady(true);
-                setCameraEpoch((e) => e + 1);
+                if (!cameraReady) {
+                  setCameraReady(true);
+                  setCameraEpoch((e) => e + 1);
+                }
               }}
             />
           ) : (
@@ -717,6 +719,9 @@ export default function CaptureScreen() {
               shutterBusy ||
               !captureConfigReady ||
               (gps.status !== "fixed" && gps.status !== "stale") ||
+              // Movement-dirty: GPS fix is suspected stale due to movement.
+              // Shutter must not use cached GPS; captureGps() will acquire fresh.
+              gps.movementDirty ||
               flow.phase !== "preview"
             }
             onPress={handleShutter}
