@@ -74,7 +74,10 @@ jest.mock("@/src/database/repositories/PhotoRepository", () => ({
 }));
 
 jest.mock("@/src/utils/location", () => ({ getCurrentLocation: jest.fn() }));
-jest.mock("@/src/utils/geo", () => ({ reverseGeocode: jest.fn() }));
+jest.mock("@/src/utils/geo", () => ({
+  reverseGeocode: jest.fn(),
+  formatAddressLines: jest.requireActual("@/src/utils/geo").formatAddressLines,
+}));
 jest.mock("@/src/utils/date", () => ({
   getTodayDateString: jest.fn(() => "10-Sep-2026"),
 }));
@@ -486,7 +489,7 @@ describe("GeneralInformation pole id settled save", () => {
     expect(dialogVisible(tree)).toBe(false);
   });
 
-  it("direct-saves even when photos exist — typing never opens the rename dialog", async () => {
+  it("direct-saves even when photos exist â€” typing never opens the rename dialog", async () => {
     photoRepo.getByInspection.mockResolvedValue([makePhoto(1)]);
     const tree = await renderComponent({ existing: true });
     await changePoleId(tree, "SIK101");
@@ -531,7 +534,7 @@ describe("GeneralInformation pole id settled save", () => {
 
     await act(async () => {
       await setPoleText(tree, "1002");
-      // The stale "1001" result lands as a duplicate AFTER the user moved on —
+      // The stale "1001" result lands as a duplicate AFTER the user moved on â€”
       // it must never alert, revert, or persist anything.
       resolveFirst({ InspectionID: 99, PoleID: "1001", Status: "draft" });
       await new Promise((resolve) => setTimeout(resolve, 620));
@@ -587,7 +590,7 @@ describe("GeneralInformation lazy draft + duplicate flow", () => {
     await changePoleId(tree, "SIK101");
 
     expect(ensureDraft).toHaveBeenCalledTimes(1);
-    // CREATE entry never persists the Site ID — it stays in React state until
+    // CREATE entry never persists the Site ID â€” it stays in React state until
     // checkIdentityBeforeSave commits it at Save.
     expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
     expect(Alert.alert).not.toHaveBeenCalled();
@@ -713,7 +716,7 @@ describe("GeneralInformation duplicate Site ID -> Cancel preserves all data", ()
     await changePoleId(tree, "NEW1");
 
     expect(ensureDraft).toHaveBeenCalledTimes(1);
-    // CREATE entry never persists the Site ID — only the draft row is created.
+    // CREATE entry never persists the Site ID â€” only the draft row is created.
     expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
     // The old duplicate must never have been persisted.
     const allCalls = [
@@ -767,7 +770,7 @@ describe("GeneralInformation duplicate Site ID -> Cancel preserves all data", ()
     expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
     expect(repo.saveFieldValue).not.toHaveBeenCalled();
     expect(repo.updateInspectionPoleId).not.toHaveBeenCalled();
-    // Cancel dismisses the alert only — the Site ID stays on screen.
+    // Cancel dismisses the alert only â€” the Site ID stays on screen.
     expect(renderedFieldValues(tree)[0]).toBe("SIK101");
   });
 
@@ -962,7 +965,7 @@ describe("GeneralInformation duplicate Site ID -> Create New", () => {
     repo.getInspectionByPoleId.mockResolvedValue(null);
     await changePoleId(tree, "BRAND-NEW");
     expect(ensureDraft).toHaveBeenCalledTimes(1);
-    // CREATE entry never persists the Site ID — only the draft row is created.
+    // CREATE entry never persists the Site ID â€” only the draft row is created.
     expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
     // The abandoned inspection's values are never loaded for the new one.
     const loadedIds = (repo.getInspectionValues as jest.Mock).mock.calls.map(
@@ -1177,7 +1180,7 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
 
     // Simulate a stale staged value captured by an earlier settled typing save
     // (the real updatePoleIdDirectSave stages the pole into the session, which
-    // is mocked out here — so seed the session directly).
+    // is mocked out here â€” so seed the session directly).
     InspectionEditSessionState.stagePoleId("SOKAY");
     InspectionEditSessionState.stageFieldValue(poleField.FieldID, "SOKAY");
 
@@ -1187,7 +1190,7 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
     const decision = await invokeConfirm();
 
     expect(decision).toEqual({ type: "duplicate", duplicatePoleId: "SIK101" });
-    // The duplicate alert is deferred to the caller (new.tsx) — never here.
+    // The duplicate alert is deferred to the caller (new.tsx) â€” never here.
     expect(Alert.alert).not.toHaveBeenCalled();
     // The duplicate value must never be written to the database.
     expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalledWith(
@@ -1198,7 +1201,7 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
     // Rename must never execute when a duplicate is found at save time.
     expect(mockRenameService.renamePoleId).not.toHaveBeenCalled();
 
-    // The on-screen value and staged identity are left untouched — the user
+    // The on-screen value and staged identity are left untouched â€” the user
     // can see the duplicate and edit it.
     expect(setPoleId).toHaveBeenLastCalledWith("SIK101");
     expect(InspectionEditSessionState.getStagedPoleId()).toBe("SOKAY");
@@ -1304,7 +1307,7 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
 
     expect(decision).toEqual({ type: "cancelled" });
     expect(dialogVisible(tree)).toBe(false);
-    // Cancel only declines the rename — it must never erase the user's edits.
+    // Cancel only declines the rename â€” it must never erase the user's edits.
     expect(setPoleId).toHaveBeenLastCalledWith("SIK101");
     expect(renderedFieldValues(tree)[0]).toBe("SIK101");
     const staged = InspectionEditSessionState.getStagedFieldValues();
@@ -1312,7 +1315,7 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
     expect(staged.get(blockField.FieldID)).toBe("Old Block");
     expect(InspectionEditSessionState.getStagedPoleId()).toBe("SIK101");
     expect(InspectionEditSessionState.getPendingRename()).toBeNull();
-    // No rename ever executes on cancel — photos stay untouched.
+    // No rename ever executes on cancel â€” photos stay untouched.
     expect(mockRenameService.renamePoleId).not.toHaveBeenCalled();
 
     await flushSettle(tree);
@@ -1321,7 +1324,7 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
   it("cancelling the dialog preserves a changed Block and District in form and session", async () => {
     photoRepo.getByInspection.mockResolvedValue([makePhoto(1)]);
     const tree = await renderWithRef();
-    // Change the Block (index 2) and the Site ID — both are identity fields.
+    // Change the Block (index 2) and the Site ID â€” both are identity fields.
     const blockNode = tree.root.findAll(
       (node) => (node as { type?: unknown }).type === FieldRenderer,
     )[2]!;
@@ -1362,7 +1365,7 @@ describe("GeneralInformation confirmIdentityRename at save time", () => {
     const tree = await renderWithRef();
     await setPoleText(tree, "SIK101");
 
-    // First save → cancel.
+    // First save â†’ cancel.
     let promise!: Promise<IdentityRenameDecision>;
     await act(async () => {
       promise = ref.current!.confirmIdentityRename();
@@ -1631,7 +1634,7 @@ describe("GeneralInformation NEW inspection save-time identity rename", () => {
     expect(decision).toEqual({ type: "no-rename" });
     expect(dialogVisible(tree)).toBe(false);
     // The Site ID was never persisted during entry, so the first save is the
-    // authoritative commit. Filenames already carry the live token — no rename.
+    // authoritative commit. Filenames already carry the live token â€” no rename.
     expect(repo.updatePoleIdDirectSave).toHaveBeenCalledTimes(1);
     expect(repo.updatePoleIdDirectSave).toHaveBeenCalledWith(
       101,
@@ -1650,7 +1653,7 @@ describe("GeneralInformation NEW inspection save-time identity rename", () => {
 
     expect(decision).toEqual({ type: "no-rename" });
     expect(dialogVisible(tree)).toBe(false);
-    // Nothing was persisted during entry, so there is nothing to revert — the
+    // Nothing was persisted during entry, so there is nothing to revert â€” the
     // typed Site ID stays on screen and is committed as the first save.
     expect(renderedFieldValues(tree)[0]).toBe("P2");
     expect(repo.updatePoleIdDirectSave).toHaveBeenCalledWith(
@@ -1701,7 +1704,7 @@ describe("GeneralInformation NEW inspection save-time identity rename", () => {
 
     expect(decision).toEqual({ type: "no-rename" });
     // The settle cancelled the pending typing save, so checkIdentityBeforeSave
-    // must persist P2 itself — otherwise the database keeps the stale P1.
+    // must persist P2 itself â€” otherwise the database keeps the stale P1.
     expect(repo.updatePoleIdDirectSave).toHaveBeenLastCalledWith(
       101,
       poleField.FieldID,
@@ -2044,7 +2047,7 @@ describe("GeneralInformation CREATE photo identity rename", () => {
   });
 });
 
-describe("GeneralInformation fetchCurrentLocation — GPS button", () => {
+describe("GeneralInformation fetchCurrentLocation â€” GPS button", () => {
   const gpsField: InspectionField = {
     FieldID: 50,
     SectionID: 1,
@@ -2110,12 +2113,24 @@ describe("GeneralInformation fetchCurrentLocation — GPS button", () => {
     jest.restoreAllMocks();
   });
 
-  it("saves gps coordinates and reverse-geocoded address on success", async () => {
+  it("saves gps coordinates and the selected address components on success", async () => {
     getCurrentLocationMock.mockResolvedValue({
       latitude: 34.05,
       longitude: -118.25,
     });
-    reverseGeocodeMock.mockResolvedValue({ formatted: "123 Main St" });
+    reverseGeocodeMock.mockResolvedValue({
+      address: {
+        streetNumber: "123",
+        street: "Main St",
+        district: "Downtown",
+        city: "Los Angeles",
+        region: "California",
+        postalCode: "90001",
+        country: "United States",
+      },
+      formatted:
+        "123 Main St, Downtown, Los Angeles, California, 90001, United States",
+    });
     const tree = await renderComponent();
 
     await pressButton(tree, "Get Current Location");
@@ -2131,7 +2146,7 @@ describe("GeneralInformation fetchCurrentLocation — GPS button", () => {
     expect(repo.saveFieldValue).toHaveBeenCalledWith(
       42,
       locationField.FieldID,
-      "123 Main St",
+      "123, Downtown, Los Angeles, California",
     );
     expect(getCurrentLocationMock).toHaveBeenCalledTimes(1);
     expect(reverseGeocodeMock).toHaveBeenCalledWith(34.05, -118.25);
@@ -2140,15 +2155,15 @@ describe("GeneralInformation fetchCurrentLocation — GPS button", () => {
     ).toBe("34.050000, -118.250000");
     expect(
       InspectionLiveValues.getLiveFieldValues()?.get(locationField.FieldID),
-    ).toBe("123 Main St");
+    ).toBe("123, Downtown, Los Angeles, California");
   });
 
-  it("does not save the address field when reverse geocoding returns no formatted address", async () => {
+  it("does not save the address field when reverse geocoding returns no usable components", async () => {
     getCurrentLocationMock.mockResolvedValue({
       latitude: 34.05,
       longitude: -118.25,
     });
-    reverseGeocodeMock.mockResolvedValue({ formatted: "" });
+    reverseGeocodeMock.mockResolvedValue({ address: {}, formatted: "" });
     const tree = await renderComponent();
 
     await pressButton(tree, "Get Current Location");
@@ -2287,7 +2302,7 @@ describe("GeneralInformation checking indicator lifecycle", () => {
     });
 
     // The parked check resolves AFTER the switch. It must not leave the
-    // indicator stuck — the check is stale and must not control the UI.
+    // indicator stuck â€” the check is stale and must not control the UI.
     await act(async () => {
       resolveFirst(null);
       await flushPromises();
@@ -2392,7 +2407,7 @@ describe("GeneralInformation Bug 1 & Bug 2 regressions (block + persisted identi
 
     const tree = await renderComponent({ existing: false, ensureDraft, ref });
 
-    // User types Block before any draft exists — it lives only in state.
+    // User types Block before any draft exists â€” it lives only in state.
     const nodes = tree.root.findAll(
       (n) => (n as { type?: unknown }).type === FieldRenderer,
     );
@@ -2403,7 +2418,7 @@ describe("GeneralInformation Bug 1 & Bug 2 regressions (block + persisted identi
     });
     expect(renderedFieldValues(tree)[2]).toBe("Sikar");
 
-    // Typing a Site ID lazily creates the draft but never persists the pole —
+    // Typing a Site ID lazily creates the draft but never persists the pole â€”
     // it stays in React state until Save (root-cause fix).
     await changePoleId(tree, "SIK-BLOCK1");
     expect(ensureDraft).toHaveBeenCalledTimes(1);
@@ -2522,12 +2537,12 @@ describe("GeneralInformation Bug 1 & Bug 2 regressions (block + persisted identi
       const tree = await renderComponent({ existing: false, ensureDraft, ref });
       await changePoleId(tree, "SIK101");
       expect(ensureDraft).toHaveBeenCalledTimes(1);
-      // CREATE entry never persists — the typed identity lives only in state.
+      // CREATE entry never persists â€” the typed identity lives only in state.
       expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
 
       if (ordering === "stale-after-write") {
         // Adopt the draft; the re-init read parks. Release it with an EMPTY
-        // snapshot — the latest typed identity must survive the empty read.
+        // snapshot â€” the latest typed identity must survive the empty read.
         await act(async () => {
           tree.update(
             <GeneralInformation
@@ -2775,7 +2790,7 @@ describe("GeneralInformation CREATE entry never persists the Site ID (root cause
     await changePoleId(tree, "SIK");
 
     // The draft is created lazily, but for a NEW inspection the Site ID stays
-    // in React state only — no pole write can happen while typing.
+    // in React state only â€” no pole write can happen while typing.
     expect(ensureDraft).toHaveBeenCalledTimes(1);
     expect(repo.updatePoleIdDirectSave).not.toHaveBeenCalled();
     expect(repo.saveFieldValue).not.toHaveBeenCalledWith(
@@ -2804,7 +2819,7 @@ describe("GeneralInformation CREATE entry never persists the Site ID (root cause
     // new.tsx adopts the lazily-created draft: context inspectionId flips to
     // 101 and init re-runs against an EMPTY DB snapshot. Without Option B the
     // partial "SIK" persisted during entry (Approach X) would be clobbered back
-    // to an empty pole by this re-init on first render — the reported bug.
+    // to an empty pole by this re-init on first render â€” the reported bug.
     await act(async () => {
       tree.update(
         <GeneralInformation
@@ -2866,7 +2881,7 @@ describe("GeneralInformation CREATE entry never persists the Site ID (root cause
   });
 });
 
-describe("GeneralInformation CREATE remount recovery — Option-B live Site ID overlay", () => {
+describe("GeneralInformation CREATE remount recovery â€” Option-B live Site ID overlay", () => {
   const TYPED = "SIK098/076sik/09845/123";
 
   beforeEach(async () => {
@@ -2900,7 +2915,7 @@ describe("GeneralInformation CREATE remount recovery — Option-B live Site ID o
 
     await changePoleId(tree, TYPED);
 
-    // Option-B: typing persists nothing — the value exists only in the overlay.
+    // Option-B: typing persists nothing â€” the value exists only in the overlay.
     expect(
       InspectionLiveValues.getLiveFieldValues()?.get(poleField.FieldID),
     ).toBe(TYPED);
@@ -2909,7 +2924,7 @@ describe("GeneralInformation CREATE remount recovery — Option-B live Site ID o
     expect(repo.updateInspectionPoleId).not.toHaveBeenCalled();
 
     // paper List.Accordion unmounts GeneralInformation when the section is
-    // collapsed — simulate that with a full remount.
+    // collapsed â€” simulate that with a full remount.
     await act(async () => {
       tree.unmount();
     });
@@ -2995,7 +3010,7 @@ describe("GeneralInformation CREATE remount recovery — Option-B live Site ID o
       restored.unmount();
     });
 
-    // new.tsx resets the screen-level overlay on "Create New" / screen init — a
+    // new.tsx resets the screen-level overlay on "Create New" / screen init â€” a
     // fresh CREATE must not inherit the previous inspection's Site ID.
     await act(async () => {
       InspectionLiveValues.reset();
@@ -3007,3 +3022,4 @@ describe("GeneralInformation CREATE remount recovery — Option-B live Site ID o
     expect(InspectionLiveValues.getLiveFieldValues()).toBeUndefined();
   });
 });
+

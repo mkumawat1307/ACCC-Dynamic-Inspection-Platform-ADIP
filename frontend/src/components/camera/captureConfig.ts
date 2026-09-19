@@ -5,6 +5,11 @@ export const MAX_GPS_ACCURACY_M = 50;
 // refresh, shutter-time recovery, or an armed stale trigger (fired once per
 // stale epoch) — not on a continuous poll.
 export const GPS_STALE_MS = 150000;
+// Automatic GPS refresh cadence while the camera screen is open. The initial
+// camera-open acquisition uses Highest; every subsequent automatic recovery
+// runs Balanced x3 then Highest x2 (max 5 attempts). A recovery with no result
+// under this cadence never turns into continuous polling or background tracking.
+export const GPS_AUTO_REFRESH_MS = 20000;
 export const GPS_MOVE_THRESHOLD_M = 10;
 export const GPS_GRACE_MS = 5000;
 export const PHOTO_QUALITY = 0.8;
@@ -21,11 +26,19 @@ export const GPS_PARALLEL_REQUESTS = 3;
 export const GPS_ATTEMPT_TIMEOUT_MS = 7000;
 export const GPS_MAX_ATTEMPTS = 3;
 
+// GPS quality bands
+// Horizontal accuracy threshold: fixes with accuracy beyond this many metres are
+// rejected outright and never become the current fix, the movement reference,
+// the capture GPS, or the watermark GPS. Within the limit, accuracy stays display-only.
+// >100 m → "⚪ GPS Poor — Refresh GPS" (no acceptable GPS).
+export const GPS_MAX_ACCEPTABLE_ACCURACY_M = 100;
+
 // Movement detection configuration
-// Movement check interval: trigger GPS verification after this many seconds of
-// sustained movement. This is NOT a distance threshold — it's a time window
-// to trigger a GPS position verification. Actual distance is determined by GPS.
-export const MOVEMENT_CHECK_INTERVAL_MS = 10000;
+// Movement GPS delay: after a NEW movement event is detected, wait this long
+// before triggering a movement recovery. Automatic recovery may continue for
+// the first part of the window, but when the window completes a pending
+// automatic recovery is pre-empted by movement (manual always outranks both).
+export const MOVEMENT_GPS_DELAY_MS = 15000;
 // Accelerometer threshold for detecting movement (m/s²). This is a low threshold
 // to detect any sustained motion (walking, vehicle vibration) while filtering
 // out minor hand tremors and phone rotations.

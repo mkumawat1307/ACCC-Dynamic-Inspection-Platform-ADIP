@@ -32,13 +32,15 @@ export function buildRenderWatermarkScript(
 export function buildMeasureOverlayScript(
   photoId: number,
   fontSize: number,
-  lines: string[]
+  lines: string[],
+  imageWidth?: number
 ): string {
   const payload = JSON.stringify({
     photoId,
     measure: true,
     fontSize,
     lines: sanitizeWatermarkLines(lines),
+    ...(imageWidth && imageWidth > 0 ? { imageWidth } : {}),
   })
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
@@ -117,8 +119,35 @@ function arrayBufferToBase64(buf){
   }
   return chunks.join('');
 }
+function wrapLinesToWidth(lines,maxWidth){
+  if(!(maxWidth>0))return lines.slice();
+  var out=[];
+  for(var i=0;i<lines.length;i++){
+    var text=String(lines[i]==null?'':lines[i]).replace(/\\s+/g,' ').trim();
+    if(!text){out.push('');continue;}
+    var words=text.split(' ');
+    var cur='';
+    for(var w=0;w<words.length;w++){
+      var word=words[w];
+      var cand=cur?cur+' '+word:word;
+      if(ctx.measureText(cand).width<=maxWidth){cur=cand;continue;}
+      if(cur){out.push(cur);cur='';}
+      while(word.length>1&&ctx.measureText(word).width>maxWidth){
+        var j=1;
+        while(j<word.length&&ctx.measureText(word.slice(0,j+1)).width<=maxWidth)j++;
+        out.push(word.slice(0,j));
+        word=word.slice(j);
+      }
+      cur=word;
+    }
+    if(cur)out.push(cur);
+  }
+  return out;
+}
 function measureOverlayText(photoId,fontSize,lines){
   ctx.font='bold '+fontSize+'px sans-serif';
+  var maxW=cv.width-2*Math.max(16,Math.round(fontSize*0.75))-2*Math.round(fontSize*0.4);
+  lines=wrapLinesToWidth(lines,maxW);
   var mw=0;
   for(var i=0;i<lines.length;i++){
     var m=ctx.measureText(lines[i]);
@@ -126,7 +155,8 @@ function measureOverlayText(photoId,fontSize,lines){
   }
   window.ReactNativeWebView.postMessage(JSON.stringify({
     photoId:photoId,
-    maxTextWidth:Math.ceil(mw)
+    maxTextWidth:Math.ceil(mw),
+    lines:lines
   }));
 }
 function renderOverlay(photoId,layout,lines,style){
@@ -234,6 +264,7 @@ function renderWatermark(photoId,imageBase64,lines,style,nativeEncode){
     var lh=Math.round(fSize*1.15),padY=Math.round(fSize*0.35),rPad=Math.round(fSize*0.4),gapX=Math.max(16,Math.round(fSize*0.75)),gapY=Math.max(20,Math.round(fSize*1.0));
     var corner=Math.max(4,Math.round(fSize*0.2));
     ctx.font='bold '+fSize+'px sans-serif';
+    lines=wrapLinesToWidth(lines,Math.max(1,cv.width-gapX*2-rPad*2));
     var mw=0;
     for(var i=0;i<lines.length;i++){
       var m=ctx.measureText(lines[i]);
@@ -359,7 +390,10 @@ function renderWatermark(photoId,imageBase64,lines,style,nativeEncode){
   img.src='data:image/jpeg;base64,'+imageBase64;
 }
 window.renderWatermarkFromJson=function(payload){
-  if(payload&&payload.photoId!=null&&payload.measure&&payload.fontSize)measureOverlayText(payload.photoId,payload.fontSize,payload.lines||[]);
+  if(payload&&payload.photoId!=null&&payload.measure&&payload.fontSize){
+    if(payload.imageWidth>0)cv.width=payload.imageWidth;
+    measureOverlayText(payload.photoId,payload.fontSize,payload.lines||[]);
+  }
   else if(payload&&payload.photoId!=null&&payload.layout)renderOverlay(payload.photoId,payload.layout,payload.lines||[],payload.style||{});
   else if(payload&&payload.photoId!=null&&payload.base64)renderWatermark(payload.photoId,payload.base64,payload.lines||[],payload.style||{},payload.nativeEncode===true);
 };

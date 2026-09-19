@@ -80,8 +80,46 @@ function buildCompactAddressLines(address: GeocodedAddress): string[] {
 
 export function formatAddressLines(address: GeocodedAddress | null): string[] {
   if (!address) return [];
-  const lines = buildCompactAddressLines(address);
-  return lines;
+
+  const clean = (s?: string | null) => (s ? stripPlusCode(s).trim() : "");
+
+  const houseNumber = clean(address.streetNumber) || clean(address.street);
+  const locality = firstUsableAddressPart(
+    [
+      clean(address.district),
+      clean(address.name),
+      clean(address.street),
+      clean(address.subregion),
+    ],
+    [houseNumber]
+  );
+  const district = firstUsableAddressPart(
+    [clean(address.city), clean(address.subregion), clean(address.district)],
+    [houseNumber, locality]
+  );
+  const state = firstUsableAddressPart(
+    [clean(address.region)],
+    [houseNumber, locality, district]
+  );
+
+  const line1 = [houseNumber, locality].filter(Boolean).join(", ");
+  const line2 = [district, state].filter(Boolean).join(", ");
+  return [line1, line2].filter(Boolean);
+}
+
+// Picks the first usable address component for a watermark slot. Skips empty
+// values, administrative divisions (e.g. "Jaipur division", "Sikar Tehsil")
+// and any value already used by an earlier slot, so missing/duplicated fields
+// never produce duplicate commas.
+function firstUsableAddressPart(candidates: string[], used: string[]): string {
+  for (const candidate of candidates) {
+    const value = candidate.trim();
+    if (!value) continue;
+    if (isAdminDivisionPart(value)) continue;
+    if (used.some((u) => u && u.toLowerCase() === value.toLowerCase())) continue;
+    return value;
+  }
+  return "";
 }
 
 export async function reverseGeocode(
@@ -100,6 +138,27 @@ export async function reverseGeocode(
 }
 
 function buildFullFormattedAddress(address: GeocodedAddress): string {
-  const result = buildCompactAddressLines(address).join("\n");
-return result;
+  const clean = (s?: string | null) => (s ? stripPlusCode(s).trim() : "");
+
+  const streetNumber = clean(address.streetNumber);
+  const street = clean(address.street);
+  const streetLine = streetNumber && street ? `${streetNumber} ${street}` : street;
+
+  const components = [
+    streetLine,
+    clean(address.name),
+    clean(address.subregion),
+    clean(address.district),
+    clean(address.city),
+    clean(address.region),
+    clean(address.postalCode),
+    clean(address.country),
+  ].filter(Boolean);
+
+  const deduped = components.filter(
+    (p, i) => components.findIndex((q) => q.toLowerCase() === p.toLowerCase()) === i
+  );
+
+  const complete = deduped.join(", ");
+  return complete || buildCompactAddressLines(address).join(", ");
 }

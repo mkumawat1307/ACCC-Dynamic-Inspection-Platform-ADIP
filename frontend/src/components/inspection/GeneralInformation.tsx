@@ -15,7 +15,7 @@ import { InspectionRepository } from "@/src/database/repositories/InspectionRepo
 import { InspectionLiveValues } from "@/src/database/repositories/InspectionLiveValues";
 import { InspectionField } from "@/src/database/repositories/InspectionTypes";
 import { getCurrentLocation } from "@/src/utils/location";
-import { reverseGeocode } from "@/src/utils/geo";
+import { formatAddressLines, reverseGeocode } from "@/src/utils/geo";
 import { getTodayDateString } from "@/src/utils/date";
 import PhotoRepository from "@/src/database/repositories/PhotoRepository";
 import { InspectionEditSession } from "@/src/database/repositories/InspectionEditSession";
@@ -409,7 +409,7 @@ const GeneralInformation = forwardRef<
             location.latitude,
             location.longitude,
           );
-          address = result?.formatted ?? "";
+          address = result ? formatAddressLines(result.address).join(", ") : "";
         } catch (error) {
           logger.error("Address Resolve Error:", error);
         }

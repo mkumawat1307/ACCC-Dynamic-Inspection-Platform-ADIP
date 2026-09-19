@@ -336,7 +336,7 @@ setWatermarkState(prev => ({ ...prev, [makePhotoStateKey(job.projectDbPath, phot
     if (!isProcessorActive()) return;
     const style = job.style ?? DEFAULT_OVERLAY_STYLE;
     const metrics = computeWatermarkMetrics(job.width, job.height, style);
-    injectJourneyScript(job, buildMeasureOverlayScript(job.photoId, metrics.fSize, job.lines));
+    injectJourneyScript(job, buildMeasureOverlayScript(job.photoId, metrics.fSize, job.lines, job.width));
   }
 
   function startStage(job: WatermarkJob) {
@@ -637,6 +637,9 @@ function saveAndComplete(job: WatermarkJob, base64: string) {
       if (data.maxTextWidth != null) {
         if (job.stage !== "overlay") return;
         if (!job.width || !job.height) return;
+        if (Array.isArray(data.lines) && data.lines.length > 0) {
+          job.lines = (data.lines as unknown[]).map((l) => String(l));
+        }
         const style = job.style ?? DEFAULT_OVERLAY_STYLE;
         job.layout = computeWatermarkOverlayLayout(
           job.width,

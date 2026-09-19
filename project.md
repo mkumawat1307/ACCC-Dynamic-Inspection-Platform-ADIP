@@ -1074,8 +1074,8 @@ Per-Project DB (Device Tables)
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `MAX_GPS_ACCURACY_M` | 50 | usability ceiling for any fix |
-| `GPS_STALE_MS` | 300000 (5 min) | freshness window |
+| `MAX_GPS_ACCURACY_M` | 100 | usability ceiling for any fix |
+| `GPS_STALE_MS` | 150000 (2.5 min) | freshness window |
 | `GPS_MOVE_THRESHOLD_M` | 10 | movement detection distance |
 | `GPS_ONE_SHOT_TIMEOUT_CACHED_MS` | 8000 | warm/cached one-shot timeout |
 | `GPS_ONE_SHOT_TIMEOUT_COLD_MS` | 20000 | cold one-shot timeout |

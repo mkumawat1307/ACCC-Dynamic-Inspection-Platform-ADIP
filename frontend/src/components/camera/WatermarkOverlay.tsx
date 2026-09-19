@@ -100,6 +100,13 @@ export default function WatermarkOverlay({
   const finalBoxX = Math.max(0, Math.min(width - 1, boxX));
   const finalBoxY = Math.max(0, Math.min(height - 1, boxY));
 
+  // Constrain the box to the visible content width (mirrors the renderer's
+  // `cv.width - gapX*2 - rPad*2`) so long address lines wrap in the live
+  // preview instead of running off-screen. Letting React Native measure and
+  // wrap keeps the preview close to the canvas measureText wrapping used for
+  // the saved photo.
+  const maxTextWidth = Math.max(1, width - m.gapX * 2 - m.rPad * 2);
+
   return (
     <View
       pointerEvents="none"
@@ -108,6 +115,7 @@ export default function WatermarkOverlay({
         {
           bottom: finalBoxY,
           [config.position === "bottomRight" ? "right" : "left"]: finalBoxX,
+          maxWidth: maxTextWidth,
           paddingVertical: m.padY,
           paddingHorizontal: m.rPad,
           borderRadius: m.corner,

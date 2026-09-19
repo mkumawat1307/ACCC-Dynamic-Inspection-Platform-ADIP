@@ -36,7 +36,6 @@ export function useMotionDetector(enabled: boolean = true): MovementInfo {
       movementStartTimeRef.current = Date.now();
       setDurationMs(0);
       setLastMovementAt(Date.now());
-      console.log("[MOTION] started");
     }
   }, [state]);
 
@@ -44,7 +43,6 @@ export function useMotionDetector(enabled: boolean = true): MovementInfo {
     if (enabledRef.current && state === "moving") {
       setState("stopping");
       setLastMovementAt(Date.now());
-      console.log("[MOTION] stopped, confirming...");
     }
   }, [state]);
 
@@ -53,7 +51,6 @@ export function useMotionDetector(enabled: boolean = true): MovementInfo {
       setState("still");
       setDurationMs(0);
       movementStartTimeRef.current = 0;
-      console.log("[MOTION] confirmed still");
     }
   }, [state]);
 
@@ -92,7 +89,6 @@ export function useMotionDetector(enabled: boolean = true): MovementInfo {
               stopTimerRef.current = null;
             }
             setState("moving");
-            console.log("[MOTION] resumed during stop confirmation");
           }
         }
         setLastMovementAt(now);

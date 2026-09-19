@@ -29,6 +29,7 @@ const mockCameraApi = {
   getAvailablePictureSizesAsync: jest.fn(),
 };
 const mockCameraViewProps: { current: Record<string, unknown> } = { current: {} };
+const mockOverlayProps: { current: Record<string, unknown> } = { current: {} };
 
 jest.mock("expo-camera", () => {
   const React = require("react");
@@ -174,7 +175,10 @@ jest.mock("@/src/components/camera/WatermarkOverlay", () => {
     get __esModule() {
       return true;
     },
-    default: () => React.createElement("View", null),
+    default: (props: Record<string, unknown>) => {
+      mockOverlayProps.current = props;
+      return React.createElement("View", null);
+    },
   };
 });
 
@@ -411,6 +415,25 @@ describe("capture lifecycle", () => {
     expect(joined).toContain("118.250000W");
     expect(joined).toContain("123 Main St");
     expect(photo.Latitude).not.toBe(99);
+  });
+
+  it("shows only the selected address components in the live preview overlay", async () => {
+    mockUseAddressLookup.mockReturnValue({
+      lines: ["323, sabalpura", "Sikar, Rajasthan"],
+      fullAddress:
+        "323, Jaipur division, sabalpura, Sikar, Rajasthan, 332001, India",
+      getAddressFor: getAddressForMock,
+      resolveAddress: resolveAddressMock,
+    });
+    await renderScreen();
+
+    const previewLines = mockOverlayProps.current.lines as string[];
+    expect(previewLines).toContain("323, sabalpura");
+    expect(previewLines).toContain("Sikar, Rajasthan");
+    const joined = previewLines.join(" ");
+    expect(joined).not.toContain("Jaipur division");
+    expect(joined).not.toContain("332001");
+    expect(joined).not.toContain("India");
   });
 
   it("stills writes a stale-but-present fix to the photo", async () => {

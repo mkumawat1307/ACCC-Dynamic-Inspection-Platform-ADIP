@@ -6,9 +6,18 @@ export interface GpsQualityInfo {
   color: string;
 }
 
+// Display labels are CATEGORY labels, not the measured accuracy. The ±20 m /
+// ±50 m / ±50 m+ suffixes describe the category band, so do NOT substitute the
+// actual fix accuracy (e.g. "±17 m", "±32 m", "±87 m") into these strings.
+const GPS_QUALITY_LABEL_HIGH = 'High Accuracy ±20 m';
+const GPS_QUALITY_LABEL_MEDIUM = 'Medium Accuracy ±50 m';
+const GPS_QUALITY_LABEL_LOW = 'Low Accuracy ±50 m+';
+const GPS_QUALITY_LABEL_NONE = 'No GPS';
+
 /**
  * Determines GPS quality level based on horizontal accuracy in meters.
- * 
+ * Accuracy is display-only; it never gates whether a fix is accepted.
+ *
  * @param accuracy - Horizontal accuracy in meters, or null/undefined if unavailable
  * @returns GPS quality information including level, label, and color
  */
@@ -17,7 +26,7 @@ export function getGpsQuality(accuracy: number | null | undefined): GpsQualityIn
   if (accuracy === null || accuracy === undefined || isNaN(accuracy) || accuracy < 0) {
     return {
       level: 'unavailable',
-      label: 'Unavailable',
+      label: GPS_QUALITY_LABEL_NONE,
       color: '#9E9E9E' // gray
     };
   }
@@ -25,7 +34,7 @@ export function getGpsQuality(accuracy: number | null | undefined): GpsQualityIn
   if (accuracy <= 20) {
     return {
       level: 'excellent',
-      label: 'Excellent',
+      label: GPS_QUALITY_LABEL_HIGH,
       color: '#4CAF50' // green
     };
   }
@@ -33,7 +42,7 @@ export function getGpsQuality(accuracy: number | null | undefined): GpsQualityIn
   if (accuracy <= 50) {
     return {
       level: 'moderate',
-      label: 'Moderate',
+      label: GPS_QUALITY_LABEL_MEDIUM,
       color: '#FF9800' // orange
     };
   }
@@ -41,26 +50,27 @@ export function getGpsQuality(accuracy: number | null | undefined): GpsQualityIn
   // > 50m
   return {
     level: 'poor',
-    label: 'Poor',
+    label: GPS_QUALITY_LABEL_LOW,
     color: '#F44336' // red
   };
 }
 
 /**
  * Gets a colored GPS status string for UI display.
- * Returns something like: "🟢 GPS 12m", "🟠 GPS 37m", "🔴 GPS 95m", "⚫ GPS unavailable"
+ * Returns something like: "🟢 High Accuracy ±20 m", "🟠 Medium Accuracy ±50 m",
+ * "🔴 Low Accuracy ±50 m+", "⚪ No GPS"
  */
 export function getGpsStatusString(accuracy: number | null | undefined): string {
   const quality = getGpsQuality(accuracy);
-  
+
   if (quality.level === 'unavailable') {
-    return '⚫ GPS unavailable';
+    return '⚪ No GPS';
   }
 
-  const emoji = quality.level === 'excellent' ? '🟢' : 
+  const emoji = quality.level === 'excellent' ? '🟢' :
                 quality.level === 'moderate' ? '🟠' : '🔴';
-  
-  return `${emoji} GPS ${accuracy}m`;
+
+  return `${emoji} ${quality.label}`;
 }
 
 /**

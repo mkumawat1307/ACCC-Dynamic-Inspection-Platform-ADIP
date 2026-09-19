@@ -4,9 +4,10 @@ import {
 } from "@/src/components/inspection/photoUtils";
 import type { WatermarkSettings } from "@/src/utils/watermarkSettings";
 import type { GpsStatus } from "@/src/components/camera/useGpsTracker";
-import { getGpsQuality, type GpsQualityInfo } from "@/src/utils/gpsQuality";
+import { type GpsQualityInfo } from "@/src/utils/gpsQuality";
 
-// Legacy constants for backward compatibility with watermarkLayout tests
+// GPS accuracy is no longer rendered in the photo watermark.
+// This constant remains for UI quality classification and legacy references only.
 export const GPS_ACCURACY_HIGH_M = 20;
 export const GPS_ACCURACY_MEDIUM_M = 50;
 
@@ -22,6 +23,8 @@ export function formatGpsAccuracyLine(accuracyM: number): string {
   return `Accuracy : ±${Math.round(accuracyM)} m`;
 }
 
+// GPS accuracy category colors are now only used for the GPS pill display,
+// not the watermark. Kept for backward compatibility.
 export const GPS_CATEGORY_COLORS: Record<GpsAccuracyCategory, string> = {
   high: "#76FF03",
   medium: "#FFEB3B",
@@ -53,14 +56,28 @@ export function gpsPillTextNew(
   gpsQuality?: GpsQualityInfo
 ): string {
   if (refreshing) return "⏳ Refreshing GPS…";
-  if (status === "fixed") {
-    if (accuracyM == null) return "🟢 GPS";
-    const quality = gpsQuality ?? getGpsQuality(accuracyM);
-    const emoji = quality.level === "excellent" ? "🟢" : quality.level === "moderate" ? "🟠" : "🔴";
-    return `${emoji} GPS ${accuracyM}m`;
-  }
+  if (status === "poor") return "🔴 GPS Poor — Refresh GPS";
   if (status === "stale") return "🟠 Stale GPS – tap to refresh";
   if (status === "denied") return "GPS denied";
+  if (status === "acquiring") return "Acquiring GPS…";
+  if (status === "fixed") {
+    if (
+      accuracyM == null ||
+      typeof accuracyM !== "number" ||
+      !isFinite(accuracyM) ||
+      accuracyM < 0
+    ) {
+      return "⚪ No GPS";
+    }
+    // Determine emoji and category label based on accuracy thresholds
+    // (same logic as getGpsQuality), but display the actual rounded accuracy.
+    const category = accuracyM <= 20 ? "High Accuracy"
+                   : accuracyM <= 50 ? "Medium Accuracy"
+                   : "Low Accuracy";
+    const emoji = accuracyM <= 20 ? "🟢" : accuracyM <= 50 ? "🟠" : "🔴";
+    const rounded = Math.round(accuracyM);
+    return `${emoji} ${category} ±${rounded} m`;
+  }
   return "Acquiring GPS…";
 }
 
@@ -91,10 +108,10 @@ export function composeWatermarkLines(input: WatermarkLineInput): string[] {
     return lines;
   }
   lines.push(formatLatLngWM(input.latitude, input.longitude));
-  if (settings.showGpsAccuracy && input.accuracyM != null) {
-    lines.push(formatGpsAccuracyLine(input.accuracyM));
-  }
   if (settings.showAddress) {
+    // `addressLines` already contains only the required components
+    // ([house/street number], [locality], [district], [state/region]);
+    // the WebView renderer wraps them to the photo width without truncating.
     lines.push(...input.addressLines);
   }
   return lines;

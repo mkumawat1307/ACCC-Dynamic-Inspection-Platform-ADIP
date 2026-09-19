@@ -265,3 +265,56 @@ describe("sanitizeWatermarkLines", () => {
     expect(sanitizeWatermarkLines(["a\\b"])).toEqual(["a\\\\b"]);
   });
 });
+
+function extractWrapLinesToWidth() {
+  const html = buildWatermarkRendererPage();
+  const match = html.match(/function wrapLinesToWidth\(lines,maxWidth\)\{[\s\S]*?\n\}/);
+  if (!match) throw new Error("wrapLinesToWidth not found in renderer page");
+  const fakeCtx = {
+    measureText: (text: unknown) => ({ width: String(text).length * 10 }),
+  };
+  return new Function("ctx", `return ${match[0]};`)(fakeCtx) as unknown as (
+    lines: string[],
+    maxWidth: number
+  ) => string[];
+}
+
+describe("renderer address wrapping", () => {
+  it("keeps a short line unchanged", () => {
+    expect(extractWrapLinesToWidth()(["Sikar"], 1000)).toEqual(["Sikar"]);
+  });
+
+  it("wraps a long line at word boundaries to the available width", () => {
+    expect(extractWrapLinesToWidth()(["aa bb cc dd"], 50)).toEqual(["aa bb", "cc dd"]);
+  });
+
+  it("hard-breaks an over-long word so no content is lost", () => {
+    const out = extractWrapLinesToWidth()(["abcdefghijklmnop"], 50);
+    expect(out.join("")).toBe("abcdefghijklmnop");
+    out.forEach((l) => expect(l.length).toBeLessThanOrEqual(5));
+  });
+
+  it("wraps each input line independently, preserving line breaks", () => {
+    expect(extractWrapLinesToWidth()(["aa bb", "cc dd"], 50)).toEqual(["aa bb", "cc dd"]);
+  });
+
+  it("preserves every character of a long complete address", () => {
+    const address =
+      "House 12, Station Road, Police Lines, Sikar, Rajasthan, 332001, India";
+    const out = extractWrapLinesToWidth()([address], 100);
+    expect(out.join(" ").replace(/\s+/g, " ")).toBe(address);
+  });
+
+  it("wraps before measuring and rendering in both renderer paths", () => {
+    const html = buildWatermarkRendererPage();
+    expect(html).toContain("function wrapLinesToWidth(lines,maxWidth)");
+    expect(html).toContain("lines=wrapLinesToWidth(lines,maxW);");
+    expect(html).toContain("lines=wrapLinesToWidth(lines,Math.max(1,cv.width-gapX*2-rPad*2));");
+    expect(html).toContain("lines:lines");
+  });
+
+  it("forwards the image width into the measure script so wrapping matches the photo", () => {
+    expect(buildMeasureOverlayScript(7, 42, ["a"], 4000)).toContain('"imageWidth":4000');
+    expect(buildMeasureOverlayScript(7, 42, ["a"])).not.toContain("imageWidth");
+  });
+});

@@ -92,14 +92,14 @@ describe("useAddressLookup", () => {
       setDriverCoords!({ latitude: 0, longitude: 0 });
     });
     await flush();
-    expect(lastLines).toEqual(["Main St, Anytown", "CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
     const callsAfterFirst = spy.mock.calls.length;
 
     await TestRenderer.act(async () => {
       setDriverCoords!({ latitude: 0.00003, longitude: 0 });
     });
     await flush();
-    expect(lastLines).toEqual(["Main St, Anytown", "CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
     expect(spy.mock.calls.length).toBe(callsAfterFirst);
   });
 
@@ -120,7 +120,7 @@ describe("useAddressLookup", () => {
     });
     await flush();
     expect(spy.mock.calls.length).toBeGreaterThan(callsAfterFirst);
-    expect(lastLines).toEqual(["Main St, Anytown", "CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
   });
 
   it("reverse-geocode refresh threshold constant is set to 50 m", () => {
@@ -140,7 +140,7 @@ describe("useAddressLookup", () => {
     });
     await flush();
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(lastLines).toEqual(["Main St, Anytown", "CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
   });
 
   it("does not trigger reverse geocoding for ~30 m of movement within the 50 m threshold", async () => {
@@ -226,7 +226,7 @@ describe("useAddressLookup", () => {
       setDriverCoords!({ latitude: 0, longitude: 0 });
     });
     await flush();
-    expect(lastLines).toEqual(["Main St, Anytown", "CA"]);
+    expect(lastLines).toEqual(["Main St", "Anytown, CA"]);
 
     const pending = new Promise<never>(() => {});
     jest
@@ -251,3 +251,4 @@ describe("useAddressLookup", () => {
     expect(lastLines).toEqual([]);
   });
 });
+

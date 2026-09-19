@@ -64,6 +64,42 @@ describe("reverseGeocode", () => {
     const { reverseGeocode } = require("@/src/utils/geo");
     expect(await reverseGeocode(1, 2)).toBeNull();
   });
+
+  it("returns the complete address composed from every geocode field", async () => {
+    __setMockReverseGeocode([
+      {
+        streetNumber: "12",
+        street: "Station Road",
+        name: "Police Lines",
+        subregion: "Sikar Tehsil",
+        district: "Sikar",
+        city: "Sikar",
+        region: "Rajasthan",
+        postalCode: "332001",
+        country: "India",
+      },
+    ]);
+    const { reverseGeocode } = require("@/src/utils/geo");
+    const res = await reverseGeocode(1, 2);
+    expect(res?.formatted).toBe(
+      "12 Station Road, Police Lines, Sikar Tehsil, Sikar, Rajasthan, 332001, India"
+    );
+  });
+
+  it("no longer collapses the address to the compact newline 2-line form", async () => {
+    __setMockReverseGeocode([{ street: "Main St", city: "Anytown", region: "CA" }]);
+    const { reverseGeocode } = require("@/src/utils/geo");
+    const res = await reverseGeocode(1, 2);
+    expect(res?.formatted).not.toContain("\n");
+  });
+
+  it("keeps long address components whole (no truncation)", async () => {
+    const longName = "A".repeat(80);
+    __setMockReverseGeocode([{ name: longName, city: "Anytown" }]);
+    const { reverseGeocode } = require("@/src/utils/geo");
+    const res = await reverseGeocode(1, 2);
+    expect(res?.formatted).toContain(longName);
+  });
 });
 
 describe("truncateAddressLine", () => {
@@ -88,14 +124,14 @@ describe("formatAddressLines", () => {
     expect(formatAddressLines(null)).toEqual([]);
   });
 
-  it("groups area, city into line 1 and state postalCode into line 2", () => {
+  it("keeps the sub-locality on line 1 and groups district/state on line 2", () => {
     const out = formatAddressLines({
       district: "Doliyoh Ka Bass",
       subregion: "Sikar",
       region: "Rajasthan",
       postalCode: "332001",
     });
-    expect(out).toEqual(["Doliyoh Ka Bass, Sikar", "Rajasthan 332001"]);
+    expect(out).toEqual(["Doliyoh Ka Bass", "Sikar, Rajasthan"]);
   });
 
   it("prefers the sub-locality (village) over the landmark name", () => {
@@ -114,7 +150,7 @@ describe("formatAddressLines", () => {
       subregion: "Alwar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Near Collector Office, Alwar", "Rajasthan"]);
+    expect(out).toEqual(["Near Collector Office", "Alwar, Rajasthan"]);
   });
 
   it("uses the district alone when no area/city exists", () => {
@@ -131,7 +167,7 @@ describe("formatAddressLines", () => {
       subregion: "Hooghly",
       region: "West Bengal",
     });
-    expect(out).toEqual(["Park View, Hooghly", "West Bengal"]);
+    expect(out).toEqual(["Park View", "Hooghly, West Bengal"]);
   });
 
   it("shows the state only when no other parts exist", () => {
@@ -146,15 +182,15 @@ describe("formatAddressLines", () => {
     expect(formatAddressLines({ region: "Rajasthan" })).toEqual(["Rajasthan"]);
   });
 
-  it("includes postal code in the address but not the country", () => {
+  it("excludes the postal code but keeps the district and state", () => {
     const out = formatAddressLines({
       city: "Jaipur",
       region: "Rajasthan",
       postalCode: "302001",
       country: "India",
     });
-    expect(out.join(" ")).not.toContain("India");
-    expect(out.join(" ")).toContain("302001");
+    expect(out).toEqual(["Jaipur, Rajasthan"]);
+    expect(out.join(" ")).not.toContain("302001");
   });
 
   it("dedupes a city that repeats the district or division", () => {
@@ -164,7 +200,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Main Bazaar, Sikar", "Rajasthan"]);
+    expect(out).toEqual(["Main Bazaar", "Sikar, Rajasthan"]);
   });
 
   it("drops a bare Plus Code used as the locality", () => {
@@ -182,7 +218,7 @@ describe("formatAddressLines", () => {
       subregion: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["police lines, Sikar", "Rajasthan"]);
+    expect(out).toEqual(["police lines", "Sikar, Rajasthan"]);
   });
 
   it("removes administrative division tokens from the area/city line", () => {
@@ -192,10 +228,115 @@ describe("formatAddressLines", () => {
       city: "Sikar",
       region: "Rajasthan",
     });
-    expect(out).toEqual(["Police Lines, Sikar", "Rajasthan"]);
+    expect(out).toEqual(["Police Lines", "Sikar, Rajasthan"]);
   });
 
   it("returns [] when no usable parts exist", () => {
     expect(formatAddressLines({})).toEqual([]);
+  });
+
+  // Required components: [house/street number], [locality], [district], [state].
+
+  it("excludes an administrative division (subregion)", () => {
+    const out = formatAddressLines({
+      streetNumber: "323",
+      district: "sabalpura",
+      subregion: "Jaipur division",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["323, sabalpura", "Rajasthan"]);
+    expect(out.join(" ")).not.toContain("division");
+  });
+
+  it("excludes the postal code", () => {
+    const out = formatAddressLines({
+      city: "Sikar",
+      region: "Rajasthan",
+      postalCode: "332001",
+    });
+    expect(out.join(" ")).not.toContain("332001");
+    expect(out).toEqual(["Sikar, Rajasthan"]);
+  });
+
+  it("excludes the country", () => {
+    const out = formatAddressLines({
+      city: "Sikar",
+      region: "Rajasthan",
+      country: "India",
+    });
+    expect(out.join(" ")).not.toContain("India");
+    expect(out).toEqual(["Sikar, Rajasthan"]);
+  });
+
+  it("retains the locality/street", () => {
+    expect(formatAddressLines({ district: "sabalpura", region: "Rajasthan" })).toEqual([
+      "sabalpura",
+      "Rajasthan",
+    ]);
+  });
+
+  it("retains the district", () => {
+    expect(
+      formatAddressLines({
+        district: "sabalpura",
+        city: "Sikar",
+        region: "Rajasthan",
+      })
+    ).toEqual(["sabalpura", "Sikar, Rajasthan"]);
+  });
+
+  it("retains the state/region", () => {
+    expect(formatAddressLines({ region: "Rajasthan" })).toEqual(["Rajasthan"]);
+  });
+
+  it("retains the house/street number", () => {
+    expect(
+      formatAddressLines({
+        streetNumber: "323",
+        city: "Sikar",
+        region: "Rajasthan",
+      })
+    ).toEqual(["323", "Sikar, Rajasthan"]);
+    expect(
+      formatAddressLines({
+        street: "Station Road",
+        city: "Sikar",
+        region: "Rajasthan",
+      })
+    ).toEqual(["Station Road", "Sikar, Rajasthan"]);
+  });
+
+  it("does not create duplicate commas when fields are missing", () => {
+    const out = formatAddressLines({
+      district: "Sikar",
+      city: "Sikar",
+      region: "Rajasthan",
+    });
+    expect(out).toEqual(["Sikar", "Rajasthan"]);
+    expect(out.join(",")).not.toContain(",,");
+    expect(out.join(" ")).not.toContain("Sikar, Sikar");
+    out.forEach((line: string) => {
+      expect(line.startsWith(",")).toBe(false);
+      expect(line.endsWith(",")).toBe(false);
+    });
+  });
+
+  it("preserves the complete selected address (division, PIN, country removed)", () => {
+    const out = formatAddressLines({
+      streetNumber: "323",
+      street: "",
+      name: "",
+      district: "sabalpura",
+      subregion: "Jaipur division",
+      city: "Sikar",
+      region: "Rajasthan",
+      postalCode: "332001",
+      country: "India",
+    });
+    expect(out).toEqual(["323, sabalpura", "Sikar, Rajasthan"]);
+    const joined = out.join(" ");
+    expect(joined).not.toContain("division");
+    expect(joined).not.toContain("332001");
+    expect(joined).not.toContain("India");
   });
 });

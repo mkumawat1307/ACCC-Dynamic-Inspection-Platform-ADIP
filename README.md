@@ -21,7 +21,7 @@ The app uses a **dynamic form engine**: inspection forms are rendered entirely f
 - **Per-project database isolation** — each project owns its own SQLite database file (template, sections, fields, devices, inspections, photos); no cross-project data mixing and no cross-DB joins.
 - **Camera capture with live watermark preview** — the watermark is overlaid on the camera preview (WYSIWYG) before capture, and a background WebView composites the final watermarked JPEG.
 - **Retake / Keep confirmation flow** — after capture the processed photo is shown and can be kept or retaken.
-- **Battery-efficient, event-driven GPS** — no continuous position polling. A low-accuracy movement watcher refreshes the fix only when the device moves more than 10 m (or on manual tap / when the fix passes the 5-minute freshness window), and photo capture reuses the stored fix or performs a bounded, deadline-guarded acquisition when needed.
+- **Battery-efficient, event-driven GPS** — no continuous position polling. A low-accuracy movement watcher refreshes the fix only when the device moves more than 10 m (or on manual tap / when the fix passes the 150-second (2.5-minute) freshness window), and photo capture reuses the stored fix or performs a bounded, deadline-guarded acquisition when needed.
 - **SAF-style download storage** — watermarked photos and exports are written to `Download/ACCC Dynamic Inspection/<Project>/` through a native Kotlin Expo module.
 - **Device management** — configurable device types (Camera, Switch) with per-type field definitions and dropdown options.
 - **Dropdown defaults** — a default selection can be configured for dropdown fields; it auto-applies for new inspections.

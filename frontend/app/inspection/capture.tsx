@@ -95,7 +95,7 @@ export default function CaptureScreen() {
   // GPS acquisition starts only once the camera is actually ready; the tracker
   // stays "loading" (shutter disabled) until then.
   const gps = useGpsTracker(cameraReady);
-  const { lines: addressLines, fullAddress, getAddressFor, resolveAddress } = useAddressLookup(gps.coords);
+  const { lines: addressLines, getAddressFor, resolveAddress } = useAddressLookup(gps.coords);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -539,12 +539,14 @@ export default function CaptureScreen() {
   const gpsPillColor =
     gps.refreshing
       ? "#FFEB3B"
-      : gps.status === "fixed" && gps.accuracyM != null
-      ? gps.gpsQuality?.color ?? "#FFEB3B"
+      : gps.status === "fixed"
+      ? gps.gpsQuality?.color ?? "#9E9E9E"
       : gps.status === "stale"
       ? "#FF9800"
       : gps.status === "denied"
       ? "#FF5252"
+      : gps.status === "poor"
+      ? "#9E9E9E"
       : "#FFEB3B";
 
   if (permissionDenied) {
